@@ -1,0 +1,12 @@
+[package]
+name = "apollo-supergraph"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+apollo-at-link = { path = "../apollo-at-link", version = "0.1.0" }
+apollo-subgraph = { path = "../apollo-subgraph", version = "0.1.0" }
+apollo-compiler = "0.8.0"
+salsa = "0.16.1"
