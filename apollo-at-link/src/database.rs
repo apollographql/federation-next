@@ -130,7 +130,7 @@ pub(crate) fn directive_string_arg_value<'a>(
     arg_name: &'static str,
 ) -> Option<&'a String> {
     match directive_arg_value(directive, arg_name) {
-        Some(Value::String(value)) => Some(value),
+        Some(Value::String { value, loc: _ }) => Some(value),
         _ => None,
     }
 }

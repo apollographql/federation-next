@@ -43,7 +43,7 @@ impl Key {
             .iter()
             .find(|arg| arg.name() == "fields")
             .map(|arg| arg.value());
-        if let Some(Value::String(_value)) = fields_arg {
+        if let Some(Value::String { value: _, loc: _ }) = fields_arg {
             Some(Key {
                 type_name: type_name.to_string(),
                 // TODO: obviously not what we want.
