@@ -31,7 +31,11 @@ pub enum Purpose {
 
 impl Purpose {
     pub fn from_hir_value(value: &Value) -> Result<Purpose, LinkError> {
-        if let Value::Enum(name) = value {
+        if let Value::Enum {
+            value: name,
+            loc: _,
+        } = value
+        {
             Ok(name.src().parse::<Purpose>()?)
         } else {
             Err(LinkError::BootstrapError(
@@ -87,7 +91,7 @@ impl Import {
         // (especially since @link(import:) is a list), but `Value` does not implement `Display`
         // currently, so a bit annoying.
         match value {
-            Value::String(str) => {
+            Value::String { value: str, loc: _ } => {
                 let is_directive = str.starts_with('@');
                 let element = if is_directive {
                     str.strip_prefix('@').unwrap().to_string()
@@ -96,20 +100,20 @@ impl Import {
                 };
                 Ok(Import { element, is_directive, alias: None })
             },
-            Value::Object(fields) => {
+            Value::Object { value:fields, loc: _ } => {
                 let mut name: Option<String> = None;
                 let mut alias: Option<String> = None;
                 for (k, v) in fields {
                     match k.src() {
                         "name" => {
-                            if let Value::String(str) = v {
+                            if let Value::String { value: str, loc: _ } = v {
                                 name = Some(str.clone())
                             } else {
                                 Err(LinkError::BootstrapError("invalid value for `name` field in @link(import:) argument: must be a string".to_string()))?
                             }
                         },
                         "as" => {
-                            if let Value::String(str) = v {
+                            if let Value::String { value: str, loc: _ } = v {
                                 alias = Some(str.clone())
                             } else {
                                 Err(LinkError::BootstrapError("invalid value for `as` field in @link(import:) argument: must be a string".to_string()))?
@@ -213,8 +217,12 @@ impl Link {
             None
         };
         let mut imports = Vec::new();
-        if let Some(Value::List(l)) = directive_arg_value(directive, "import") {
-            for v in l {
+        if let Some(Value::List {
+            value: values,
+            loc: _,
+        }) = directive_arg_value(directive, "import")
+        {
+            for v in values {
                 imports.push(Arc::new(Import::from_hir_value(v)?));
             }
         };
