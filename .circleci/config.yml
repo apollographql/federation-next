@@ -17,12 +17,11 @@ executors:
   macos: &macos
     macos:
       xcode: "13.4"
-  # TODO: enable windows when we need it
-  # windows: &windows
-  #   machine:
-  #     image: 'windows-server-2019-vs2019:stable'
-  #   resource_class: windows.xlarge
-  #   shell: powershell.exe -ExecutionPolicy Bypass
+  windows: &windows
+    machine:
+      image: 'windows-server-2019-vs2019:stable'
+    resource_class: windows.xlarge
+    shell: powershell.exe -ExecutionPolicy Bypass
 
 # There are two workflows: lint and test.
 
@@ -47,7 +46,7 @@ workflows:
           name: Test (<< matrix.rust_channel >> rust on << matrix.platform >>)
           matrix:
             parameters:
-              platform: [linux, macos, windows]
+              platform: [linux, macos]
               rust_channel: [stable]
 
 
