@@ -1,10 +1,8 @@
-use std::{path::Path, sync::Arc, collections::BTreeMap};
+use std::{collections::BTreeMap, path::Path, sync::Arc};
 
-use database::{ SubgraphDatabase, SubgraphRootDatabase };
-
-use apollo_compiler::{
-    FileId, InputDatabase, Source
-};
+use apollo_compiler::{FileId, InputDatabase, Source};
+#[allow(unused)]
+use database::{SubgraphDatabase, SubgraphRootDatabase};
 
 mod database;
 
@@ -52,7 +50,7 @@ impl Subgraph {
         Self {
             name: name.to_string(),
             url: url.to_string(),
-            db
+            db,
         }
     }
 }
@@ -61,6 +59,7 @@ pub struct Subgraphs {
     subgraphs: BTreeMap<String, Arc<Subgraph>>,
 }
 
+#[allow(clippy::new_without_default)]
 impl Subgraphs {
     pub fn new() -> Self {
         Subgraphs {
@@ -70,9 +69,12 @@ impl Subgraphs {
 
     pub fn add(&mut self, subgraph: Subgraph) -> Result<(), SubgraphError> {
         if self.subgraphs.contains_key(&subgraph.name) {
-            return Err(SubgraphError { msg: format!("A subgraph named {} already exists", subgraph.name)})
+            return Err(SubgraphError {
+                msg: format!("A subgraph named {} already exists", subgraph.name),
+            });
         }
-        self.subgraphs.insert(subgraph.name.clone(), Arc::new(subgraph));
+        self.subgraphs
+            .insert(subgraph.name.clone(), Arc::new(subgraph));
         Ok(())
     }
 

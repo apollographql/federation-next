@@ -1,10 +1,9 @@
 use std::path::Path;
 
-use database::{ SupergraphDatabase, SupergraphRootDatabase };
+#[allow(unused)]
+use database::{SupergraphDatabase, SupergraphRootDatabase};
 
-use apollo_compiler::{
-    FileId, InputDatabase, Source
-};
+use apollo_compiler::{FileId, InputDatabase, Source};
 
 mod database;
 
@@ -41,9 +40,7 @@ impl Supergraph {
         // a valid supergraph (which is simpler than for subgraph, but still at least means
         // that it's valid graphQL in the first place, and that it has the `join` spec).
 
-        Self {
-            db
-        }
+        Self { db }
     }
 }
 
@@ -134,7 +131,10 @@ mod tests {
         "#;
 
         let supergraph = Supergraph::new(schema);
-        let _subgraphs = supergraph.db.extract_subgraphs().expect("Should have been able to extract subgraphs");
+        let _subgraphs = supergraph
+            .db
+            .extract_subgraphs()
+            .expect("Should have been able to extract subgraphs");
         // TODO: actual assertions on the subgraph once it's actually implemented.
     }
 }
