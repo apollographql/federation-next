@@ -3,11 +3,11 @@ use std::sync::Arc;
 use apollo_at_link::{
     database::{AtLinkDatabase, AtLinkStorage},
     link::Link,
-    spec::{Identity, APOLLO_SPEC_DOMAIN}
+    spec::{Identity, APOLLO_SPEC_DOMAIN},
 };
 use apollo_compiler::{
     database::{db::Upcast, AstStorage, HirStorage, InputStorage},
-    HirDatabase
+    HirDatabase,
 };
 use apollo_subgraph::Subgraphs;
 
@@ -46,7 +46,6 @@ fn extract_subgraphs(_db: &dyn SupergraphDatabase) -> Result<Subgraphs, Supergra
     // TODO
     Ok(Subgraphs::new())
 }
-
 
 #[salsa::database(InputStorage, AstStorage, HirStorage, AtLinkStorage, SupergraphStorage)]
 #[derive(Default)]

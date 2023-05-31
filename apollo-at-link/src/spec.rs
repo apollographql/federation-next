@@ -141,10 +141,10 @@ impl str::FromStr for Url {
                 let version = segments.next_back().ok_or(SpecError::ParseError(
                     "invalid `@link` specification url: missing specification version".to_string(),
                 ))?;
-                if !version.starts_with("v") {
+                if !version.starts_with('v') {
                     return Err(SpecError::ParseError("invalid `@link` specification url: the last element of the path should be the version starting with a 'v'".to_string()));
                 }
-                let version = version.strip_prefix("v").unwrap().parse::<Version>()?;
+                let version = version.strip_prefix('v').unwrap().parse::<Version>()?;
                 let name = segments.next_back().ok_or(SpecError::ParseError(
                     "invalid `@link` specification url: missing specification name".to_string(),
                 ))?;

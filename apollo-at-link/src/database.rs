@@ -30,7 +30,7 @@ fn bootstrap(db: &dyn AtLinkDatabase) -> Result<Option<LinksMetadata>, LinkError
         return Ok(None);
     }
     // We have _a_ bootstrap directives, but 2 is more than we bargained for.
-    if !bootstrap_directives.next().is_none() {
+    if bootstrap_directives.next().is_some() {
         return Err(LinkError::BootstrapError(format!(
             "the @link specification itself (\"{}\") is applied multiple times",
             Identity::link_identity()
@@ -50,7 +50,10 @@ fn bootstrap(db: &dyn AtLinkDatabase) -> Result<Option<LinksMetadata>, LinkError
     for application in link_applications {
         let link = Arc::new(Link::from_directive_application(application)?);
         links.push(Arc::clone(&link));
-        if let Some(_) = by_identity.insert(link.url.identity.clone(), Arc::clone(&link)) {
+        if by_identity
+            .insert(link.url.identity.clone(), Arc::clone(&link))
+            .is_some()
+        {
             // TODO: we may want to lessen that limitation at some point. Including the same feature for 2 different major versions should be ok.
             return Err(LinkError::BootstrapError(format!(
                 "duplicate @link inclusion of specification \"{}\"",
@@ -89,7 +92,7 @@ fn bootstrap(db: &dyn AtLinkDatabase) -> Result<Option<LinksMetadata>, LinkError
             };
             if let Some((other_link, _)) = element_map.insert(
                 imported_name.clone(),
-                (Arc::clone(&link), Arc::clone(&import)),
+                (Arc::clone(link), Arc::clone(import)),
             ) {
                 Err(LinkError::BootstrapError(format!(
                     "name conflict: both {} and {} import {}",
@@ -148,7 +151,7 @@ fn parse_link_if_bootstrap_directive(db: &dyn AtLinkDatabase, directive: &Direct
                 .find(|arg| arg.name() == "as")
                 .filter(|arg| {
                     let ty = arg.ty();
-                    return ty.is_named() && ty.name() == "String";
+                    ty.is_named() && ty.name() == "String"
                 })
                 .is_some();
         let is_correct_def = is_correct_def
@@ -167,7 +170,7 @@ fn parse_link_if_bootstrap_directive(db: &dyn AtLinkDatabase, directive: &Direct
                         return ty.is_named() && ty.name() == "String";
                     }
                     let ty = arg.ty();
-                    return ty.is_named() && ty.name() == "String";
+                    ty.is_named() && ty.name() == "String"
                 })
                 .is_some();
         if !is_correct_def {
@@ -212,6 +215,7 @@ pub struct AtLinkedCompiler {
     pub db: AtLinkedRootDatabase,
 }
 
+#[allow(clippy::new_without_default)]
 impl AtLinkedCompiler {
     pub fn new() -> Self {
         let mut db = AtLinkedRootDatabase::default();
@@ -350,7 +354,7 @@ mod tests {
 
         let import_source = meta.source_link_of_type("Import").unwrap();
         assert_eq!(import_source.link.url.identity.name, "link");
-        assert_eq!(import_source.import.as_ref().unwrap().is_directive, false);
+        assert!(!import_source.import.as_ref().unwrap().is_directive);
         assert_eq!(import_source.import.as_ref().unwrap().alias, None);
 
         // Purpose is not imported, so it should only be accessible in fql form
@@ -362,7 +366,7 @@ mod tests {
 
         let key_source = meta.source_link_of_directive("key").unwrap();
         assert_eq!(key_source.link.url.identity.name, "federation");
-        assert_eq!(key_source.import.as_ref().unwrap().is_directive, true);
+        assert!(key_source.import.as_ref().unwrap().is_directive);
         assert_eq!(key_source.import.as_ref().unwrap().alias, None);
 
         // tag is imported under an alias, so "tag" itself should not match
@@ -371,7 +375,7 @@ mod tests {
         let tag_source = meta.source_link_of_directive("myTag").unwrap();
         assert_eq!(tag_source.link.url.identity.name, "federation");
         assert_eq!(tag_source.import.as_ref().unwrap().element, "tag");
-        assert_eq!(tag_source.import.as_ref().unwrap().is_directive, true);
+        assert!(tag_source.import.as_ref().unwrap().is_directive);
         assert_eq!(
             tag_source.import.as_ref().unwrap().alias,
             Some("myTag".to_string())

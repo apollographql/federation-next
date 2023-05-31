@@ -88,9 +88,9 @@ impl Import {
         // currently, so a bit annoying.
         match value {
             Value::String(str) => {
-                let is_directive = str.chars().next() == Some('@');
+                let is_directive = str.starts_with('@');
                 let element = if is_directive {
-                    str.strip_prefix("@").unwrap().to_string()
+                    str.strip_prefix('@').unwrap().to_string()
                 } else {
                     str.to_string()
                 };
@@ -119,19 +119,19 @@ impl Import {
                     }
                 }
                 if let Some(element) = name {
-                    let is_directive = element.chars().next() == Some('@');
+                    let is_directive = element.starts_with('@');
                     if is_directive {
-                        let element = element.strip_prefix("@").unwrap().to_string();
+                        let element = element.strip_prefix('@').unwrap().to_string();
                         if let Some(alias_str) = alias {
-                            if alias_str.chars().next() != Some('@') {
+                            if !alias_str.starts_with('@') {
                                 Err(LinkError::BootstrapError(format!("invalid alias '{}' for import name '{}': should start with '@' since the imported name does", alias_str, element)))?
                             }
-                            alias = Some(alias_str.strip_prefix("@").unwrap().to_string());
+                            alias = Some(alias_str.strip_prefix('@').unwrap().to_string());
                         }
                         Ok(Import { element, is_directive, alias })
                     } else {
                         if let Some(alias) = &alias {
-                            if alias.chars().next() == Some('@') {
+                            if alias.starts_with('@') {
                                 Err(LinkError::BootstrapError(format!("invalid alias '{}' for import name '{}': should not start with '@' (or, if {} is a directive, then the name should start with '@')", alias, element, element)))?
                             }
                         }
@@ -206,7 +206,7 @@ impl Link {
         let url = url.parse::<Url>().map_err(|e| {
             LinkError::BootstrapError(format!("invalid `url` argument (reason: {})", e))
         })?;
-        let spec_alias = directive_string_arg_value(directive, "as").map(|alias| alias.clone());
+        let spec_alias = directive_string_arg_value(directive, "as").cloned();
         let purpose = if let Some(value) = directive_arg_value(directive, "for") {
             Some(Purpose::from_hir_value(value)?)
         } else {
@@ -257,7 +257,7 @@ impl LinksMetadata {
         if let Some((link, import)) = self.types_by_imported_name.get(type_name) {
             Some(LinkedElement {
                 link: Arc::clone(link),
-                import: Some(Arc::clone(&import)),
+                import: Some(Arc::clone(import)),
             })
         } else {
             type_name.split_once("__").and_then(|(spec_name, _)| {

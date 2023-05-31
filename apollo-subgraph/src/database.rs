@@ -3,11 +3,12 @@ use std::sync::Arc;
 use apollo_at_link::{
     database::{AtLinkDatabase, AtLinkStorage},
     link::Link,
-    spec::{Identity, APOLLO_SPEC_DOMAIN}
+    spec::{Identity, APOLLO_SPEC_DOMAIN},
 };
 use apollo_compiler::{
     database::{db::Upcast, AstStorage, HirStorage, InputStorage},
-    hir::{SelectionSet, Directive, Value}, HirDatabase
+    hir::{Directive, SelectionSet, Value},
+    HirDatabase,
 };
 
 // TODO: we should define this as part as some more generic "FederationSpec" definition, but need
@@ -23,17 +24,20 @@ pub fn federation_link_identity() -> Identity {
 pub struct Key {
     pub type_name: String,
     // TODO: this should _not_ be an Option below; but we don't know how to build the SelectionSet,
-    // so until we have a solution, we use None to have code that compiles. 
+    // so until we have a solution, we use None to have code that compiles.
     selections: Option<Arc<SelectionSet>>,
 }
 
 impl Key {
     // TODO: same remark as above: not meant to be `Option`
     pub fn selections(&self) -> Option<Arc<SelectionSet>> {
-        return self.selections.clone();
+        self.selections.clone()
     }
 
-    pub(crate) fn from_directive_application(type_name: &str, directive: &Directive) -> Option<Key> {
+    pub(crate) fn from_directive_application(
+        type_name: &str,
+        directive: &Directive,
+    ) -> Option<Key> {
         let fields_arg = directive
             .arguments()
             .iter()
@@ -43,7 +47,7 @@ impl Key {
             Some(Key {
                 type_name: type_name.to_string(),
                 // TODO: obviously not what we want.
-                selections: None
+                selections: None,
             })
         } else {
             None
@@ -54,7 +58,7 @@ impl Key {
 /// Database used for valid federation 2 subgraphs.
 ///
 /// Note: technically, federation 1 subgraphs are still accepted as input of
-/// composition. However, there is some pre-composition steps that "massage" 
+/// composition. However, there is some pre-composition steps that "massage"
 /// the input schema to transform them in fully valid federation 2 subgraphs,
 /// so the subgraphs seen by composition and query planning are always fully
 /// valid federation 2 ones, and this is what this database handles.
@@ -83,13 +87,15 @@ fn federation_link(db: &dyn SubgraphDatabase) -> Arc<Link> {
 
 fn key_directive_name(db: &dyn SubgraphDatabase) -> String {
     db.federation_link().directive_name_in_schema("key")
-
 }
 
 fn keys(db: &dyn SubgraphDatabase, type_name: String) -> Vec<Key> {
     let key_name = db.key_directive_name();
     if let Some(type_def) = db.find_type_definition_by_name(type_name.clone()) {
-        type_def.directives_by_name(&key_name).filter_map(|directive| Key::from_directive_application(&type_name, directive)).collect()
+        type_def
+            .directives_by_name(&key_name)
+            .filter_map(|directive| Key::from_directive_application(&type_name, directive))
+            .collect()
     } else {
         vec![]
     }
