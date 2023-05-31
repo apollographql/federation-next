@@ -366,7 +366,7 @@ mod tests {
 
         let key_source = meta.source_link_of_directive("key").unwrap();
         assert_eq!(key_source.link.url.identity.name, "federation");
-        assert!(!key_source.import.as_ref().unwrap().is_directive);
+        assert!(key_source.import.as_ref().unwrap().is_directive);
         assert_eq!(key_source.import.as_ref().unwrap().alias, None);
 
         // tag is imported under an alias, so "tag" itself should not match
@@ -375,7 +375,7 @@ mod tests {
         let tag_source = meta.source_link_of_directive("myTag").unwrap();
         assert_eq!(tag_source.link.url.identity.name, "federation");
         assert_eq!(tag_source.import.as_ref().unwrap().element, "tag");
-        assert!(!tag_source.import.as_ref().unwrap().is_directive);
+        assert!(tag_source.import.as_ref().unwrap().is_directive);
         assert_eq!(
             tag_source.import.as_ref().unwrap().alias,
             Some("myTag".to_string())

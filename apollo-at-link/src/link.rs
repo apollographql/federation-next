@@ -123,7 +123,7 @@ impl Import {
                     if is_directive {
                         let element = element.strip_prefix('@').unwrap().to_string();
                         if let Some(alias_str) = alias {
-                            if alias_str.starts_with('@') {
+                            if !alias_str.starts_with('@') {
                                 Err(LinkError::BootstrapError(format!("invalid alias '{}' for import name '{}': should start with '@' since the imported name does", alias_str, element)))?
                             }
                             alias = Some(alias_str.strip_prefix('@').unwrap().to_string());
