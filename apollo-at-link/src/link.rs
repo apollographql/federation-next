@@ -162,6 +162,25 @@ impl Import {
     }
 }
 
+impl fmt::Display for Import {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.alias.is_some() {
+            write!(
+                f,
+                "{{ name: \"{}\", as: \"{}\" }}",
+                if self.is_directive {
+                    format!("@{}", self.element)
+                } else {
+                    self.element.clone()
+                },
+                self.imported_display_name()
+            )
+        } else {
+            write!(f, "\"{}\"", self.imported_display_name())
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct Link {
     pub url: Url,
@@ -199,15 +218,18 @@ impl Link {
         }
     }
 
-    // TODO: the detail of this method could theoretically some day depend on the @link version of
-    // the spec used by the schema, so not exposing it for now as it's not future proof as-is.
-    // Besides, this blindly assumes that the directive is an @link invocation, which would need
-    // to be more defensive if exposed.
-    pub(crate) fn from_directive_application(directive: &Directive) -> Result<Link, LinkError> {
+    pub fn from_directive_application(directive: &Directive) -> Result<Link, LinkError> {
+        if !directive.name().eq("link") {
+            return Err(LinkError::BootstrapError(format!(
+                "invalid directive specified (expected: link actual: {})",
+                directive.name(),
+            )));
+        }
+
         let url = directive_string_arg_value(directive, "url").ok_or(LinkError::BootstrapError(
             "the `url` argument for @link is mandatory".to_string(),
         ))?;
-        let url = url.parse::<Url>().map_err(|e| {
+        let url: Url = url.parse::<Url>().map_err(|e| {
             LinkError::BootstrapError(format!("invalid `url` argument (reason: {})", e))
         })?;
         let spec_alias = directive_string_arg_value(directive, "as").cloned();
@@ -232,6 +254,19 @@ impl Link {
             imports,
             purpose,
         })
+    }
+}
+
+impl fmt::Display for Link {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let imports: String = self
+            .imports
+            .iter()
+            .map(|import| import.to_string())
+            .collect::<Vec<String>>()
+            .join(",");
+        // @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
+        write!(f, "@link(url: \"{}\", import: [{}])", self.url, imports)
     }
 }
 

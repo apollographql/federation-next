@@ -11,6 +11,8 @@ pub const APOLLO_SPEC_DOMAIN: &str = "https://specs.apollo.dev";
 pub enum SpecError {
     #[error("Parse error: {0}")]
     ParseError(String),
+    #[error("Specified specification version {0} is outside of supported range {1}-{2}")]
+    VersionError(String, String, String),
 }
 
 /// Represents the identity of a `@link` specification, which uniquely identify a specification.
@@ -43,6 +45,13 @@ impl Identity {
         Identity {
             domain: APOLLO_SPEC_DOMAIN.to_string(),
             name: "link".to_string(),
+        }
+    }
+
+    pub fn federation_identity() -> Identity {
+        Identity {
+            domain: APOLLO_SPEC_DOMAIN.to_string(),
+            name: "federation".to_string(),
         }
     }
 }
@@ -90,7 +99,8 @@ impl Version {
     /// Whether this version satisfies the provided `required` version.
     ///
     ///     # use apollo_at_link::spec::Version;
-    ///     assert!(&Version { major: 1, minor: 0 }.satisfies(&Version{ major: 1, minor: 0 })); assert!(&Version { major: 1, minor: 2 }.satisfies(&Version{ major: 1, minor: 0 }));
+    ///     assert!(&Version { major: 1, minor: 0 }.satisfies(&Version{ major: 1, minor: 0 }));
+    ///     assert!(&Version { major: 1, minor: 2 }.satisfies(&Version{ major: 1, minor: 0 }));
     ///
     ///     assert!(!(&Version { major: 2, minor: 0 }.satisfies(&Version{ major: 1, minor: 9 })));
     ///     assert!(!(&Version { major: 0, minor: 9 }.satisfies(&Version{ major: 0, minor: 8 })));
@@ -100,6 +110,19 @@ impl Version {
         } else {
             self.major == required.major && self.minor >= required.minor
         }
+    }
+
+    /// Verifies whether this version satisfies the provided version range.
+    ///
+    ///     # use apollo_at_link::spec::Version;
+    ///     assert!(&Version { major: 1, minor: 1 }.satisfies_range(&Version{ major: 1, minor: 0 }, &Version{ major: 1, minor: 10 }));
+    ///
+    ///     assert!(!&Version { major: 2, minor: 0 }.satisfies_range(&Version{ major: 1, minor: 0 }, &Version{ major: 1, minor: 10 }));
+    pub fn satisfies_range(&self, min: &Version, max: &Version) -> bool {
+        assert_eq!(min.major, max.major);
+        assert!(min.minor < max.minor);
+
+        self.major == min.major && self.minor >= min.minor && self.minor <= max.minor
     }
 }
 
