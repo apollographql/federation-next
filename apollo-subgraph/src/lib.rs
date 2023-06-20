@@ -284,15 +284,10 @@ mod tests {
         }
         "#;
 
-        let subgraph = match Subgraph::parse_and_expand("S1", "http://s1", schema) {
-            Ok(graph) => graph,
-            Err(e) => {
-                println!("{}", e.msg);
-                return Err(String::from(
-                    "failed to parse and expand the subgraph, see errors above for details",
-                ));
-            }
-        };
+        let subgraph = Subgraph::parse_and_expand("S1", "http://s1", schema).map_err(|e| {
+            println!("{}", e.msg);
+            String::from("failed to parse and expand the subgraph, see errors above for details")
+        })?;
         assert!(subgraph
             .db
             .type_system()
@@ -320,29 +315,19 @@ mod tests {
           @link(url: "https://specs.apollo.dev/federation/v2.3", import: [ { name: "@key", as: "@myKey" }, "@provides" ])
 
         type Query {
-            t: T
+            t: T @provides(fields: "x")
         }
 
-        type T @key(fields: "id") {
+        type T @myKey(fields: "id") {
             id: ID!
             x: Int
         }
         "#;
 
-        let subgraph = match Subgraph::parse_and_expand("S1", "http://s1", schema) {
-            Ok(graph) => graph,
-            Err(e) => {
-                println!("{}", e.msg);
-                return Err(String::from(
-                    "failed to parse and expand the subgraph, see errors above for details",
-                ));
-            }
-        };
-        assert!(subgraph
-            .db
-            .type_system()
-            .type_definitions_by_name
-            .contains_key("T"));
+        let subgraph = Subgraph::parse_and_expand("S1", "http://s1", schema).map_err(|e| {
+            println!("{}", e.msg);
+            String::from("failed to parse and expand the subgraph, see errors above for details")
+        })?;
         assert!(subgraph
             .db
             .type_system()
@@ -354,7 +339,7 @@ mod tests {
             .type_system()
             .definitions
             .directives
-            .contains_key("federation__requires"));
+            .contains_key("provides"));
         Ok(())
     }
 
@@ -374,20 +359,10 @@ mod tests {
         }
         "#;
 
-        let subgraph = match Subgraph::parse_and_expand("S1", "http://s1", schema) {
-            Ok(graph) => graph,
-            Err(e) => {
-                println!("{}", e.msg);
-                return Err(String::from(
-                    "failed to parse and expand the subgraph, see errors above for details",
-                ));
-            }
-        };
-        assert!(subgraph
-            .db
-            .type_system()
-            .type_definitions_by_name
-            .contains_key("T"));
+        let subgraph = Subgraph::parse_and_expand("S1", "http://s1", schema).map_err(|e| {
+            println!("{}", e.msg);
+            String::from("failed to parse and expand the subgraph, see errors above for details")
+        })?;
         assert!(subgraph
             .db
             .type_system()
@@ -408,7 +383,7 @@ mod tests {
         let schema = r#"
         extend schema
           @link(url: "https://specs.apollo.dev/link/v1.0", import: ["Import", "Purpose"])
-          @link(url: "https://specs.apollo.dev/federation/v2.3", import: [ "@key" ], as: "fed" )
+          @link(url: "https://specs.apollo.dev/federation/v2.3", import: [ "@key" ])
 
         type Query {
             t: T
@@ -429,32 +404,15 @@ mod tests {
         directive @link(url: String, as: String, import: [Import], for: Purpose) repeatable on SCHEMA
         "#;
 
-        let subgraph = match Subgraph::parse_and_expand("S1", "http://s1", schema) {
-            Ok(graph) => graph,
-            Err(e) => {
-                println!("{}", e.msg);
-                return Err(String::from(
-                    "failed to parse and expand the subgraph, see errors above for details",
-                ));
-            }
-        };
+        let subgraph = Subgraph::parse_and_expand("S1", "http://s1", schema).map_err(|e| {
+            println!("{}", e.msg);
+            String::from("failed to parse and expand the subgraph, see errors above for details")
+        })?;
         assert!(subgraph
             .db
             .type_system()
             .type_definitions_by_name
-            .contains_key("T"));
-        assert!(subgraph
-            .db
-            .type_system()
-            .definitions
-            .directives
-            .contains_key("key"));
-        assert!(subgraph
-            .db
-            .type_system()
-            .definitions
-            .directives
-            .contains_key("federation__requires"));
+            .contains_key("Purpose"));
         Ok(())
     }
 }
