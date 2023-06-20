@@ -167,7 +167,7 @@ impl fmt::Display for Import {
         if self.alias.is_some() {
             write!(
                 f,
-               r#"{{ name: "{}", as: "{}" }}"#,
+                r#"{{ name: "{}", as: "{}" }}"#,
                 if self.is_directive {
                     format!("@{}", self.element)
                 } else {

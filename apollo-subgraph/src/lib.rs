@@ -101,10 +101,8 @@ impl Subgraph {
                     imports_federation_spec = true;
                 }
 
-                let federation_definitions = match FederationSpecDefinitions::new(link_directive) {
-                    Ok(definitions) => definitions,
-                    Err(e) => return Err(SubgraphError { msg: e.to_string() }),
-                };
+                let federation_definitions = FederationSpecDefinitions::new(link_directive)
+                    .map_err(|e| SubgraphError { msg: e.to_string() })?;
                 if !type_system
                     .type_definitions_by_name
                     .contains_key(&federation_definitions.fieldset_scalar_name())
@@ -120,14 +118,12 @@ impl Subgraph {
                         .type_definitions_by_name
                         .contains_key(&namespaced_directive_name)
                     {
-                        let directive_definition = match federation_definitions
+                        let directive_definition = federation_definitions
                             .federated_directive_definition(
                                 directive_name.to_owned(),
                                 &Some(namespaced_directive_name.to_owned()),
-                            ) {
-                            Ok(definition) => definition,
-                            Err(e) => return Err(SubgraphError { msg: e.to_string() }),
-                        };
+                            )
+                            .map_err(|e| SubgraphError { msg: e.to_string() })?;
                         missing_definitions_document.directive(directive_definition);
                     }
                 }
@@ -184,7 +180,7 @@ impl Subgraph {
         let diagnostics = compiler.validate();
         let mut errors = diagnostics.iter().filter(|d| d.data.is_error()).peekable();
 
-        return if errors.peek().is_none() {
+        if errors.peek().is_none() {
             Ok(Subgraph::new(
                 name,
                 url,
@@ -196,7 +192,7 @@ impl Subgraph {
                 .collect::<Vec<String>>()
                 .join("");
             Err(SubgraphError { msg: errors })
-        };
+        }
     }
 }
 
