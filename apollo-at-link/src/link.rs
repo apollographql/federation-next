@@ -167,7 +167,7 @@ impl fmt::Display for Import {
         if self.alias.is_some() {
             write!(
                 f,
-                "{{ name: \"{}\", as: \"{}\" }}",
+               r#"{{ name: "{}", as: "{}" }}"#,
                 if self.is_directive {
                     format!("@{}", self.element)
                 } else {
@@ -176,7 +176,7 @@ impl fmt::Display for Import {
                 self.imported_display_name()
             )
         } else {
-            write!(f, "\"{}\"", self.imported_display_name())
+            write!(f, r#""{}""#, self.imported_display_name())
         }
     }
 }
@@ -266,7 +266,7 @@ impl fmt::Display for Link {
             .collect::<Vec<String>>()
             .join(",");
         // @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
-        write!(f, "@link(url: \"{}\", import: [{}])", self.url, imports)
+        write!(f, r#"@link(url: "{}", import: [{}])"#, self.url, imports)
     }
 }
 
