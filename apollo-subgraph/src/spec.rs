@@ -53,7 +53,7 @@ const MAX_FEDERATION_VERSION: Version = Version { major: 2, minor: 4 };
 
 #[derive(Debug)]
 pub struct FederationSpecDefinitions {
-    pub link: Link,
+    link: Link,
 }
 
 impl FederationSpecDefinitions {

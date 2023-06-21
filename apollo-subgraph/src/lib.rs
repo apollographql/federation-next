@@ -73,110 +73,109 @@ impl Subgraph {
 
         let mut missing_definitions_document = Document::new();
 
-        let mut link_directive_applied_on_schema: bool = false;
         let mut imports_link_spec: bool = false;
         let mut imports_federation_spec: bool = false;
 
         let type_system = compiler.db.type_system();
         let mut link_spec_definitions = LinkSpecDefinitions::default();
-        let link_directives = type_system
+        let mut link_directives = type_system
             .definitions
             .schema
-            .directives_by_name(DEFAULT_LINK_NAME);
-        for directive in link_directives {
-            link_directive_applied_on_schema = true;
+            .directives_by_name(DEFAULT_LINK_NAME)
+            .peekable();
 
-            let link_directive = match link::Link::from_directive_application(directive) {
-                Ok(link) => link,
-                Err(e) => return Err(SubgraphError { msg: e.to_string() }),
-            };
-            if link_directive
-                .url
-                .identity
-                .eq(&Identity::federation_identity())
-            {
-                if imports_federation_spec {
-                    return Err(SubgraphError { msg: "invalid graphql schema - multiple @link imports for the federation specification are not supported".to_owned() });
-                } else {
-                    imports_federation_spec = true;
-                }
-
-                let federation_definitions = FederationSpecDefinitions::new(link_directive)
+        if link_directives.peek().is_some() {
+            for directive in link_directives {
+                let link_directive = link::Link::from_directive_application(directive)
                     .map_err(|e| SubgraphError { msg: e.to_string() })?;
-                if !type_system
-                    .type_definitions_by_name
-                    .contains_key(&federation_definitions.fieldset_scalar_name())
+                if link_directive
+                    .url
+                    .identity
+                    .eq(&Identity::federation_identity())
                 {
-                    missing_definitions_document
-                        .scalar(federation_definitions.fieldset_scalar_definition());
-                }
+                    if imports_federation_spec {
+                        return Err(SubgraphError { msg: "invalid graphql schema - multiple @link imports for the federation specification are not supported".to_owned() });
+                    } else {
+                        imports_federation_spec = true;
+                    }
 
-                for directive_name in FEDERATED_DIRECTIVE_NAMES {
-                    let namespaced_directive_name =
-                        federation_definitions.federated_directive_name(directive_name);
+                    let federation_definitions = FederationSpecDefinitions::new(link_directive)
+                        .map_err(|e| SubgraphError { msg: e.to_string() })?;
                     if !type_system
                         .type_definitions_by_name
-                        .contains_key(&namespaced_directive_name)
+                        .contains_key(&federation_definitions.fieldset_scalar_name())
                     {
-                        let directive_definition = federation_definitions
-                            .federated_directive_definition(
-                                directive_name.to_owned(),
-                                &Some(namespaced_directive_name.to_owned()),
-                            )
-                            .map_err(|e| SubgraphError { msg: e.to_string() })?;
-                        missing_definitions_document.directive(directive_definition);
+                        missing_definitions_document
+                            .scalar(federation_definitions.fieldset_scalar_definition());
                     }
+
+                    for directive_name in FEDERATED_DIRECTIVE_NAMES {
+                        let namespaced_directive_name =
+                            federation_definitions.federated_directive_name(directive_name);
+                        if !type_system
+                            .type_definitions_by_name
+                            .contains_key(&namespaced_directive_name)
+                        {
+                            let directive_definition = federation_definitions
+                                .federated_directive_definition(
+                                    directive_name.to_owned(),
+                                    &Some(namespaced_directive_name.to_owned()),
+                                )
+                                .map_err(|e| SubgraphError { msg: e.to_string() })?;
+                            missing_definitions_document.directive(directive_definition);
+                        }
+                    }
+                } else if link_directive.url.identity.eq(&Identity::link_identity()) {
+                    // user manually imported @link specification
+                    if imports_link_spec {
+                        return Err(SubgraphError { msg: "invalid graphql schema - multiple @link imports for the link specification are not supported".to_owned() });
+                    } else {
+                        imports_link_spec = true;
+                    }
+
+                    link_spec_definitions = LinkSpecDefinitions {
+                        link: link_directive,
+                    };
                 }
-            } else if link_directive.url.identity.eq(&Identity::link_identity()) {
-                if imports_link_spec {
-                    return Err(SubgraphError { msg: "invalid graphql schema - multiple @link imports for the link specification are not supported".to_owned() });
-                } else {
-                    imports_link_spec = true;
+
+                // populate @link spec definitions
+                if !type_system
+                    .type_definitions_by_name
+                    .contains_key(&link_spec_definitions.link_purpose_enum_name())
+                {
+                    missing_definitions_document
+                        .enum_(link_spec_definitions.link_purpose_enum_definition());
+                }
+                if !type_system
+                    .type_definitions_by_name
+                    .contains_key(&link_spec_definitions.import_scalar_name())
+                {
+                    missing_definitions_document
+                        .scalar(link_spec_definitions.import_scalar_definition());
+                }
+                if !type_system
+                    .definitions
+                    .directives
+                    .contains_key(DEFAULT_LINK_NAME)
+                {
+                    missing_definitions_document
+                        .directive(link_spec_definitions.link_directive_definition());
                 }
 
-                link_spec_definitions = LinkSpecDefinitions {
-                    link: link_directive,
-                };
-            }
-        }
-
-        if link_directive_applied_on_schema {
-            if !type_system
-                .type_definitions_by_name
-                .contains_key(&link_spec_definitions.link_purpose_enum_name())
-            {
-                missing_definitions_document
-                    .enum_(link_spec_definitions.link_purpose_enum_definition());
-            }
-            if !type_system
-                .type_definitions_by_name
-                .contains_key(&link_spec_definitions.import_scalar_name())
-            {
-                missing_definitions_document
-                    .scalar(link_spec_definitions.import_scalar_definition());
-            }
-            if !type_system
-                .definitions
-                .directives
-                .contains_key(DEFAULT_LINK_NAME)
-            {
-                missing_definitions_document
-                    .directive(link_spec_definitions.link_directive_definition());
-            }
-
-            if !imports_link_spec {
-                // need to apply @link directive on schema extension
-                let mut schema_extension = SchemaDefinition::new();
-                schema_extension.directive(link_spec_definitions.applied_link_directive());
-                schema_extension.extend();
-                missing_definitions_document.schema(schema_extension);
+                if !imports_link_spec {
+                    // need to apply @link directive on schema extension
+                    let mut schema_extension = SchemaDefinition::new();
+                    schema_extension.directive(link_spec_definitions.applied_link_directive());
+                    schema_extension.extend();
+                    missing_definitions_document.schema(schema_extension);
+                }
             }
         }
 
         let missing_definitions = missing_definitions_document.to_string();
 
         // validate generated schema
-        compiler.add_type_system(&missing_definitions, "federation.graphql");
+        compiler.add_type_system(&missing_definitions, "federation.graphqls");
         let diagnostics = compiler.validate();
         let mut errors = diagnostics.iter().filter(|d| d.data.is_error()).peekable();
 
