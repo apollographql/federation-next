@@ -11,8 +11,8 @@ pub const APOLLO_SPEC_DOMAIN: &str = "https://specs.apollo.dev";
 pub enum SpecError {
     #[error("Parse error: {0}")]
     ParseError(String),
-    #[error("Specified specification version {0} is outside of supported range {1}-{2}")]
-    VersionError(String, String, String),
+    #[error("Specified specification version {specified} is outside of supported range {min}-{max}")]
+    VersionError { specified: String, min: String, max: String },
 }
 
 /// Represents the identity of a `@link` specification, which uniquely identify a specification.
