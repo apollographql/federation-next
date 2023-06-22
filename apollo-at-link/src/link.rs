@@ -271,7 +271,6 @@ impl fmt::Display for Link {
         } else {
             format!(r#", import: [{}]"#, imported_types.join(", "))
         };
-        // .join(",");
         let alias = self
             .spec_alias
             .as_ref()
