@@ -114,6 +114,12 @@ impl Version {
 
     /// Verifies whether this version satisfies the provided version range.
     ///
+    /// # Panics
+    /// The `min` and `max` must be the same major version, and `max` minor version must be higher than `min`'s.
+    /// Else, you get a panic.
+    ///
+    /// # Examples
+    ///
     ///     # use apollo_at_link::spec::Version;
     ///     assert!(&Version { major: 1, minor: 1 }.satisfies_range(&Version{ major: 1, minor: 0 }, &Version{ major: 1, minor: 10 }));
     ///
