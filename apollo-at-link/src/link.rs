@@ -14,6 +14,8 @@ use apollo_compiler::hir::{Directive, Value};
 use thiserror::Error;
 
 pub const DEFAULT_LINK_NAME: &str = "link";
+pub const DEFAULT_IMPORT_SCALAR_NAME: &str = "Import";
+pub const DEFAULT_PURPOSE_ENUM_NAME: &str = "Purpose";
 
 // TODO: we should provide proper "diagnostic" here, linking to ast, accumulating more than one
 // error and whatnot.

@@ -1,8 +1,10 @@
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 
+use apollo_compiler::hir::TypeSystem;
 use apollo_compiler::{ApolloCompiler, FileId, HirDatabase, InputDatabase, Source};
 use apollo_encoder::{Document, SchemaDefinition};
 
+use apollo_at_link::link::LinkError;
 use apollo_at_link::{
     link::{self, DEFAULT_LINK_NAME},
     spec::Identity,
@@ -10,7 +12,10 @@ use apollo_at_link::{
 #[allow(unused)]
 use database::{SubgraphDatabase, SubgraphRootDatabase};
 
-use crate::spec::{FederationSpecDefinitions, LinkSpecDefinitions, FEDERATED_DIRECTIVE_NAMES};
+use crate::spec::{
+    AppliedFederationLink, FederationSpecDefinitions, FederationSpecError, LinkSpecDefinitions,
+    FEDERATION_V2_DIRECTIVE_NAMES,
+};
 
 mod database;
 mod spec;
@@ -22,6 +27,22 @@ mod spec;
 #[derive(Debug)]
 pub struct SubgraphError {
     pub msg: String,
+}
+
+impl From<LinkError> for SubgraphError {
+    fn from(value: LinkError) -> Self {
+        SubgraphError {
+            msg: value.to_string(),
+        }
+    }
+}
+
+impl From<FederationSpecError> for SubgraphError {
+    fn from(value: FederationSpecError) -> Self {
+        SubgraphError {
+            msg: value.to_string(),
+        }
+    }
 }
 
 pub struct Subgraph {
@@ -71,107 +92,43 @@ impl Subgraph {
         let mut compiler = ApolloCompiler::new();
         compiler.add_type_system(schema_str, "schema.graphqls");
 
-        let mut missing_definitions_document = Document::new();
-
-        let mut imports_link_spec: bool = false;
-        let mut imports_federation_spec: bool = false;
-
         let type_system = compiler.db.type_system();
-        let mut link_spec_definitions = LinkSpecDefinitions::default();
-        let mut link_directives = type_system
+        let mut imported_federation_definitions: Option<FederationSpecDefinitions> = None;
+        let mut imported_link_definitions: Option<LinkSpecDefinitions> = None;
+        let link_directives = type_system
             .definitions
             .schema
-            .directives_by_name(DEFAULT_LINK_NAME)
-            .peekable();
+            .directives_by_name(DEFAULT_LINK_NAME);
 
-        if link_directives.peek().is_some() {
-            for directive in link_directives {
-                let link_directive = link::Link::from_directive_application(directive)
-                    .map_err(|e| SubgraphError { msg: e.to_string() })?;
-                if link_directive
-                    .url
-                    .identity
-                    .eq(&Identity::federation_identity())
-                {
-                    if imports_federation_spec {
-                        return Err(SubgraphError { msg: "invalid graphql schema - multiple @link imports for the federation specification are not supported".to_owned() });
-                    } else {
-                        imports_federation_spec = true;
-                    }
-
-                    let federation_definitions = FederationSpecDefinitions::new(link_directive)
-                        .map_err(|e| SubgraphError { msg: e.to_string() })?;
-                    if !type_system
-                        .type_definitions_by_name
-                        .contains_key(&federation_definitions.fieldset_scalar_name())
-                    {
-                        missing_definitions_document
-                            .scalar(federation_definitions.fieldset_scalar_definition());
-                    }
-
-                    for directive_name in FEDERATED_DIRECTIVE_NAMES {
-                        let namespaced_directive_name =
-                            federation_definitions.federated_directive_name(directive_name);
-                        if !type_system
-                            .type_definitions_by_name
-                            .contains_key(&namespaced_directive_name)
-                        {
-                            let directive_definition = federation_definitions
-                                .federated_directive_definition(
-                                    directive_name.to_owned(),
-                                    &Some(namespaced_directive_name.to_owned()),
-                                )
-                                .map_err(|e| SubgraphError { msg: e.to_string() })?;
-                            missing_definitions_document.directive(directive_definition);
-                        }
-                    }
-                } else if link_directive.url.identity.eq(&Identity::link_identity()) {
-                    // user manually imported @link specification
-                    if imports_link_spec {
-                        return Err(SubgraphError { msg: "invalid graphql schema - multiple @link imports for the link specification are not supported".to_owned() });
-                    } else {
-                        imports_link_spec = true;
-                    }
-
-                    link_spec_definitions = LinkSpecDefinitions {
-                        link: link_directive,
-                    };
+        for directive in link_directives {
+            let link_directive = link::Link::from_directive_application(directive)?;
+            if link_directive
+                .url
+                .identity
+                .eq(&Identity::federation_identity())
+            {
+                if imported_federation_definitions.is_some() {
+                    return Err(SubgraphError { msg: "invalid graphql schema - multiple @link imports for the federation specification are not supported".to_owned() });
                 }
 
-                // populate @link spec definitions
-                if !type_system
-                    .type_definitions_by_name
-                    .contains_key(&link_spec_definitions.link_purpose_enum_name())
-                {
-                    missing_definitions_document
-                        .enum_(link_spec_definitions.link_purpose_enum_definition());
-                }
-                if !type_system
-                    .type_definitions_by_name
-                    .contains_key(&link_spec_definitions.import_scalar_name())
-                {
-                    missing_definitions_document
-                        .scalar(link_spec_definitions.import_scalar_definition());
-                }
-                if !type_system
-                    .definitions
-                    .directives
-                    .contains_key(DEFAULT_LINK_NAME)
-                {
-                    missing_definitions_document
-                        .directive(link_spec_definitions.link_directive_definition());
+                imported_federation_definitions =
+                    Some(FederationSpecDefinitions::from_link(link_directive)?);
+            } else if link_directive.url.identity.eq(&Identity::link_identity()) {
+                // user manually imported @link specification
+                if imported_link_definitions.is_some() {
+                    return Err(SubgraphError { msg: "invalid graphql schema - multiple @link imports for the link specification are not supported".to_owned() });
                 }
 
-                if !imports_link_spec {
-                    // need to apply @link directive on schema extension
-                    let mut schema_extension = SchemaDefinition::new();
-                    schema_extension.directive(link_spec_definitions.applied_link_directive());
-                    schema_extension.extend();
-                    missing_definitions_document.schema(schema_extension);
-                }
+                imported_link_definitions = Some(LinkSpecDefinitions::new(link_directive));
             }
         }
 
+        // generate additional schema definitions
+        let missing_definitions_document = Self::populate_missing_type_definitions(
+            &type_system,
+            imported_federation_definitions,
+            imported_link_definitions,
+        )?;
         let missing_definitions = missing_definitions_document.to_string();
 
         // validate generated schema
@@ -192,6 +149,120 @@ impl Subgraph {
                 .join("");
             Err(SubgraphError { msg: errors })
         }
+    }
+
+    fn populate_missing_type_definitions(
+        type_system: &Arc<TypeSystem>,
+        imported_federation_definitions: Option<FederationSpecDefinitions>,
+        imported_link_definitions: Option<LinkSpecDefinitions>,
+    ) -> Result<Document, SubgraphError> {
+        let mut missing_definitions_document = Document::new();
+        let mut schema_extension: Option<SchemaDefinition> = None;
+        // populate @link spec definitions
+        let link_spec_definitions = match imported_link_definitions {
+            Some(definitions) => definitions,
+            None => {
+                // need to apply default @link directive for link spec on schema
+                let defaults = LinkSpecDefinitions::default();
+                let mut extension = SchemaDefinition::new();
+                extension.directive(defaults.applied_link_directive());
+                extension.extend();
+                schema_extension = Some(extension);
+                defaults
+            }
+        };
+        Self::populate_missing_link_definitions(
+            &mut missing_definitions_document,
+            type_system,
+            link_spec_definitions,
+        )?;
+
+        // populate @link federation spec definitions
+        let fed_definitions = match imported_federation_definitions {
+            Some(definitions) => definitions,
+            None => {
+                // federation v1 schema or user does not import federation spec
+                // need to apply default @link directive for federation spec on schema
+                let defaults = FederationSpecDefinitions::default()?;
+                let mut extension = match schema_extension {
+                    Some(ext) => ext,
+                    None => SchemaDefinition::new(),
+                };
+                extension.directive(defaults.applied_link_directive());
+                extension.extend();
+                schema_extension = Some(extension);
+                defaults
+            }
+        };
+        Self::populate_missing_federation_definitions(
+            &mut missing_definitions_document,
+            type_system,
+            fed_definitions,
+        )?;
+
+        // add schema extension if needed
+        if let Some(extension) = schema_extension {
+            missing_definitions_document.schema(extension);
+        }
+        Ok(missing_definitions_document)
+    }
+
+    fn populate_missing_link_definitions(
+        missing_definitions_document: &mut Document,
+        type_system: &Arc<TypeSystem>,
+        link_spec_definitions: LinkSpecDefinitions,
+    ) -> Result<(), SubgraphError> {
+        if !type_system
+            .type_definitions_by_name
+            .contains_key(&link_spec_definitions.purpose_enum_name)
+        {
+            missing_definitions_document
+                .enum_(link_spec_definitions.link_purpose_enum_definition());
+        }
+        if !type_system
+            .type_definitions_by_name
+            .contains_key(&link_spec_definitions.import_scalar_name)
+        {
+            missing_definitions_document.scalar(link_spec_definitions.import_scalar_definition());
+        }
+        if !type_system
+            .definitions
+            .directives
+            .contains_key(DEFAULT_LINK_NAME)
+        {
+            missing_definitions_document
+                .directive(link_spec_definitions.link_directive_definition());
+        }
+        Ok(())
+    }
+
+    fn populate_missing_federation_definitions(
+        missing_definitions_document: &mut Document,
+        type_system: &Arc<TypeSystem>,
+        fed_definitions: FederationSpecDefinitions,
+    ) -> Result<(), SubgraphError> {
+        if !type_system
+            .type_definitions_by_name
+            .contains_key(&fed_definitions.fieldset_scalar_name)
+        {
+            missing_definitions_document.scalar(fed_definitions.fieldset_scalar_definition());
+        }
+
+        for directive_name in FEDERATION_V2_DIRECTIVE_NAMES {
+            let namespaced_directive_name =
+                fed_definitions.namespaced_type_name(directive_name, true);
+            if !type_system
+                .type_definitions_by_name
+                .contains_key(&namespaced_directive_name)
+            {
+                let directive_definition = fed_definitions.directive_definition(
+                    directive_name,
+                    &Some(namespaced_directive_name.to_owned()),
+                )?;
+                missing_definitions_document.directive(directive_definition);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -412,6 +483,37 @@ mod tests {
             .type_system()
             .type_definitions_by_name
             .contains_key("Purpose"));
+        Ok(())
+    }
+
+    #[test]
+    fn can_parse_and_expand_works_with_fed_v1() -> Result<(), String> {
+        let schema = r#"
+        type Query {
+            t: T
+        }
+
+        type T @key(fields: "id") {
+            id: ID!
+            x: Int
+        }
+        "#;
+
+        let subgraph = Subgraph::parse_and_expand("S1", "http://s1", schema).map_err(|e| {
+            println!("{}", e.msg);
+            String::from("failed to parse and expand the subgraph, see errors above for details")
+        })?;
+        assert!(subgraph
+            .db
+            .type_system()
+            .type_definitions_by_name
+            .contains_key("T"));
+        assert!(subgraph
+            .db
+            .type_system()
+            .definitions
+            .directives
+            .contains_key("key"));
         Ok(())
     }
 }

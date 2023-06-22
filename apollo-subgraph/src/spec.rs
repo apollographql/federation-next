@@ -1,8 +1,10 @@
 use crate::spec::FederationSpecError::{
     DirectiveCannotBeRenamed, UnsupportedFederationDirective, UnsupportedVersionError,
 };
-use apollo_at_link::link::{Import, Link, DEFAULT_LINK_NAME};
-use apollo_at_link::spec::{Identity, Url, Version, APOLLO_SPEC_DOMAIN};
+use apollo_at_link::link::{
+    Import, Link, DEFAULT_IMPORT_SCALAR_NAME, DEFAULT_LINK_NAME, DEFAULT_PURPOSE_ENUM_NAME,
+};
+use apollo_at_link::spec::{Identity, Url, Version};
 use apollo_compiler::hir::DirectiveLocation;
 use apollo_encoder::{
     Argument, Directive, DirectiveDefinition, EnumDefinition, EnumValue, InputValueDefinition,
@@ -23,8 +25,17 @@ pub const PROVIDES_DIRECTIVE_NAME: &str = "provides";
 pub const REQUIRES_DIRECTIVE_NAME: &str = "requires";
 pub const SHAREABLE_DIRECTIVE_NAME: &str = "shareable";
 pub const TAG_DIRECTIVE_NAME: &str = "tag";
+pub const FIELDSET_SCALAR_NAME: &str = "FieldSet";
 
-pub const FEDERATED_DIRECTIVE_NAMES: [&str; 11] = [
+pub const FEDERATION_V1_DIRECTIVE_NAMES: [&str; 5] = [
+    KEY_DIRECTIVE_NAME,
+    EXTENDS_DIRECTIVE_NAME,
+    EXTERNAL_DIRECTIVE_NAME,
+    PROVIDES_DIRECTIVE_NAME,
+    REQUIRES_DIRECTIVE_NAME,
+];
+
+pub const FEDERATION_V2_DIRECTIVE_NAMES: [&str; 11] = [
     COMPOSE_DIRECTIVE_NAME,
     KEY_DIRECTIVE_NAME,
     EXTENDS_DIRECTIVE_NAME,
@@ -38,47 +49,144 @@ pub const FEDERATED_DIRECTIVE_NAMES: [&str; 11] = [
     TAG_DIRECTIVE_NAME,
 ];
 
+const MIN_FEDERATION_VERSION: Version = Version { major: 2, minor: 0 };
+const MAX_FEDERATION_VERSION: Version = Version { major: 2, minor: 4 };
+
 #[derive(Error, Debug, PartialEq)]
 pub enum FederationSpecError {
-    #[error("Specified specification version {0} is outside of the supported range {1}-{2}")]
-    UnsupportedVersionError(String, String, String),
+    #[error(
+        "Specified specification version {specified} is outside of supported range {min}-{max}"
+    )]
+    UnsupportedVersionError {
+        specified: String,
+        min: String,
+        max: String,
+    },
     #[error("Unsupported federation directive import {0}")]
     UnsupportedFederationDirective(String),
     #[error("{0} directive cannot be renamed")]
     DirectiveCannotBeRenamed(String),
 }
 
-const MIN_FEDERATION_VERSION: Version = Version { major: 2, minor: 0 };
-const MAX_FEDERATION_VERSION: Version = Version { major: 2, minor: 4 };
-
 #[derive(Debug)]
 pub struct FederationSpecDefinitions {
     link: Link,
+    pub fieldset_scalar_name: String,
 }
 
+#[derive(Debug)]
+pub struct LinkSpecDefinitions {
+    link: Link,
+    pub import_scalar_name: String,
+    pub purpose_enum_name: String,
+}
+
+pub trait AppliedFederationLink {
+    fn applied_link_directive(&self) -> Directive;
+}
+
+macro_rules! applied_specification {
+    ($($t:ty),+) => {
+        $(impl AppliedFederationLink for $t {
+            /// @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
+            fn applied_link_directive(&self) -> Directive {
+                let mut applied_link_directive = Directive::new(DEFAULT_LINK_NAME.to_owned());
+                applied_link_directive.arg(Argument::new(
+                    "url".to_owned(),
+                    Value::String(self.link.url.to_string()),
+                ));
+                let imports = self
+                    .link
+                    .imports
+                    .iter()
+                    .map(|i| {
+                        if i.alias.is_some() {
+                            Value::Object(vec![
+                                ("name".to_string(), Value::String(i.element.to_owned())),
+                                ("as".to_string(), Value::String(i.imported_display_name())),
+                            ])
+                        } else {
+                            Value::String(i.imported_display_name())
+                        }
+                    })
+                    .collect::<Vec<Value>>();
+                applied_link_directive.arg(Argument::new("import".to_owned(), Value::List(imports)));
+                if let Some(spec_alias) = &self.link.spec_alias {
+                    applied_link_directive.arg(Argument::new(
+                        "as".to_owned(),
+                        Value::String(spec_alias.to_owned()),
+                    ))
+                }
+                if let Some(purpose) = &self.link.purpose {
+                    applied_link_directive.arg(Argument::new(
+                        "for".to_owned(),
+                        Value::Enum(purpose.to_string()),
+                    ))
+                }
+                applied_link_directive
+            }
+        })+
+    }
+}
+
+applied_specification!(FederationSpecDefinitions, LinkSpecDefinitions);
+
 impl FederationSpecDefinitions {
-    pub fn new(link: Link) -> Result<Self, FederationSpecError> {
+    pub fn from_link(link: Link) -> Result<Self, FederationSpecError> {
         if !link
             .url
             .version
             .satisfies_range(&MIN_FEDERATION_VERSION, &MAX_FEDERATION_VERSION)
         {
-            Err(UnsupportedVersionError(
-                link.url.version.to_string(),
-                MIN_FEDERATION_VERSION.to_string(),
-                MAX_FEDERATION_VERSION.to_string(),
-            ))
+            Err(UnsupportedVersionError {
+                specified: link.url.version.to_string(),
+                min: MIN_FEDERATION_VERSION.to_string(),
+                max: MAX_FEDERATION_VERSION.to_string(),
+            })
         } else {
-            Ok(Self { link })
+            let fieldset_scalar_name = link.type_name_in_schema(FIELDSET_SCALAR_NAME);
+            Ok(Self {
+                link,
+                fieldset_scalar_name,
+            })
         }
     }
 
-    pub fn federated_directive_definition(
+    pub fn default() -> Result<Self, FederationSpecError> {
+        Self::from_link(Link {
+            url: Url {
+                identity: Identity::federation_identity(),
+                version: MAX_FEDERATION_VERSION,
+            },
+            imports: FEDERATION_V1_DIRECTIVE_NAMES
+                .iter()
+                .map(|i| {
+                    Arc::new(Import {
+                        element: i.to_string(),
+                        alias: None,
+                        is_directive: true,
+                    })
+                })
+                .collect::<Vec<Arc<Import>>>(),
+            purpose: None,
+            spec_alias: None,
+        })
+    }
+
+    pub fn namespaced_type_name(&self, name: &str, is_directive: bool) -> String {
+        if is_directive {
+            self.link.directive_name_in_schema(name)
+        } else {
+            self.link.type_name_in_schema(name)
+        }
+    }
+
+    pub fn directive_definition(
         &self,
-        name: String,
+        name: &str,
         alias: &Option<String>,
     ) -> Result<DirectiveDefinition, FederationSpecError> {
-        match name.as_str() {
+        match name {
             COMPOSE_DIRECTIVE_NAME => Ok(self.compose_directive_definition(alias)),
             KEY_DIRECTIVE_NAME => Ok(self.key_directive_definition(alias)),
             EXTENDS_DIRECTIVE_NAME => Ok(self.extends_directive_definition(alias)),
@@ -90,21 +198,13 @@ impl FederationSpecDefinitions {
             REQUIRES_DIRECTIVE_NAME => Ok(self.requires_directive_definition(alias)),
             SHAREABLE_DIRECTIVE_NAME => Ok(self.shareable_directive_definition(alias)),
             TAG_DIRECTIVE_NAME => self.tag_directive_definition(alias),
-            _ => Err(UnsupportedFederationDirective(name)),
+            _ => Err(UnsupportedFederationDirective(name.to_string())),
         }
-    }
-
-    pub fn fieldset_scalar_name(&self) -> String {
-        self.link.type_name_in_schema("FieldSet")
     }
 
     /// scalar FieldSet
     pub fn fieldset_scalar_definition(&self) -> ScalarDefinition {
-        ScalarDefinition::new(self.fieldset_scalar_name())
-    }
-
-    pub fn federated_directive_name(&self, directive_name: &str) -> String {
-        self.link.directive_name_in_schema(directive_name)
+        ScalarDefinition::new(self.namespaced_type_name(FIELDSET_SCALAR_NAME, false))
     }
 
     fn fields_argument_definition(&self) -> InputValueDefinition {
@@ -112,7 +212,7 @@ impl FederationSpecDefinitions {
             "fields".to_owned(),
             Type_::NonNull {
                 ty: Box::new(Type_::NamedType {
-                    name: self.fieldset_scalar_name(),
+                    name: self.namespaced_type_name(FIELDSET_SCALAR_NAME, false),
                 }),
             },
         )
@@ -333,40 +433,37 @@ impl FederationSpecDefinitions {
     }
 }
 
-pub struct LinkSpecDefinitions {
-    pub link: Link,
-}
-
 impl LinkSpecDefinitions {
-    pub fn default() -> Self {
+    pub fn new(link: Link) -> Self {
+        let import_scalar_name = link.type_name_in_schema(DEFAULT_IMPORT_SCALAR_NAME);
+        let purpose_enum_name = link.type_name_in_schema(DEFAULT_PURPOSE_ENUM_NAME);
         Self {
-            link: Link {
-                url: Url {
-                    identity: Identity::link_identity(),
-                    version: Version { major: 1, minor: 0 },
-                },
-                imports: vec![Arc::new(Import {
-                    element: "Import".to_owned(),
-                    is_directive: false,
-                    alias: None,
-                })],
-                purpose: None,
-                spec_alias: None,
-            },
+            link,
+            import_scalar_name,
+            purpose_enum_name,
         }
     }
 
-    pub fn import_scalar_name(&self) -> String {
-        self.link.type_name_in_schema("Import")
-    }
-
-    pub fn link_purpose_enum_name(&self) -> String {
-        self.link.type_name_in_schema("Purpose")
+    pub fn default() -> Self {
+        let link = Link {
+            url: Url {
+                identity: Identity::link_identity(),
+                version: Version { major: 1, minor: 0 },
+            },
+            imports: vec![Arc::new(Import {
+                element: "Import".to_owned(),
+                is_directive: false,
+                alias: None,
+            })],
+            purpose: None,
+            spec_alias: None,
+        };
+        Self::new(link)
     }
 
     ///   scalar Import
     pub fn import_scalar_definition(&self) -> ScalarDefinition {
-        ScalarDefinition::new(self.import_scalar_name())
+        ScalarDefinition::new(self.import_scalar_name.to_owned())
     }
 
     ///   enum link__Purpose {
@@ -374,7 +471,8 @@ impl LinkSpecDefinitions {
     ///     EXECUTION
     ///   }
     pub fn link_purpose_enum_definition(&self) -> EnumDefinition {
-        let mut link_purpose_enum_definition = EnumDefinition::new(self.link_purpose_enum_name());
+        let mut link_purpose_enum_definition =
+            EnumDefinition::new(self.purpose_enum_name.to_owned());
         link_purpose_enum_definition.value(EnumValue::new("SECURITY".to_owned()));
         link_purpose_enum_definition.value(EnumValue::new("EXECUTION".to_owned()));
         link_purpose_enum_definition
@@ -383,7 +481,6 @@ impl LinkSpecDefinitions {
     ///   directive @link(url: String, as: String, import: [Import], for: link__Purpose) repeatable on SCHEMA
     pub fn link_directive_definition(&self) -> DirectiveDefinition {
         let mut link_directive_definition = DirectiveDefinition::new(DEFAULT_LINK_NAME.to_owned());
-
         link_directive_definition.arg(InputValueDefinition::new(
             "url".to_owned(),
             Type_::NonNull {
@@ -402,45 +499,19 @@ impl LinkSpecDefinitions {
             "import".to_owned(),
             Type_::List {
                 ty: Box::new(Type_::NamedType {
-                    name: self.import_scalar_name(),
+                    name: self.import_scalar_name.to_owned(),
                 }),
             },
         ));
         link_directive_definition.arg(InputValueDefinition::new(
             "for".to_owned(),
             Type_::NamedType {
-                name: self.link_purpose_enum_name(),
+                name: self.purpose_enum_name.to_owned(),
             },
         ));
         link_directive_definition.repeatable();
         link_directive_definition.location(DirectiveLocation::Schema.to_string());
         link_directive_definition
-    }
-
-    /// @link(url: "https://specs.apollo.dev/link/v1.0", import: ["Import"])
-    pub fn applied_link_directive(&self) -> Directive {
-        let mut applied_link_directive = Directive::new(DEFAULT_LINK_NAME.to_owned());
-        applied_link_directive.arg(Argument::new(
-            "url".to_owned(),
-            Value::String(format!("{}/{}/v1.0", APOLLO_SPEC_DOMAIN, DEFAULT_LINK_NAME)),
-        ));
-        let imports = self
-            .link
-            .imports
-            .iter()
-            .map(|i| {
-                if i.alias.is_some() {
-                    Value::Object(vec![
-                        ("name".to_string(), Value::String(i.element.to_owned())),
-                        ("as".to_string(), Value::String(i.imported_display_name())),
-                    ])
-                } else {
-                    Value::String(i.imported_display_name())
-                }
-            })
-            .collect::<Vec<Value>>();
-        applied_link_directive.arg(Argument::new("import".to_owned(), Value::List(imports)));
-        applied_link_directive
     }
 }
 
@@ -451,7 +522,7 @@ mod tests {
 
     #[test]
     fn handle_unsupported_federation_version() {
-        FederationSpecDefinitions::new(Link {
+        FederationSpecDefinitions::from_link(Link {
             url: Url {
                 identity: federation_link_identity(),
                 version: Version {
@@ -468,7 +539,7 @@ mod tests {
 
     #[test]
     fn tag_directive_cannot_be_renamed() {
-        let definitions = FederationSpecDefinitions::new(Link {
+        let definitions = FederationSpecDefinitions::from_link(Link {
             url: Url {
                 identity: federation_link_identity(),
                 version: Version { major: 2, minor: 3 },
@@ -489,7 +560,7 @@ mod tests {
 
     #[test]
     fn inaccessible_directive_cannot_be_renamed() {
-        let definitions = FederationSpecDefinitions::new(Link {
+        let definitions = FederationSpecDefinitions::from_link(Link {
             url: Url {
                 identity: federation_link_identity(),
                 version: Version { major: 2, minor: 3 },
