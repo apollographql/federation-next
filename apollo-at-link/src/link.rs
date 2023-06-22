@@ -261,14 +261,28 @@ impl Link {
 
 impl fmt::Display for Link {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let imports: String = self
+        let imported_types: Vec<String> = self
             .imports
             .iter()
             .map(|import| import.to_string())
-            .collect::<Vec<String>>()
-            .join(",");
-        // @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
-        write!(f, r#"@link(url: "{}", import: [{}])"#, self.url, imports)
+            .collect::<Vec<String>>();
+        let imports = if imported_types.is_empty() {
+            "".to_string()
+        } else {
+            format!(r#", import: [{}]"#, imported_types.join(", "))
+        };
+        // .join(",");
+        let alias = self
+            .spec_alias
+            .as_ref()
+            .map(|a| format!(r#", as: "{}""#, a))
+            .unwrap_or("".to_string());
+        let purpose = self
+            .purpose
+            .as_ref()
+            .map(|p| format!(r#", for: {}"#, p))
+            .unwrap_or("".to_string());
+        write!(f, r#"@link(url: "{}"{alias}{imports}{purpose})"#, self.url)
     }
 }
 
