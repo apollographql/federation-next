@@ -45,6 +45,13 @@ impl Identity {
             name: "link".to_string(),
         }
     }
+
+    pub fn federation_identity() -> Identity {
+        Identity {
+            domain: APOLLO_SPEC_DOMAIN.to_string(),
+            name: "federation".to_string(),
+        }
+    }
 }
 
 /// The version of a `@link` specification, in the form of a major and minor version numbers.
@@ -90,7 +97,8 @@ impl Version {
     /// Whether this version satisfies the provided `required` version.
     ///
     ///     # use apollo_at_link::spec::Version;
-    ///     assert!(&Version { major: 1, minor: 0 }.satisfies(&Version{ major: 1, minor: 0 })); assert!(&Version { major: 1, minor: 2 }.satisfies(&Version{ major: 1, minor: 0 }));
+    ///     assert!(&Version { major: 1, minor: 0 }.satisfies(&Version{ major: 1, minor: 0 }));
+    ///     assert!(&Version { major: 1, minor: 2 }.satisfies(&Version{ major: 1, minor: 0 }));
     ///
     ///     assert!(!(&Version { major: 2, minor: 0 }.satisfies(&Version{ major: 1, minor: 9 })));
     ///     assert!(!(&Version { major: 0, minor: 9 }.satisfies(&Version{ major: 0, minor: 8 })));
@@ -100,6 +108,25 @@ impl Version {
         } else {
             self.major == required.major && self.minor >= required.minor
         }
+    }
+
+    /// Verifies whether this version satisfies the provided version range.
+    ///
+    /// # Panics
+    /// The `min` and `max` must be the same major version, and `max` minor version must be higher than `min`'s.
+    /// Else, you get a panic.
+    ///
+    /// # Examples
+    ///
+    ///     # use apollo_at_link::spec::Version;
+    ///     assert!(&Version { major: 1, minor: 1 }.satisfies_range(&Version{ major: 1, minor: 0 }, &Version{ major: 1, minor: 10 }));
+    ///
+    ///     assert!(!&Version { major: 2, minor: 0 }.satisfies_range(&Version{ major: 1, minor: 0 }, &Version{ major: 1, minor: 10 }));
+    pub fn satisfies_range(&self, min: &Version, max: &Version) -> bool {
+        assert_eq!(min.major, max.major);
+        assert!(min.minor < max.minor);
+
+        self.major == min.major && self.minor >= min.minor && self.minor <= max.minor
     }
 }
 
