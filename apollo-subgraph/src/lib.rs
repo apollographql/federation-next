@@ -1,3 +1,4 @@
+use std::fmt::Formatter;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 use apollo_compiler::hir::TypeSystem;
@@ -266,6 +267,12 @@ impl Subgraph {
     }
 }
 
+impl std::fmt::Debug for Subgraph {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, r#"name: {}, urL: {}"#, self.name, self.url)
+    }
+}
+
 pub struct Subgraphs {
     subgraphs: BTreeMap<String, Arc<Subgraph>>,
 }
@@ -515,5 +522,27 @@ mod tests {
             .directives
             .contains_key("key"));
         Ok(())
+    }
+
+    #[test]
+    fn can_parse_and_expand_will_fail_when_importing_same_spec_twice() {
+        let schema = r#"
+        extend schema
+          @link(url: "https://specs.apollo.dev/federation/v2.3", import: [ "@key" ] )
+          @link(url: "https://specs.apollo.dev/federation/v2.3", import: [ "@provides" ] )
+
+        type Query {
+            t: T
+        }
+
+        type T @key(fields: "id") {
+            id: ID!
+            x: Int
+        }
+        "#;
+
+        let result = Subgraph::parse_and_expand("S1", "http://s1", schema)
+            .expect_err("importing same specification twice should fail");
+        assert_eq!("invalid graphql schema - multiple @link imports for the federation specification are not supported", result.msg);
     }
 }

@@ -1,6 +1,4 @@
-use crate::spec::FederationSpecError::{
-    DirectiveCannotBeRenamed, UnsupportedFederationDirective, UnsupportedVersionError,
-};
+use crate::spec::FederationSpecError::{UnsupportedFederationDirective, UnsupportedVersionError};
 use apollo_at_link::link::{
     Import, Link, DEFAULT_IMPORT_SCALAR_NAME, DEFAULT_LINK_NAME, DEFAULT_PURPOSE_ENUM_NAME,
 };
@@ -64,8 +62,6 @@ pub enum FederationSpecError {
     },
     #[error("Unsupported federation directive import {0}")]
     UnsupportedFederationDirective(String),
-    #[error("{0} directive cannot be renamed")]
-    DirectiveCannotBeRenamed(String),
 }
 
 #[derive(Debug)]
@@ -191,13 +187,13 @@ impl FederationSpecDefinitions {
             KEY_DIRECTIVE_NAME => Ok(self.key_directive_definition(alias)),
             EXTENDS_DIRECTIVE_NAME => Ok(self.extends_directive_definition(alias)),
             EXTERNAL_DIRECTIVE_NAME => Ok(self.external_directive_definition(alias)),
-            INACCESSIBLE_DIRECTIVE_NAME => self.inaccessible_directive_definition(alias),
+            INACCESSIBLE_DIRECTIVE_NAME => Ok(self.inaccessible_directive_definition(alias)),
             INTF_OBJECT_DIRECTIVE_NAME => Ok(self.interface_object_directive_definition(alias)),
             OVERRIDE_DIRECTIVE_NAME => Ok(self.override_directive_definition(alias)),
             PROVIDES_DIRECTIVE_NAME => Ok(self.provides_directive_definition(alias)),
             REQUIRES_DIRECTIVE_NAME => Ok(self.requires_directive_definition(alias)),
             SHAREABLE_DIRECTIVE_NAME => Ok(self.shareable_directive_definition(alias)),
-            TAG_DIRECTIVE_NAME => self.tag_directive_definition(alias),
+            TAG_DIRECTIVE_NAME => Ok(self.tag_directive_definition(alias)),
             _ => Err(UnsupportedFederationDirective(name.to_string())),
         }
     }
@@ -294,22 +290,11 @@ impl FederationSpecDefinitions {
     ///   | OBJECT
     ///   | SCALAR
     ///   | UNION
-    fn inaccessible_directive_definition(
-        &self,
-        alias: &Option<String>,
-    ) -> Result<DirectiveDefinition, FederationSpecError> {
-        if alias.is_some()
-            && !alias.as_ref().unwrap().eq(&format!(
-                "{}__inaccessible",
-                self.link.spec_name_in_schema()
-            ))
-        {
-            return Err(DirectiveCannotBeRenamed(
-                INACCESSIBLE_DIRECTIVE_NAME.to_owned(),
-            ));
-        }
-
-        let inaccessible_directive_name = INACCESSIBLE_DIRECTIVE_NAME.to_owned();
+    fn inaccessible_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
+        let inaccessible_directive_name = alias
+            .as_deref()
+            .unwrap_or(INACCESSIBLE_DIRECTIVE_NAME)
+            .to_owned();
         let mut inaccessible_directive = DirectiveDefinition::new(inaccessible_directive_name);
         inaccessible_directive.location(DirectiveLocation::ArgumentDefinition.to_string());
         inaccessible_directive.location(DirectiveLocation::Enum.to_string());
@@ -321,7 +306,7 @@ impl FederationSpecDefinitions {
         inaccessible_directive.location(DirectiveLocation::Object.to_string());
         inaccessible_directive.location(DirectiveLocation::Scalar.to_string());
         inaccessible_directive.location(DirectiveLocation::Union.to_string());
-        Ok(inaccessible_directive)
+        inaccessible_directive
     }
 
     /// directive @interfaceObject on OBJECT
@@ -403,20 +388,8 @@ impl FederationSpecDefinitions {
     ///   | OBJECT
     ///   | SCALAR
     ///   | UNION
-    fn tag_directive_definition(
-        &self,
-        alias: &Option<String>,
-    ) -> Result<DirectiveDefinition, FederationSpecError> {
-        if alias.is_some()
-            && !alias
-                .as_ref()
-                .unwrap()
-                .eq(&format!("{}__tag", self.link.spec_name_in_schema()))
-        {
-            return Err(DirectiveCannotBeRenamed(TAG_DIRECTIVE_NAME.to_owned()));
-        }
-
-        let tag_directive_name = TAG_DIRECTIVE_NAME.to_owned();
+    fn tag_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
+        let tag_directive_name = alias.as_deref().unwrap_or(TAG_DIRECTIVE_NAME).to_owned();
         let mut tag_directive = DirectiveDefinition::new(tag_directive_name);
         tag_directive.repeatable();
         tag_directive.location(DirectiveLocation::ArgumentDefinition.to_string());
@@ -429,7 +402,7 @@ impl FederationSpecDefinitions {
         tag_directive.location(DirectiveLocation::Object.to_string());
         tag_directive.location(DirectiveLocation::Scalar.to_string());
         tag_directive.location(DirectiveLocation::Union.to_string());
-        Ok(tag_directive)
+        tag_directive
     }
 }
 
@@ -535,47 +508,5 @@ mod tests {
             purpose: None,
         })
         .expect_err("federation version 99 is not yet supported");
-    }
-
-    #[test]
-    fn tag_directive_cannot_be_renamed() {
-        let definitions = FederationSpecDefinitions::from_link(Link {
-            url: Url {
-                identity: federation_link_identity(),
-                version: Version { major: 2, minor: 3 },
-            },
-            spec_alias: None,
-            imports: vec![Arc::new(Import {
-                element: "tag".to_string(),
-                is_directive: false,
-                alias: Some("myTag".to_string()),
-            })],
-            purpose: None,
-        })
-        .unwrap();
-        definitions
-            .tag_directive_definition(&Some("myTag".to_owned()))
-            .expect_err("we shouldn't be able to rename @tag directive");
-    }
-
-    #[test]
-    fn inaccessible_directive_cannot_be_renamed() {
-        let definitions = FederationSpecDefinitions::from_link(Link {
-            url: Url {
-                identity: federation_link_identity(),
-                version: Version { major: 2, minor: 3 },
-            },
-            spec_alias: None,
-            imports: vec![Arc::new(Import {
-                element: "inaccessible".to_string(),
-                is_directive: false,
-                alias: Some("hidden".to_string()),
-            })],
-            purpose: None,
-        })
-        .unwrap();
-        definitions
-            .inaccessible_directive_definition(&Some("hidden".to_owned()))
-            .expect_err("we shouldn't be able to rename @inaccessible directive");
     }
 }
