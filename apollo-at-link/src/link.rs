@@ -221,13 +221,6 @@ impl Link {
     }
 
     pub fn from_directive_application(directive: &Directive) -> Result<Link, LinkError> {
-        if !directive.name().eq("link") {
-            return Err(LinkError::BootstrapError(format!(
-                "invalid directive specified (expected: link actual: {})",
-                directive.name(),
-            )));
-        }
-
         let url = directive_string_arg_value(directive, "url").ok_or(LinkError::BootstrapError(
             "the `url` argument for @link is mandatory".to_string(),
         ))?;
