@@ -5,8 +5,9 @@ use apollo_at_link::{
     link::Link,
     spec::{Identity, APOLLO_SPEC_DOMAIN},
 };
+use apollo_compiler::database::ReprStorage;
 use apollo_compiler::{
-    database::{db::Upcast, AstStorage, HirStorage, InputStorage},
+    database::{db::Upcast, CstStorage, HirStorage, InputStorage},
     HirDatabase,
 };
 use apollo_subgraph::Subgraphs;
@@ -47,7 +48,14 @@ fn extract_subgraphs(_db: &dyn SupergraphDatabase) -> Result<Subgraphs, Supergra
     Ok(Subgraphs::new())
 }
 
-#[salsa::database(InputStorage, AstStorage, HirStorage, AtLinkStorage, SupergraphStorage)]
+#[salsa::database(
+    InputStorage,
+    CstStorage,
+    HirStorage,
+    AtLinkStorage,
+    SupergraphStorage,
+    ReprStorage
+)]
 #[derive(Default)]
 pub struct SupergraphRootDatabase {
     pub storage: salsa::Storage<SupergraphRootDatabase>,

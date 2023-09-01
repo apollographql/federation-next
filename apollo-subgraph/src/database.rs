@@ -5,8 +5,9 @@ use apollo_at_link::{
     link::Link,
     spec::{Identity, APOLLO_SPEC_DOMAIN},
 };
+use apollo_compiler::database::ReprStorage;
 use apollo_compiler::{
-    database::{db::Upcast, AstStorage, HirStorage, InputStorage},
+    database::{db::Upcast, CstStorage, HirStorage, InputStorage},
     hir::{Directive, SelectionSet, Value},
     HirDatabase,
 };
@@ -101,7 +102,14 @@ fn keys(db: &dyn SubgraphDatabase, type_name: String) -> Vec<Key> {
     }
 }
 
-#[salsa::database(InputStorage, AstStorage, HirStorage, AtLinkStorage, SubgraphStorage)]
+#[salsa::database(
+    InputStorage,
+    CstStorage,
+    HirStorage,
+    AtLinkStorage,
+    ReprStorage,
+    SubgraphStorage
+)]
 #[derive(Default)]
 pub struct SubgraphRootDatabase {
     pub storage: salsa::Storage<SubgraphRootDatabase>,

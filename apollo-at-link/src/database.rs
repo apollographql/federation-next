@@ -1,7 +1,8 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
+use apollo_compiler::database::ReprStorage;
 use apollo_compiler::{
-    database::{db::Upcast, AstStorage, HirStorage, InputStorage},
+    database::{db::Upcast, CstStorage, HirStorage, InputStorage},
     hir::{Directive, DirectiveLocation, Type, Value},
     FileId, HirDatabase, InputDatabase, Source,
 };
@@ -21,7 +22,7 @@ pub fn links_metadata(db: &dyn AtLinkDatabase) -> Arc<LinksMetadata> {
 }
 
 fn bootstrap(db: &dyn AtLinkDatabase) -> Result<Option<LinksMetadata>, LinkError> {
-    let schema_def = db.schema();
+    let schema_def = db.hir_schema();
     let mut bootstrap_directives = schema_def
         .directives()
         .filter(|d| parse_link_if_bootstrap_directive(db, d));
@@ -189,7 +190,7 @@ fn parse_link_if_bootstrap_directive(db: &dyn AtLinkDatabase, directive: &Direct
     false
 }
 
-#[salsa::database(InputStorage, AstStorage, HirStorage, AtLinkStorage)]
+#[salsa::database(InputStorage, CstStorage, HirStorage, AtLinkStorage, ReprStorage)]
 #[derive(Default)]
 pub struct AtLinkedRootDatabase {
     pub storage: salsa::Storage<AtLinkedRootDatabase>,

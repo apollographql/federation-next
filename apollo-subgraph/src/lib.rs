@@ -1,8 +1,8 @@
 use std::fmt::Formatter;
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{collections::BTreeMap, path::Path};
 
 use apollo_compiler::hir::TypeSystem;
-use apollo_compiler::{ApolloCompiler, FileId, HirDatabase, InputDatabase, Source};
+use apollo_compiler::{ApolloCompiler, Arc, FileId, HirDatabase, InputDatabase, Source};
 use apollo_encoder::{Document, SchemaDefinition};
 
 use apollo_at_link::link::LinkError;
