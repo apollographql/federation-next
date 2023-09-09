@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "apollo-at-link",
+  "apollo-introspection",
   "apollo-subgraph",
   "apollo-supergraph",
 ]
