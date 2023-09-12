@@ -8,7 +8,7 @@ apollo-compiler = { path = "../../apollo-rs/crates/apollo-compiler" }
 async-recursion = "1.0.5"
 futures = "0.3.28"
 indexmap = "2.0.0"
-serde_json_bytes = { version = "0.2.1", features = ["preserve_order"] }
+serde_json_bytes = { version = "0.2.2", features = ["preserve_order"] }
 serde = { version = "1.0.188", features = ["derive"] }
 
 [dev-dependencies]

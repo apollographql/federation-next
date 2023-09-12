@@ -6,7 +6,6 @@ use crate::response::request_error;
 use crate::response::RequestErrorResponse;
 use crate::response::Response;
 use crate::JsonMap;
-use crate::JsonValue;
 use apollo_compiler::executable::Fragment;
 use apollo_compiler::executable::InlineFragment;
 use apollo_compiler::executable::Operation;
@@ -359,19 +358,12 @@ fn ty<'a>(schema: SchemaWithCache<'a>, ty: &'a schema::Type) -> ResolvedValue<'a
 }
 
 fn deprecation_reason(opt_directive: Option<&Node<schema::Directive>>) -> ResolvedValue<'_> {
-    ResolvedValue::leaf(opt(opt_directive
-        .and_then(|directive| directive.argument_by_name("reason"))
-        .and_then(|arg| arg.as_str())
-        .map(|s| s.as_str())))
-}
-
-/// TODO: remove when https://github.com/apollographql/serde_json_bytes/pull/8 is on crates.io
-fn opt(opt_value: Option<impl Into<JsonValue>>) -> JsonValue {
-    if let Some(value) = opt_value {
-        value.into()
-    } else {
-        JsonValue::Null
-    }
+    ResolvedValue::leaf(
+        opt_directive
+            .and_then(|directive| directive.argument_by_name("reason"))
+            .and_then(|arg| arg.as_str())
+            .map(|s| s.as_str()),
+    )
 }
 
 impl_resolver! {
@@ -395,7 +387,7 @@ impl_resolver! {
     __typename = "__Schema";
 
     async fn description(&self_) {
-        Ok(ResolvedValue::leaf(opt(self_.description.as_deref())))
+        Ok(ResolvedValue::leaf(self_.description.as_deref()))
     }
 
     async fn types(&self_) {
@@ -444,7 +436,7 @@ impl_resolver! {
     }
 
     async fn description(&self_) {
-        Ok(ResolvedValue::leaf(opt(self_.def.description().map(|desc| desc.as_str()))))
+        Ok(ResolvedValue::leaf(self_.def.description().map(|desc| desc.as_str())))
     }
 
     async fn fields(&self_, args) {
@@ -546,12 +538,12 @@ impl_resolver! {
         let schema::ExtendedType::Scalar(def) = self_.def else {
             return Ok(ResolvedValue::null())
         };
-        Ok(ResolvedValue::leaf(opt(def
+        Ok(ResolvedValue::leaf(def
             .directive_by_name("specifiedBy")
             .and_then(|dir| dir.argument_by_name("url"))
             .and_then(|arg| arg.as_str())
             .map(|s| s.as_str())
-        )))
+        ))
     }
 }
 
@@ -602,7 +594,7 @@ impl_resolver! {
     }
 
     async fn description(&self_) {
-        Ok(ResolvedValue::leaf(opt(self_.def.description.as_deref())))
+        Ok(ResolvedValue::leaf(self_.def.description.as_deref()))
     }
 
     async fn args(&self_, args) {
@@ -641,7 +633,7 @@ impl_resolver! {
     }
 
     async fn description(&self_) {
-        Ok(ResolvedValue::leaf(opt(self_.def.description.as_deref())))
+        Ok(ResolvedValue::leaf(self_.def.description.as_deref()))
     }
 
     async fn args(&self_, args) {
@@ -682,7 +674,7 @@ impl_resolver! {
     }
 
     async fn description(&self_) {
-        Ok(ResolvedValue::leaf(opt(self_.def.description.as_deref())))
+        Ok(ResolvedValue::leaf(self_.def.description.as_deref()))
     }
 
     async fn isDeprecated(&self_) {
@@ -704,7 +696,7 @@ impl_resolver! {
     }
 
     async fn description(&self_) {
-        Ok(ResolvedValue::leaf(opt(self_.def.description.as_deref())))
+        Ok(ResolvedValue::leaf(self_.def.description.as_deref()))
     }
 
     async fn type(&self_) {
@@ -712,7 +704,7 @@ impl_resolver! {
     }
 
     async fn defaultValue(&self_) {
-        Ok(ResolvedValue::leaf(opt(self_.def.default_value.as_ref().map(|val| val.to_string()))))
+        Ok(ResolvedValue::leaf(self_.def.default_value.as_ref().map(|val| val.to_string())))
     }
 
     async fn isDeprecated(&self_) {
