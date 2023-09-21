@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::iter;
 use std::path::Path;
 
@@ -14,6 +15,7 @@ use apollo_compiler::schema::{
 use apollo_compiler::{ast, FileId, InputDatabase, Node, NodeStr, ReprDatabase, Schema, Source};
 use apollo_subgraph::Subgraph;
 use indexmap::map::Entry::{Occupied, Vacant};
+use indexmap::map::Iter;
 use indexmap::IndexMap;
 
 mod database;
@@ -67,7 +69,9 @@ impl Supergraph {
 
         // create stubs
         for subgraph in &subgraphs {
-            merge_schema(&mut supergraph, &subgraph);
+            let subgraph_name = subgraph.name.to_uppercase().clone();
+            merge_schema(&mut supergraph, subgraph);
+            // TODO merge directives
 
             for (key, value) in &subgraph.db.schema().types {
                 if value.is_built_in() || !is_mergeable_type(key) {
@@ -76,36 +80,27 @@ impl Supergraph {
                 }
 
                 match value {
-                    ExtendedType::Enum(value) => merge_enum_type(
-                        &mut supergraph.types,
-                        subgraph.name.to_uppercase().clone(),
-                        key.clone(),
-                        value,
-                    ),
+                    ExtendedType::Enum(value) => {
+                        merge_enum_type(&mut supergraph.types, &subgraph_name, key.clone(), value)
+                    }
                     ExtendedType::InputObject(value) => merge_input_object_type(
                         &mut supergraph.types,
-                        subgraph.name.to_uppercase().clone(),
+                        &subgraph_name,
                         key.clone(),
                         value,
                     ),
                     ExtendedType::Interface(value) => merge_interface_type(
                         &mut supergraph.types,
-                        subgraph.name.to_uppercase().clone(),
+                        &subgraph_name,
                         key.clone(),
                         value,
                     ),
-                    ExtendedType::Object(value) => merge_object_type(
-                        &mut supergraph.types,
-                        subgraph.name.to_uppercase().clone(),
-                        key.clone(),
-                        value,
-                    ),
-                    ExtendedType::Union(value) => merge_union_type(
-                        &mut supergraph.types,
-                        subgraph.name.to_uppercase().clone(),
-                        key.clone(),
-                        value,
-                    ),
+                    ExtendedType::Object(value) => {
+                        merge_object_type(&mut supergraph.types, &subgraph_name, key.clone(), value)
+                    }
+                    ExtendedType::Union(value) => {
+                        merge_union_type(&mut supergraph.types, &subgraph_name, key.clone(), value)
+                    }
                     ExtendedType::Scalar(_value) => {
                         // DO NOTHING
                     }
@@ -195,20 +190,10 @@ impl Supergraph {
 
 fn merge_schema(supergraph_schema: &mut Schema, subgraph: &Subgraph) {
     let subgraph_schema = subgraph.db.schema();
-    merge_options(
+    merge_descriptions(
         &mut supergraph_schema.description,
         &subgraph_schema.description,
     );
-    // if let Some(description) = &subgraph_schema.description {
-    //     if let Some(supergraph_description) = &supergraph_schema.description {
-    //         if !supergraph_description.eq(description) {
-    //             // TODO add hint warning
-    //             supergraph_schema.description = Some(description.clone());
-    //         }
-    //     } else {
-    //         supergraph_schema.description = Some(description.clone());
-    //     }
-    // }
 
     if subgraph_schema.query_type.is_some() {
         supergraph_schema.query_type = subgraph_schema.query_type.clone();
@@ -221,7 +206,10 @@ fn merge_schema(supergraph_schema: &mut Schema, subgraph: &Subgraph) {
     }
 }
 
-fn merge_options<T: Eq + Clone>(merged: &mut Option<T>, new: &Option<T>) -> Result<(), MergeError> {
+fn merge_descriptions<T: Eq + Clone>(
+    merged: &mut Option<T>,
+    new: &Option<T>,
+) -> Result<(), MergeError> {
     match (&mut *merged, new) {
         (_, None) => {}
         (None, Some(_)) => *merged = new.clone(),
@@ -257,19 +245,17 @@ fn is_mergeable_type(type_name: &str) -> bool {
 
 fn merge_enum_type(
     types: &mut IndexMap<NamedType, ExtendedType>,
-    subgraph_name: String,
+    subgraph_name: &str,
     enum_name: NamedType,
     enum_type: &Node<EnumType>,
 ) {
-    let existing_type = types
-        .entry(enum_name)
-        .or_insert(create_enum_type_stub(enum_type));
+    let existing_type = types.entry(enum_name).or_insert(copy_enum_type(enum_type));
     if let ExtendedType::Enum(e) = existing_type {
         let join_type_directives =
             join_type_applied_directive(&subgraph_name, iter::empty(), false);
         e.make_mut().directives.extend(join_type_directives);
 
-        merge_options(&mut e.make_mut().description, &enum_type.description);
+        merge_descriptions(&mut e.make_mut().description, &enum_type.description);
 
         // TODO we need to merge those fields LAST so we know whether enum is used as input/output/both as different merge rules will apply
         // below logic only works for output enums
@@ -283,7 +269,7 @@ fn merge_enum_type(
                     description: None,
                     directives: vec![],
                 }));
-            merge_options(&mut ev.make_mut().description, &enum_value.description);
+            merge_descriptions(&mut ev.make_mut().description, &enum_value.description);
             ev.make_mut().directives.push(Node::new(Directive {
                 name: Name::new("join__enumValue"),
                 arguments: vec![
@@ -300,17 +286,16 @@ fn merge_enum_type(
 }
 
 fn merge_input_object_type(
-    types: &mut IndexMap<ast::NamedType, ExtendedType>,
-    subgraph_name: String,
-    input_object_name: ast::NamedType,
+    types: &mut IndexMap<NamedType, ExtendedType>,
+    subgraph_name: &str,
+    input_object_name: NamedType,
     input_object: &Node<InputObjectType>,
 ) {
     let existing_type = types
         .entry(input_object_name)
-        .or_insert(create_input_object_type(input_object));
+        .or_insert(copy_input_object_type(input_object));
     if let ExtendedType::InputObject(obj) = existing_type {
-        let join_type_directives =
-            join_type_applied_directive(&subgraph_name, iter::empty(), false);
+        let join_type_directives = join_type_applied_directive(subgraph_name, iter::empty(), false);
         let mutable_object = obj.make_mut();
         mutable_object.directives.extend(join_type_directives);
 
@@ -335,14 +320,14 @@ fn merge_input_object_type(
 }
 
 fn merge_interface_type(
-    types: &mut IndexMap<ast::NamedType, ExtendedType>,
-    subgraph_name: String,
-    interface_name: ast::NamedType,
+    types: &mut IndexMap<NamedType, ExtendedType>,
+    subgraph_name: &str,
+    interface_name: NamedType,
     interface: &Node<InterfaceType>,
 ) {
     let existing_type = types
         .entry(interface_name.clone())
-        .or_insert(create_interface_type(interface));
+        .or_insert(copy_interface_type(interface));
     if let ExtendedType::Interface(intf) = existing_type {
         let key_directives = interface.directives_by_name("key");
         let join_type_directives =
@@ -378,26 +363,23 @@ fn merge_interface_type(
 
 fn merge_object_type(
     types: &mut IndexMap<NamedType, ExtendedType>,
-    subgraph_name: String,
+    subgraph_name: &str,
     object_name: NamedType,
     object: &Node<ObjectType>,
 ) {
     let is_interface_object = object.directives_by_name("interfaceObject").count() > 0;
     let existing_type = types
         .entry(object_name.clone())
-        .or_insert(create_object_type_stub(
-            &object_name,
-            is_interface_object,
-            object.description.clone(),
-        ));
+        .or_insert(copy_object_type_stub(&object, is_interface_object));
     if let ExtendedType::Object(obj) = existing_type {
-        let mut key_directives = object.directives_by_name("key").peekable();
-        let is_join_field = key_directives.peek().is_some() || object_name.eq("Query");
+        let key_fields: HashSet<&str> = parse_keys(object.directives_by_name("key"));
+        let is_join_field = !key_fields.is_empty() || object_name.eq("Query");
+        let key_directives = object.directives_by_name("key");
         let join_type_directives =
-            join_type_applied_directive(&subgraph_name, key_directives, false);
+            join_type_applied_directive(subgraph_name, key_directives, false);
         let mutable_object = obj.make_mut();
         mutable_object.directives.extend(join_type_directives);
-        merge_options(&mut mutable_object.description, &object.description);
+        merge_descriptions(&mut mutable_object.description, &object.description);
         object
             .implements_interfaces
             .iter()
@@ -430,17 +412,20 @@ fn merge_object_type(
                     ty: field.ty.clone(),
                 })),
             };
-            merge_options(
+            merge_descriptions(
                 &mut supergraph_field.make_mut().description,
                 &field.description,
             );
-            // let mut existing_args = supergraph_field.arguments.iter();
-            // for arg in field.arguments.iter() {
-            //     let existing_arg = &existing_args.find(|a| a.name.eq(&arg.name));
-            // }
+            let mut existing_args = supergraph_field.arguments.iter();
+            for arg in field.arguments.iter() {
+                if let Some(existing_arg) = &existing_args.find(|a| a.name.eq(&arg.name)) {
+                } else {
+                    // TODO mismatch no args
+                }
+            }
 
             if is_join_field {
-                let is_key_field = false;
+                let is_key_field = key_fields.contains(field_name.as_str());
                 if !is_key_field {
                     supergraph_field
                         .make_mut()
@@ -460,28 +445,23 @@ fn merge_object_type(
     } else if let ExtendedType::Interface(intf) = existing_type {
         // TODO support interface object
         let key_directives = object.directives_by_name("key");
-        let join_type_directives =
-            join_type_applied_directive(&subgraph_name, key_directives, true);
+        let join_type_directives = join_type_applied_directive(subgraph_name, key_directives, true);
         intf.make_mut().directives.extend(join_type_directives);
     };
     // TODO merge fields
 }
 
 fn merge_union_type(
-    types: &mut IndexMap<ast::NamedType, ExtendedType>,
-    subgraph_name: String,
-    union_name: ast::NamedType,
+    types: &mut IndexMap<NamedType, ExtendedType>,
+    subgraph_name: &str,
+    union_name: NamedType,
     union: &Node<UnionType>,
 ) {
     let existing_type = types
         .entry(union_name.clone())
-        .or_insert(create_union_type_stub(
-            &union_name,
-            union.description.clone(),
-        ));
+        .or_insert(copy_union_type(&union_name, union.description.clone()));
     if let ExtendedType::Union(u) = existing_type {
-        let join_type_directives =
-            join_type_applied_directive(&subgraph_name, iter::empty(), false);
+        let join_type_directives = join_type_applied_directive(subgraph_name, iter::empty(), false);
         u.make_mut().directives.extend(join_type_directives);
 
         for (union_member, _) in union.members.iter() {
@@ -506,7 +486,7 @@ fn merge_union_type(
     }
 }
 
-fn create_enum_type_stub(enum_type: &Node<EnumType>) -> ExtendedType {
+fn copy_enum_type(enum_type: &Node<EnumType>) -> ExtendedType {
     ExtendedType::Enum(Node::new(EnumType {
         name: enum_type.name.clone(),
         description: enum_type.description.clone(),
@@ -515,7 +495,7 @@ fn create_enum_type_stub(enum_type: &Node<EnumType>) -> ExtendedType {
     }))
 }
 
-fn create_input_object_type(input_object: &Node<InputObjectType>) -> ExtendedType {
+fn copy_input_object_type(input_object: &Node<InputObjectType>) -> ExtendedType {
     let mut new_input_object = InputObjectType {
         name: input_object.name.clone(),
         description: input_object.description.clone(),
@@ -539,15 +519,44 @@ fn create_input_object_type(input_object: &Node<InputObjectType>) -> ExtendedTyp
     ExtendedType::InputObject(Node::new(new_input_object))
 }
 
-fn create_interface_type(interface: &Node<InterfaceType>) -> ExtendedType {
-    let mut new_interface = InterfaceType {
+fn copy_interface_type(interface: &Node<InterfaceType>) -> ExtendedType {
+    let new_interface = InterfaceType {
         name: interface.name.clone(),
         description: interface.description.clone(),
         directives: vec![],
-        fields: IndexMap::new(),
-        implements_interfaces: IndexMap::new(),
+        fields: copy_fields(interface.fields.iter()),
+        implements_interfaces: copy_implements_interfaces(interface.implements_interfaces.iter()),
     };
-    for (field_name, field) in interface.fields.iter() {
+    ExtendedType::Interface(Node::new(new_interface))
+}
+
+fn copy_object_type_stub(object: &Node<ObjectType>, is_interface_object: bool) -> ExtendedType {
+    if is_interface_object {
+        let new_interface = InterfaceType {
+            name: object.name.clone(),
+            description: object.description.clone(),
+            directives: vec![],
+            fields: copy_fields(object.fields.iter()),
+            implements_interfaces: copy_implements_interfaces(object.implements_interfaces.iter()),
+        };
+        ExtendedType::Interface(Node::new(new_interface))
+    } else {
+        let new_object = ObjectType {
+            name: object.name.clone(),
+            description: object.description.clone(),
+            directives: vec![],
+            fields: copy_fields(object.fields.iter()),
+            implements_interfaces: copy_implements_interfaces(object.implements_interfaces.iter()),
+        };
+        ExtendedType::Object(Node::new(new_object))
+    }
+}
+
+fn copy_fields(
+    fields_to_copy: Iter<Name, Component<FieldDefinition>>,
+) -> IndexMap<Name, Component<FieldDefinition>> {
+    let mut new_fields: IndexMap<Name, Component<FieldDefinition>> = IndexMap::new();
+    for (field_name, field) in fields_to_copy {
         let args: Vec<Node<InputValueDefinition>> = field
             .arguments
             .iter()
@@ -569,32 +578,22 @@ fn create_interface_type(interface: &Node<InterfaceType>) -> ExtendedType {
             ty: field.ty.clone(),
         });
 
-        new_interface.fields.insert(field_name.clone(), new_field);
+        new_fields.insert(field_name.clone(), new_field);
     }
-
-    ExtendedType::Interface(Node::new(new_interface))
+    new_fields
 }
 
-fn create_object_type_stub(
-    name: &ast::NamedType,
-    is_interface_object: bool,
-    description: Option<NodeStr>,
-) -> ExtendedType {
-    if is_interface_object {
-        // create_interface_type(name, description)
-        panic!("foo")
-    } else {
-        ExtendedType::Object(Node::new(ObjectType {
-            name: name.clone(),
-            description,
-            directives: vec![],
-            fields: IndexMap::new(),
-            implements_interfaces: IndexMap::new(),
-        }))
+fn copy_implements_interfaces(
+    interfaces_to_copy: Iter<Name, ComponentOrigin>,
+) -> IndexMap<Name, ComponentOrigin> {
+    let mut implements_interfaces: IndexMap<Name, ComponentOrigin> = IndexMap::new();
+    for (interface_name, origin) in interfaces_to_copy {
+        implements_interfaces.insert(interface_name.clone(), origin.clone());
     }
+    implements_interfaces
 }
 
-fn create_union_type_stub(name: &ast::NamedType, description: Option<NodeStr>) -> ExtendedType {
+fn copy_union_type(name: &ast::NamedType, description: Option<NodeStr>) -> ExtendedType {
     ExtendedType::Union(Node::new(UnionType {
         name: name.clone(),
         description,
@@ -1153,6 +1152,19 @@ fn join_graph_enum_type(subgraphs: &Vec<&Subgraph>) -> EnumType {
             .insert(graph.value.clone(), Component::new(graph));
     }
     join_graph_enum_type
+}
+
+fn parse_keys<'a>(
+    directives: impl Iterator<Item = &'a Component<Directive>> + Sized,
+) -> HashSet<&'a str> {
+    HashSet::from_iter(
+        directives
+            .flat_map(|k| {
+                let field_set = directive_string_arg_value(k, "fields").unwrap();
+                field_set.split_whitespace()
+            })
+            .collect::<Vec<&str>>(),
+    )
 }
 
 #[cfg(test)]
