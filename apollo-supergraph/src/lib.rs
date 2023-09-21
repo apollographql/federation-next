@@ -4,10 +4,12 @@ use std::path::Path;
 #[allow(unused)]
 use database::{SupergraphDatabase, SupergraphRootDatabase};
 
-use apollo_compiler::ast::{Argument, Directive, EnumValueDefinition, FieldDefinition, Value};
+use apollo_compiler::ast::{
+    Argument, Directive, EnumValueDefinition, FieldDefinition, NamedType, Value,
+};
 use apollo_compiler::schema::{
-    Component, ComponentOrigin, ComponentStr, EnumType, ExtendedType, InputObjectType,
-    InputValueDefinition, InterfaceType, Name, ObjectType, ScalarType, UnionType,
+    Component, ComponentOrigin, EnumType, ExtendedType, InputObjectType, InputValueDefinition,
+    InterfaceType, Name, ObjectType, ScalarType, UnionType,
 };
 use apollo_compiler::{ast, FileId, InputDatabase, Node, NodeStr, ReprDatabase, Schema, Source};
 use apollo_subgraph::Subgraph;
@@ -56,7 +58,6 @@ impl Supergraph {
 
     pub fn compose(subgraphs: Vec<&Subgraph>) -> Result<Self, MergeError> {
         let mut supergraph = Schema::new();
-        supergraph.query_type = Some(ComponentStr::new("Query"));
         // TODO handle @compose
 
         // add core features
@@ -66,11 +67,9 @@ impl Supergraph {
 
         // create stubs
         for subgraph in &subgraphs {
-            merge_schema(&mut supergraph, &subgraph.db.schema());
+            merge_schema(&mut supergraph, &subgraph);
 
             for (key, value) in &subgraph.db.schema().types {
-                // TODO add custom logic for query
-
                 if value.is_built_in() || !is_mergeable_type(key) {
                     // skip built-ins and federation specific types
                     continue;
@@ -121,7 +120,7 @@ impl Supergraph {
         let mut schema = self.db.schema();
         let schema = schema.make_mut();
         schema.types.sort_by(|k1, v1, k2, v2| {
-            let type_order = type_order(v1).cmp(&type_order(v2));
+            let type_order = print_type_order(v1).cmp(&print_type_order(v2));
             if type_order.is_eq() {
                 k1.cmp(k2)
             } else {
@@ -194,11 +193,48 @@ impl Supergraph {
     }
 }
 
-fn merge_schema(supergraph_schema: &mut Schema, subgraph_schema: &Schema) {
-    // TODO
+fn merge_schema(supergraph_schema: &mut Schema, subgraph: &Subgraph) {
+    let subgraph_schema = subgraph.db.schema();
+    merge_options(
+        &mut supergraph_schema.description,
+        &subgraph_schema.description,
+    );
+    // if let Some(description) = &subgraph_schema.description {
+    //     if let Some(supergraph_description) = &supergraph_schema.description {
+    //         if !supergraph_description.eq(description) {
+    //             // TODO add hint warning
+    //             supergraph_schema.description = Some(description.clone());
+    //         }
+    //     } else {
+    //         supergraph_schema.description = Some(description.clone());
+    //     }
+    // }
+
+    if subgraph_schema.query_type.is_some() {
+        supergraph_schema.query_type = subgraph_schema.query_type.clone();
+    }
+    if subgraph_schema.mutation_type.is_some() {
+        supergraph_schema.mutation_type = subgraph_schema.mutation_type.clone();
+    }
+    if subgraph_schema.subscription_type.is_some() {
+        supergraph_schema.subscription_type = subgraph_schema.subscription_type.clone();
+    }
 }
 
-fn type_order(extended_type: &ExtendedType) -> i8 {
+fn merge_options<T: Eq + Clone>(merged: &mut Option<T>, new: &Option<T>) -> Result<(), MergeError> {
+    match (&mut *merged, new) {
+        (_, None) => {}
+        (None, Some(_)) => *merged = new.clone(),
+        (Some(a), Some(b)) => {
+            if a != b {
+                return Err("conflicting optional values");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn print_type_order(extended_type: &ExtendedType) -> i8 {
     match extended_type {
         ExtendedType::Enum(_) => 1,
         ExtendedType::Interface(_) => 2,
@@ -220,9 +256,9 @@ fn is_mergeable_type(type_name: &str) -> bool {
 }
 
 fn merge_enum_type(
-    types: &mut IndexMap<ast::NamedType, ExtendedType>,
+    types: &mut IndexMap<NamedType, ExtendedType>,
     subgraph_name: String,
-    enum_name: ast::NamedType,
+    enum_name: NamedType,
     enum_type: &Node<EnumType>,
 ) {
     let existing_type = types
@@ -233,9 +269,7 @@ fn merge_enum_type(
             join_type_applied_directive(&subgraph_name, iter::empty(), false);
         e.make_mut().directives.extend(join_type_directives);
 
-        if !e.description.eq(&enum_type.description) {
-            // TODO - conflict on descriptions
-        }
+        merge_options(&mut e.make_mut().description, &enum_type.description);
 
         // TODO we need to merge those fields LAST so we know whether enum is used as input/output/both as different merge rules will apply
         // below logic only works for output enums
@@ -249,6 +283,7 @@ fn merge_enum_type(
                     description: None,
                     directives: vec![],
                 }));
+            merge_options(&mut ev.make_mut().description, &enum_value.description);
             ev.make_mut().directives.push(Node::new(Directive {
                 name: Name::new("join__enumValue"),
                 arguments: vec![
@@ -283,9 +318,10 @@ fn merge_input_object_type(
             let existing_field = mutable_object.fields.entry(field_name.clone());
             match existing_field {
                 Vacant(i) => {
-                    // TODO mismatch on input fields - missing fields
+                    // TODO warning - mismatch on input fields
                 }
                 Occupied(i) => {
+                    // merge_options(&i.get_mut().description, &field.description);
                     // TODO check description
                     // TODO check type
                     // TODO check default value
@@ -318,7 +354,14 @@ fn merge_interface_type(
             let existing_field = mutable_intf.fields.entry(field_name.clone());
             match existing_field {
                 Vacant(i) => {
-                    // TODO mismatch missing fields
+                    // TODO warning mismatch missing fields
+                    i.insert(Component::new(FieldDefinition {
+                        name: field.name.clone(),
+                        description: field.description.clone(),
+                        arguments: vec![],
+                        ty: field.ty.clone(),
+                        directives: vec![],
+                    }));
                 }
                 Occupied(i) => {
                     // TODO check description
@@ -334,9 +377,9 @@ fn merge_interface_type(
 }
 
 fn merge_object_type(
-    types: &mut IndexMap<ast::NamedType, ExtendedType>,
+    types: &mut IndexMap<NamedType, ExtendedType>,
     subgraph_name: String,
-    object_name: ast::NamedType,
+    object_name: NamedType,
     object: &Node<ObjectType>,
 ) {
     let is_interface_object = object.directives_by_name("interfaceObject").count() > 0;
@@ -349,11 +392,12 @@ fn merge_object_type(
         ));
     if let ExtendedType::Object(obj) = existing_type {
         let mut key_directives = object.directives_by_name("key").peekable();
-        let is_entity = key_directives.peek().is_some();
+        let is_join_field = key_directives.peek().is_some() || object_name.eq("Query");
         let join_type_directives =
             join_type_applied_directive(&subgraph_name, key_directives, false);
         let mutable_object = obj.make_mut();
         mutable_object.directives.extend(join_type_directives);
+        merge_options(&mut mutable_object.description, &object.description);
         object
             .implements_interfaces
             .iter()
@@ -362,7 +406,7 @@ fn merge_object_type(
                     .implements_interfaces
                     .entry(intf_name.clone());
                 if let Vacant(i) = implement_interface_entry {
-                    // TODO mismatch on interface implementations
+                    // TODO warning mismatch on interface implementations
                     i.insert(intf.clone());
                 }
                 let join_implements_directive = join_type_implements(&subgraph_name, intf_name);
@@ -370,7 +414,7 @@ fn merge_object_type(
             });
 
         for (field_name, field) in object.fields.iter() {
-            let mut existing_field = mutable_object.fields.entry(field_name.clone());
+            let existing_field = mutable_object.fields.entry(field_name.clone());
             let supergraph_field = match existing_field {
                 Occupied(f) => {
                     // check description
@@ -386,21 +430,31 @@ fn merge_object_type(
                     ty: field.ty.clone(),
                 })),
             };
+            merge_options(
+                &mut supergraph_field.make_mut().description,
+                &field.description,
+            );
+            // let mut existing_args = supergraph_field.arguments.iter();
+            // for arg in field.arguments.iter() {
+            //     let existing_arg = &existing_args.find(|a| a.name.eq(&arg.name));
+            // }
 
-            if is_entity {
-                // TODO don't apply on @keys
-                supergraph_field
-                    .make_mut()
-                    .directives
-                    .push(Node::new(Directive {
-                        name: Name::new("join__field"),
-                        arguments: vec![
-                            (Node::new(Argument {
-                                name: Name::new("graph"),
-                                value: Node::new(Value::Enum(Name::new(&subgraph_name))),
-                            })),
-                        ],
-                    }));
+            if is_join_field {
+                let is_key_field = false;
+                if !is_key_field {
+                    supergraph_field
+                        .make_mut()
+                        .directives
+                        .push(Node::new(Directive {
+                            name: Name::new("join__field"),
+                            arguments: vec![
+                                (Node::new(Argument {
+                                    name: Name::new("graph"),
+                                    value: Node::new(Value::Enum(Name::new(&subgraph_name))),
+                                })),
+                            ],
+                        }));
+                }
             }
         }
     } else if let ExtendedType::Interface(intf) = existing_type {
@@ -1341,11 +1395,8 @@ scalar link__Import
         )
         .unwrap();
 
-        let expected_supergraph_sdl = r#""""A cool schema"""
-schema
-  @link(url: "https://specs.apollo.dev/link/v1.0")
-  @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
-{
+        let expected_supergraph_sdl = r#""A cool schema"
+schema @link(url: "https://specs.apollo.dev/link/v1.0") @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION) {
   query: Query
 }
 
@@ -1366,20 +1417,17 @@ directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on
 
 directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
 
-"""An enum"""
-enum E
-  @join__type(graph: SUBGRAPH2)
-{
-  """The A value"""
+"An enum"
+enum E @join__type(graph: SUBGRAPH2) {
+  "The A value"
   A @join__enumValue(graph: SUBGRAPH2)
-
-  """The B value"""
+  "The B value"
   B @join__enumValue(graph: SUBGRAPH2)
 }
 
 enum join__Graph {
-  SUBGRAPH1 @join__graph(name: "Subgraph1", url: "")
-  SUBGRAPH2 @join__graph(name: "Subgraph2", url: "")
+  SUBGRAPH1 @join__graph(name: "Subgraph1", url: "https://subgraph1")
+  SUBGRAPH2 @join__graph(name: "Subgraph2", url: "https://subgraph2")
 }
 
 enum link__Purpose {
@@ -1393,10 +1441,7 @@ enum link__Purpose {
 Available queries
 Not much yet
 """
-type Query
-  @join__type(graph: SUBGRAPH1)
-  @join__type(graph: SUBGRAPH2)
-{
+type Query @join__type(graph: SUBGRAPH1) @join__type(graph: SUBGRAPH2) {
   """Returns tea"""
   t(
     """An argument that is very important"""
