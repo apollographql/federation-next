@@ -6,11 +6,12 @@ use std::path::Path;
 use database::{SupergraphDatabase, SupergraphRootDatabase};
 
 use apollo_compiler::ast::{
-    Argument, Directive, EnumValueDefinition, FieldDefinition, NamedType, Value,
+    Argument, Directive, DirectiveDefinition, DirectiveLocation, EnumValueDefinition,
+    FieldDefinition, NamedType, Type, Value,
 };
 use apollo_compiler::schema::{
-    Component, ComponentOrigin, EnumType, ExtendedType, InputObjectType, InputValueDefinition,
-    InterfaceType, Name, ObjectType, ScalarType, UnionType,
+    Component, ComponentOrigin, ComponentStr, EnumType, ExtendedType, InputObjectType,
+    InputValueDefinition, InterfaceType, Name, ObjectType, ScalarType, UnionType,
 };
 use apollo_compiler::{ast, FileId, InputDatabase, Node, NodeStr, ReprDatabase, Schema, Source};
 use apollo_subgraph::Subgraph;
@@ -106,6 +107,45 @@ impl Supergraph {
                     }
                 }
             }
+
+            // merge executable directives
+            for (_, directive) in subgraph.db.schema().directive_definitions.iter() {
+                if is_executable_directive(directive) {
+                    merge_directive(&mut supergraph.directive_definitions, directive);
+                }
+            }
+
+            // explicitly add @join__type info to Query type in order to handle __entities queries
+            let subgraph_query_type_exists = &subgraph
+                .db
+                .schema()
+                .query_type
+                .clone()
+                .map_or(false, |query_type| {
+                    subgraph.db.schema().types.contains_key(query_type.as_str())
+                });
+            if !subgraph_query_type_exists {
+                if supergraph.query_type.is_none() {
+                    supergraph.query_type = Some(ComponentStr::new("Query"));
+                }
+                let join_type_directives =
+                    join_type_applied_directive(&subgraph_name, iter::empty(), false);
+                if let Some(query_type_name) = supergraph.query_type.as_ref() {
+                    let query_type = supergraph
+                        .types
+                        .entry(NamedType::new(query_type_name.as_str()))
+                        .or_insert(ExtendedType::Object(Node::new(ObjectType {
+                            name: Name::new(query_type_name.as_str()),
+                            description: None,
+                            directives: vec![],
+                            fields: IndexMap::new(),
+                            implements_interfaces: IndexMap::new(),
+                        })));
+                    if let ExtendedType::Object(query) = query_type {
+                        query.make_mut().directives.extend(join_type_directives);
+                    }
+                }
+            }
         }
         // println!("{}", supergraph);
         Ok(Self::new(supergraph.to_string().as_str()))
@@ -188,6 +228,23 @@ impl Supergraph {
     }
 }
 
+const EXECUTABLE_DIRECTIVE_LOCATIONS: [DirectiveLocation; 8] = [
+    DirectiveLocation::Query,
+    DirectiveLocation::Mutation,
+    DirectiveLocation::Subscription,
+    DirectiveLocation::Field,
+    DirectiveLocation::FragmentDefinition,
+    DirectiveLocation::FragmentSpread,
+    DirectiveLocation::InlineFragment,
+    DirectiveLocation::VariableDefinition,
+];
+fn is_executable_directive(directive: &Node<DirectiveDefinition>) -> bool {
+    directive
+        .locations
+        .iter()
+        .any(|loc| EXECUTABLE_DIRECTIVE_LOCATIONS.contains(loc))
+}
+
 fn merge_schema(supergraph_schema: &mut Schema, subgraph: &Subgraph) {
     let subgraph_schema = subgraph.db.schema();
     merge_descriptions(
@@ -197,12 +254,15 @@ fn merge_schema(supergraph_schema: &mut Schema, subgraph: &Subgraph) {
 
     if subgraph_schema.query_type.is_some() {
         supergraph_schema.query_type = subgraph_schema.query_type.clone();
+        // TODO mismatch on query types
     }
     if subgraph_schema.mutation_type.is_some() {
         supergraph_schema.mutation_type = subgraph_schema.mutation_type.clone();
+        // TODO mismatch on mutation types
     }
     if subgraph_schema.subscription_type.is_some() {
         supergraph_schema.subscription_type = subgraph_schema.subscription_type.clone();
+        // TODO mismatch on subscription types
     }
 }
 
@@ -427,18 +487,28 @@ fn merge_object_type(
             if is_join_field {
                 let is_key_field = key_fields.contains(field_name.as_str());
                 if !is_key_field {
+                    let requires_directive_option =
+                        Option::and_then(field.directives_by_name("requires").next(), |p| {
+                            let requires_fields = directive_string_arg_value(p, "fields").unwrap();
+                            Some(requires_fields.as_str())
+                        });
+                    let provides_directive_option =
+                        Option::and_then(field.directives_by_name("provides").next(), |p| {
+                            let provides_fields = directive_string_arg_value(p, "fields").unwrap();
+                            Some(provides_fields.as_str())
+                        });
+                    let external_field = field.directives_by_name("external").next().is_some();
+                    let join_field_directive = join_field_applied_directive(
+                        subgraph_name,
+                        requires_directive_option,
+                        provides_directive_option,
+                        external_field,
+                    );
+
                     supergraph_field
                         .make_mut()
                         .directives
-                        .push(Node::new(Directive {
-                            name: Name::new("join__field"),
-                            arguments: vec![
-                                (Node::new(Argument {
-                                    name: Name::new("graph"),
-                                    value: Node::new(Value::Enum(Name::new(&subgraph_name))),
-                                })),
-                            ],
-                        }));
+                        .push(Node::new(join_field_directive));
                 }
             }
         }
@@ -593,7 +663,7 @@ fn copy_implements_interfaces(
     implements_interfaces
 }
 
-fn copy_union_type(name: &ast::NamedType, description: Option<NodeStr>) -> ExtendedType {
+fn copy_union_type(name: &NamedType, description: Option<NodeStr>) -> ExtendedType {
     ExtendedType::Union(Node::new(UnionType {
         name: name.clone(),
         description,
@@ -648,7 +718,7 @@ fn join_type_applied_directive<'a>(
     }
     result
         .into_iter()
-        .map(|d| Component::new(d))
+        .map(Component::new)
         .collect::<Vec<Component<Directive>>>()
 }
 
@@ -726,48 +796,47 @@ fn add_core_feature_link(supergraph: &mut Schema) {
         .insert(link_import_scalar.name().clone(), link_import_scalar);
 
     let link_directive_definition = link_directive_definition();
-    supergraph.directive_definitions.insert(
-        ast::NamedType::new("link"),
-        Node::new(link_directive_definition),
-    );
+    supergraph
+        .directive_definitions
+        .insert(NamedType::new("link"), Node::new(link_directive_definition));
 }
 
 /// directive @link(url: String, as: String, import: [Import], for: link__Purpose) repeatable on SCHEMA
-fn link_directive_definition() -> ast::DirectiveDefinition {
-    ast::DirectiveDefinition {
+fn link_directive_definition() -> DirectiveDefinition {
+    DirectiveDefinition {
         name: Name::new("link"),
         description: None,
         arguments: vec![
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("url"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("String")),
+                ty: Type::Named(NodeStr::new("String")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("as"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("String")),
+                ty: Type::Named(NodeStr::new("String")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("for"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("link__Purpose")),
+                ty: Type::Named(NodeStr::new("link__Purpose")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("import"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::List(Box::new(ast::Type::Named(NodeStr::new("link__Import")))),
+                ty: Type::List(Box::new(Type::Named(NodeStr::new("link__Import")))),
                 default_value: None,
             }),
         ],
-        locations: vec![ast::DirectiveLocation::Schema],
+        locations: vec![DirectiveLocation::Schema],
         repeatable: true,
     }
 }
@@ -790,14 +859,14 @@ fn link_purpose_enum_type() -> EnumType {
         directives: Vec::new(),
         values: IndexMap::new(),
     };
-    let link_purpose_security_value = ast::EnumValueDefinition {
+    let link_purpose_security_value = EnumValueDefinition {
         description: Some(NodeStr::new(
             r"SECURITY features provide metadata necessary to securely resolve fields.",
         )),
         directives: Vec::new(),
         value: Name::new("SECURITY"),
     };
-    let link_purpose_execution_value = ast::EnumValueDefinition {
+    let link_purpose_execution_value = EnumValueDefinition {
         description: Some(NodeStr::new(
             r"EXECUTION features provide metadata necessary for operation execution.",
         )),
@@ -888,18 +957,18 @@ fn add_core_feature_join(supergraph: &mut Schema, subgraphs: &Vec<&Subgraph>) {
 }
 
 /// directive @enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
-fn join_enum_value_directive_definition() -> ast::DirectiveDefinition {
-    ast::DirectiveDefinition {
+fn join_enum_value_directive_definition() -> DirectiveDefinition {
+    DirectiveDefinition {
         name: Name::new("join__enumValue"),
         description: None,
-        arguments: vec![Node::new(ast::InputValueDefinition {
+        arguments: vec![Node::new(InputValueDefinition {
             name: Name::new("graph"),
             description: None,
             directives: vec![],
-            ty: ast::Type::NonNullNamed(NodeStr::new("join__Graph")),
+            ty: Type::NonNullNamed(NodeStr::new("join__Graph")),
             default_value: None,
         })],
-        locations: vec![ast::DirectiveLocation::EnumValue],
+        locations: vec![DirectiveLocation::EnumValue],
         repeatable: true,
     }
 }
@@ -913,91 +982,125 @@ fn join_enum_value_directive_definition() -> ast::DirectiveDefinition {
 ///   override: String,
 ///   usedOverridden: Boolean
 /// ) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
-fn join_field_directive_definition() -> ast::DirectiveDefinition {
-    ast::DirectiveDefinition {
+fn join_field_directive_definition() -> DirectiveDefinition {
+    DirectiveDefinition {
         name: Name::new("join__field"),
         description: None,
         arguments: vec![
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("graph"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("join__Graph")),
+                ty: Type::Named(NodeStr::new("join__Graph")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("requires"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("join__FieldSet")),
+                ty: Type::Named(NodeStr::new("join__FieldSet")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("provides"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("join__FieldSet")),
+                ty: Type::Named(NodeStr::new("join__FieldSet")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("type"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("String")),
+                ty: Type::Named(NodeStr::new("String")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("external"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("Boolean")),
+                ty: Type::Named(NodeStr::new("Boolean")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("override"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("String")),
+                ty: Type::Named(NodeStr::new("String")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("usedOverridden"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("Boolean")),
+                ty: Type::Named(NodeStr::new("Boolean")),
                 default_value: None,
             }),
         ],
         locations: vec![
-            ast::DirectiveLocation::FieldDefinition,
-            ast::DirectiveLocation::InputFieldDefinition,
+            DirectiveLocation::FieldDefinition,
+            DirectiveLocation::InputFieldDefinition,
         ],
         repeatable: true,
     }
 }
 
+fn join_field_applied_directive(
+    subgraph_name: &str,
+    requires: Option<&str>,
+    provides: Option<&str>,
+    external: bool,
+) -> Directive {
+    let mut join_field_directive = Directive {
+        name: Name::new("join__field"),
+        arguments: vec![Node::new(Argument {
+            name: Name::new("graph"),
+            value: Node::new(Value::Enum(Name::new(subgraph_name))),
+        })],
+    };
+    if let Some(required_fields) = requires {
+        join_field_directive.arguments.push(Node::new(Argument {
+            name: Name::new("requires"),
+            value: Node::new(Value::String(Name::new(required_fields))),
+        }));
+    }
+    if let Some(provided_fields) = provides {
+        join_field_directive.arguments.push(Node::new(Argument {
+            name: Name::new("provides"),
+            value: Node::new(Value::String(Name::new(provided_fields))),
+        }));
+    }
+    if external {
+        join_field_directive.arguments.push(Node::new(Argument {
+            name: Name::new("external"),
+            value: Node::new(Value::Boolean(external)),
+        }));
+    }
+    join_field_directive
+}
+
 /// directive @graph(name: String!, url: String!) on ENUM_VALUE
-fn join_graph_directive_definition() -> ast::DirectiveDefinition {
-    ast::DirectiveDefinition {
+fn join_graph_directive_definition() -> DirectiveDefinition {
+    DirectiveDefinition {
         name: Name::new("join__graph"),
         description: None,
         arguments: vec![
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("name"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("String")),
+                ty: Type::NonNullNamed(NodeStr::new("String")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("url"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("String")),
+                ty: Type::NonNullNamed(NodeStr::new("String")),
                 default_value: None,
             }),
         ],
-        locations: vec![ast::DirectiveLocation::EnumValue],
+        locations: vec![DirectiveLocation::EnumValue],
         repeatable: false,
     }
 }
@@ -1006,30 +1109,27 @@ fn join_graph_directive_definition() -> ast::DirectiveDefinition {
 ///   graph: Graph!,
 ///   interface: String!
 /// ) on OBJECT | INTERFACE
-fn join_implements_directive_definition() -> ast::DirectiveDefinition {
-    ast::DirectiveDefinition {
+fn join_implements_directive_definition() -> DirectiveDefinition {
+    DirectiveDefinition {
         name: Name::new("join__implements"),
         description: None,
         arguments: vec![
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("graph"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("join__Graph")),
+                ty: Type::NonNullNamed(NodeStr::new("join__Graph")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("interface"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("String")),
+                ty: Type::NonNullNamed(NodeStr::new("String")),
                 default_value: None,
             }),
         ],
-        locations: vec![
-            ast::DirectiveLocation::Interface,
-            ast::DirectiveLocation::Object,
-        ],
+        locations: vec![DirectiveLocation::Interface, DirectiveLocation::Object],
         repeatable: true,
     }
 }
@@ -1041,81 +1141,81 @@ fn join_implements_directive_definition() -> ast::DirectiveDefinition {
 ///   resolvable: Boolean = true,
 ///   isInterfaceObject: Boolean = false
 /// ) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
-fn join_type_directive_definition() -> ast::DirectiveDefinition {
-    ast::DirectiveDefinition {
+fn join_type_directive_definition() -> DirectiveDefinition {
+    DirectiveDefinition {
         name: Name::new("join__type"),
         description: None,
         arguments: vec![
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("graph"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("join__Graph")),
+                ty: Type::NonNullNamed(NodeStr::new("join__Graph")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("key"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::Named(NodeStr::new("join__FieldSet")),
+                ty: Type::Named(NodeStr::new("join__FieldSet")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("extension"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("Boolean")),
-                default_value: Some(Node::new(ast::Value::Boolean(false))),
+                ty: Type::NonNullNamed(NodeStr::new("Boolean")),
+                default_value: Some(Node::new(Value::Boolean(false))),
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("resolvable"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("Boolean")),
-                default_value: Some(Node::new(ast::Value::Boolean(true))),
+                ty: Type::NonNullNamed(NodeStr::new("Boolean")),
+                default_value: Some(Node::new(Value::Boolean(true))),
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("isInterfaceObject"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("Boolean")),
-                default_value: Some(Node::new(ast::Value::Boolean(false))),
+                ty: Type::NonNullNamed(NodeStr::new("Boolean")),
+                default_value: Some(Node::new(Value::Boolean(false))),
             }),
         ],
         locations: vec![
-            ast::DirectiveLocation::Enum,
-            ast::DirectiveLocation::InputObject,
-            ast::DirectiveLocation::Interface,
-            ast::DirectiveLocation::Object,
-            ast::DirectiveLocation::Scalar,
-            ast::DirectiveLocation::Union,
+            DirectiveLocation::Enum,
+            DirectiveLocation::InputObject,
+            DirectiveLocation::Interface,
+            DirectiveLocation::Object,
+            DirectiveLocation::Scalar,
+            DirectiveLocation::Union,
         ],
         repeatable: true,
     }
 }
 
 /// directive @unionMember(graph: join__Graph!, member: String!) repeatable on UNION
-fn join_union_member_directive_definition() -> ast::DirectiveDefinition {
-    ast::DirectiveDefinition {
+fn join_union_member_directive_definition() -> DirectiveDefinition {
+    DirectiveDefinition {
         name: Name::new("join__unionMember"),
         description: None,
         arguments: vec![
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("graph"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("join__Graph")),
+                ty: Type::NonNullNamed(NodeStr::new("join__Graph")),
                 default_value: None,
             }),
-            Node::new(ast::InputValueDefinition {
+            Node::new(InputValueDefinition {
                 name: Name::new("member"),
                 description: None,
                 directives: vec![],
-                ty: ast::Type::NonNullNamed(NodeStr::new("String")),
+                ty: Type::NonNullNamed(NodeStr::new("String")),
                 default_value: None,
             }),
         ],
-        locations: vec![ast::DirectiveLocation::Union],
+        locations: vec![DirectiveLocation::Union],
         repeatable: true,
     }
 }
@@ -1129,7 +1229,7 @@ fn join_graph_enum_type(subgraphs: &Vec<&Subgraph>) -> EnumType {
         values: IndexMap::new(),
     };
     for s in subgraphs {
-        let join_graph_applied_directive = ast::Directive {
+        let join_graph_applied_directive = Directive {
             name: Name::new("join__graph"),
             arguments: vec![
                 (Node::new(Argument {
@@ -1142,7 +1242,7 @@ fn join_graph_enum_type(subgraphs: &Vec<&Subgraph>) -> EnumType {
                 })),
             ],
         };
-        let graph = ast::EnumValueDefinition {
+        let graph = EnumValueDefinition {
             description: None,
             directives: vec![Node::new(join_graph_applied_directive)],
             value: Name::new(s.name.to_uppercase().as_str()),
@@ -1165,6 +1265,15 @@ fn parse_keys<'a>(
             })
             .collect::<Vec<&str>>(),
     )
+}
+
+fn merge_directive(
+    supergraph_directives: &mut IndexMap<Name, Node<DirectiveDefinition>>,
+    directive: &Node<DirectiveDefinition>,
+) {
+    if !supergraph_directives.contains_key(&directive.name.clone()) {
+        supergraph_directives.insert(directive.name.clone(), directive.clone());
+    }
 }
 
 #[cfg(test)]
@@ -1412,7 +1521,7 @@ schema @link(url: "https://specs.apollo.dev/link/v1.0") @link(url: "https://spec
   query: Query
 }
 
-"""The foo directive description"""
+"The foo directive description"
 directive @foo(url: String) on FIELD
 
 directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
@@ -1421,9 +1530,9 @@ directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: j
 
 directive @join__graph(name: String!, url: String!) on ENUM_VALUE
 
-directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on INTERFACE | OBJECT
 
-directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on ENUM | INPUT_OBJECT | INTERFACE | OBJECT | SCALAR | UNION
 
 directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
 
@@ -1449,15 +1558,12 @@ enum link__Purpose {
   EXECUTION
 }
 
-"""
-Available queries
-Not much yet
-"""
+"Available queries\nNot much yet"
 type Query @join__type(graph: SUBGRAPH1) @join__type(graph: SUBGRAPH2) {
-  """Returns tea"""
+  "Returns tea"
   t(
-    """An argument that is very important"""
-    x: String!
+    "An argument that is very important"
+    x: String!,
   ): String @join__field(graph: SUBGRAPH1)
 }
 
@@ -1466,6 +1572,8 @@ scalar join__FieldSet
 scalar link__Import
 "#;
         let supergraph = Supergraph::compose(vec![&s1, &s2]).unwrap();
+        // TODO currently printer does not respect multi line comments
+        // TODO printer also adds extra comma after arguments
         assert_eq!(supergraph.print_sdl(), expected_supergraph_sdl);
     }
 
@@ -1557,6 +1665,8 @@ scalar link__Import
             "SubgraphA",
             "https://subgraphA",
             r#"
+                extend schema @link(url: "https://specs.apollo.dev/federation/v2.5", import: [ "@key", "@provides", "@external" ])
+                
                 type Query {
                   products: [Product!] @provides(fields: "name")
                 }
@@ -1573,6 +1683,8 @@ scalar link__Import
             "SubgraphB",
             "https://subgraphB",
             r#"
+                extend schema @link(url: "https://specs.apollo.dev/federation/v2.5", import: [ "@key", "@shareable" ])
+            
                 type Product @key(fields: "sku") {
                   sku: String!
                   name: String! @shareable
@@ -1593,15 +1705,15 @@ directive @join__graph(name: String!, url: String!) on ENUM_VALUE
 
 directive @join__implements(graph: join__Graph!, interface: String!) repeatable on INTERFACE | OBJECT
 
-directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on ENUM | INPUT_OBJECT | INTERFACE | OBJECT | SCALAR | UNION 
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on ENUM | INPUT_OBJECT | INTERFACE | OBJECT | SCALAR | UNION
 
 directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
 
 directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
 
 enum join__Graph {
-  SUBGRAPHA @join__graph(name: "subgraphA", url: "https://subgraphA")
-  SUBGRAPHB @join__graph(name: "subgraphB", url: "https://subgraphB")
+  SUBGRAPHA @join__graph(name: "SubgraphA", url: "https://subgraphA")
+  SUBGRAPHB @join__graph(name: "SubgraphB", url: "https://subgraphB")
 }
 
 enum link__Purpose {

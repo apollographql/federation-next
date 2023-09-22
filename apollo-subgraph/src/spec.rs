@@ -48,7 +48,7 @@ pub const FEDERATION_V2_DIRECTIVE_NAMES: [&str; 11] = [
 ];
 
 const MIN_FEDERATION_VERSION: Version = Version { major: 2, minor: 0 };
-const MAX_FEDERATION_VERSION: Version = Version { major: 2, minor: 4 };
+const MAX_FEDERATION_VERSION: Version = Version { major: 2, minor: 5 };
 
 #[derive(Error, Debug, PartialEq)]
 pub enum FederationSpecError {
