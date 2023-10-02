@@ -1,4 +1,4 @@
-use apollo_harness::core::Cli;
+use apollo_harness::common::Cli;
 
 use clap::Parser;
 use router_bridge::planner::Planner;

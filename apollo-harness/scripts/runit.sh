@@ -1,10 +1,17 @@
 #! /usr/bin/env bash
 
 timestamp="${1}";
+program="${2}";
 
-heaptrack -o /results/"${timestamp}" /programs/apollo-harness "${2}" "${3}" > /dev/null
+if [[ ! -z "${4}" ]];then
+    heaptrack -o /results/"${timestamp}" /programs/"${program}" "${3}" "${4}" > /dev/null
 
-timed="$(/usr/bin/time -f '%e' /programs/apollo-harness "${2}" "${3}" 2>&1 > /dev/null)"
+    timed="$(/usr/bin/time -f '%e' /programs/"${program}" "${3}" "${4}" 2>&1 > /dev/null)"
+else
+    heaptrack -o /results/"${timestamp}" /programs/"${program}" "${3}" > /dev/null
+
+    timed="$(/usr/bin/time -f '%e' /programs/"${program}" "${3}" 2>&1 > /dev/null)"
+fi
 
 printf "total runtime (un-instrumented): %ss\n" "${timed}" > /results/"${timestamp}.out"
 

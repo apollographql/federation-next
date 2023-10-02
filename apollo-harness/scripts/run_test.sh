@@ -58,6 +58,7 @@ CROSS=$(which cross) || terminate "${install_cross_advice}"
 
 printf "Using %s to run the tests...\n" "${CONMAN}"
 
+# Figure out our host platform. We'll use that to decide what kind of target to build
 PLATFORM="$(uname -m)"
 
 if [[ "${PLATFORM}" == "amd64" ]]; then
@@ -70,9 +71,8 @@ fi
 
 printf "Building target: %s\n" "${TARGET}"
 
-
 # Use cross to cross compile to desired target
-cross build --release --bin load_and_plan --target "${TARGET}"
+${CROSS} build --release --bin "${2}" --target "${TARGET}"
 
 # Build an image to run our target
 ${CONMAN} build \
@@ -81,20 +81,33 @@ ${CONMAN} build \
     scripts
 
 # Create a timestamp for our test
-timestamp="$(date +'%Y_%m_%d_%H:%M')"
+timestamp="$(date +'%Y_%m_%d_%H:%M:%S')"
 
-# Run the test
-${CONMAN} run \
-    --rm \
-    --mount "type=bind,source=${PWD}/scripts,target=/scripts" \
-    --mount "type=bind,source=${PWD}/results,target=/results" \
-    --mount "type=bind,source=${PWD}/testdata,target=/testdata" \
-    --mount "type=bind,source=${PWD}/../target/${TARGET}/release,target=/programs" \
-    apollo_harness:latest /scripts/runit.sh "${timestamp}" \
-    testdata/schema.graphql \
-    testdata/query.graphql
+# Run the test with 1 or 2 arguments
+if [[ "${4}" != "" ]]; then
+    ${CONMAN} run \
+        --rm \
+        --mount "type=bind,source=${PWD}/scripts,target=/scripts" \
+        --mount "type=bind,source=${PWD}/results,target=/results" \
+        --mount "type=bind,source=${PWD}/testdata,target=/testdata" \
+        --mount "type=bind,source=${PWD}/../target/${TARGET}/release,target=/programs" \
+        apollo_harness:latest /scripts/runit.sh "${timestamp}" \
+        "${2}" \
+        "testdata/${3}" \
+        "testdata/${4}"
+else
+    ${CONMAN} run \
+        --rm \
+        --mount "type=bind,source=${PWD}/scripts,target=/scripts" \
+        --mount "type=bind,source=${PWD}/results,target=/results" \
+        --mount "type=bind,source=${PWD}/testdata,target=/testdata" \
+        --mount "type=bind,source=${PWD}/../target/${TARGET}/release,target=/programs" \
+        apollo_harness:latest /scripts/runit.sh "${timestamp}" \
+        "${2}" \
+        "testdata/${3}"
+fi
 
 # Display the heaptrack analyze results
-printf "\nResults\n"
+printf "\nResults: %s -> %s.out\n" "${1}" "${timestamp}"
 cat "results/${timestamp}.out"
 

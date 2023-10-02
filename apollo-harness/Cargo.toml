@@ -20,4 +20,4 @@ name = "apollo_harness"
 path = "src/lib.rs"
 
 [[bin]]
-name = "load_and_plan"
+name = "rb_loader"
