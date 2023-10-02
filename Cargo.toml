@@ -5,3 +5,4 @@ members = [
   "apollo-subgraph",
   "apollo-supergraph",
 ]
+resolver = "2"
