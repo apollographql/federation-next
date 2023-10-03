@@ -80,8 +80,8 @@ ${CONMAN} build \
     -f scripts/Dockerfile.runner \
     scripts
 
-# Create a timestamp for our test
-timestamp="$(date +'%Y_%m_%d_%H:%M:%S')"
+# Create a timestamped filename for our test
+timestamp="${1// /_}_$(date +'%Y_%m_%d_%H:%M:%S')"
 
 # Run the test with 1 or 2 arguments
 if [[ "${4}" != "" ]]; then
