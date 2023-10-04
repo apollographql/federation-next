@@ -11,8 +11,16 @@
 # Terminate the build and clean up the build directory
 ###
 terminate () {
-    printf "%sterminating...\n" "${1}"
+    printf "%s terminating...\n" "${1}"
     exit 1
+}
+
+###
+# Advise about installation/configuration and then terminate
+###
+advise () {
+    printf "%\n" "${1}"
+    exit 2
 }
 
 install_conman_advice="""
@@ -53,15 +61,15 @@ Once cross is installed, please start the test again.
 # Figure out if we are using docker or podman or need to provide some
 # installation guidance
 
-CONMAN=$(which docker || which podman) || terminate "${install_conman_advice}"
-CROSS=$(which cross) || terminate "${install_cross_advice}"
+CONMAN=$(which docker || which podman) || advise "${install_conman_advice}"
+CROSS=$(which cross) || advise "${install_cross_advice}"
 
 printf "Using %s to run the tests...\n" "${CONMAN}"
 
 # Figure out our host platform. We'll use that to decide what kind of target to build
 PLATFORM="$(uname -m)"
 
-if [[ "${PLATFORM}" == "amd64" ]]; then
+if [[ "${PLATFORM}" == "amd64" || "${PLATFORM}" == "x86_64" ]]; then
     TARGET="x86_64-unknown-linux-gnu"
 elif [[ "${PLATFORM}" == "arm64" ]]; then
     TARGET="aarch64-unknown-linux-gnu"
@@ -71,17 +79,26 @@ fi
 
 printf "Building target: %s\n" "${TARGET}"
 
+# Before we do any building set CROSS environment up to disable buildx.
+# buildx may not exist in every environment and we don't need it.
+export CROSS_CONTAINER_ENGINE_NO_BUILDKIT=1
+
+# Before building make sure the target directory exists.
+# If it doesn't, the docker container will create it as root and that breaks a lot of things
+# We can ignore any fails from this command
+mkdir ../target > /dev/null 2>&1
+
 # Use cross to cross compile to desired target
-${CROSS} build --release --bin "${2}" --target "${TARGET}"
+${CROSS} build --release --bin "${2}" --target "${TARGET}" > /dev/null 2>&1
 
 # Build an image to run our target
 ${CONMAN} build \
     -t apollo_harness:latest \
     -f scripts/Dockerfile.runner \
-    scripts
+    scripts > /dev/null 2>&1
 
 # Create a timestamped filename for our test
-timestamp="${1// /_}_$(date +'%Y_%m_%d_%H:%M:%S')"
+timestamp="${1// /_}/$(date +'%Y_%m_%d_%H:%M:%S')"
 
 # Run the test with 1 or 2 arguments
 if [[ "${4}" != "" ]]; then

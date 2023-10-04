@@ -3,4 +3,4 @@ dockerfile = "apollo-harness/scripts/Dockerfile.builder"
 
 
 [target.x86_64-unknown-linux-gnu]
-dockerfile = "apollo-harness/scripts/Dockerfile.builder"
+dockerfile = "scripts/Dockerfile.builder"
