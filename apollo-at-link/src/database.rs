@@ -1,31 +1,18 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use apollo_compiler::database::ReprStorage;
-use apollo_compiler::{
-    database::{db::Upcast, CstStorage, HirStorage, InputStorage},
-    hir::{Directive, DirectiveLocation, Type, Value},
-    FileId, HirDatabase, InputDatabase, Source,
-};
+use apollo_compiler::ast::{Directive, DirectiveLocation, Type};
+use apollo_compiler::Schema;
 
 use crate::{
     link::{Link, LinkError, LinksMetadata, DEFAULT_LINK_NAME},
     spec::{Identity, Url},
 };
 
-#[salsa::query_group(AtLinkStorage)]
-pub trait AtLinkDatabase: HirDatabase {
-    fn links_metadata(&self) -> Arc<LinksMetadata>;
-}
-
-pub fn links_metadata(db: &dyn AtLinkDatabase) -> Arc<LinksMetadata> {
-    Arc::new(bootstrap(db).unwrap_or_default().unwrap_or_default())
-}
-
-fn bootstrap(db: &dyn AtLinkDatabase) -> Result<Option<LinksMetadata>, LinkError> {
-    let schema_def = db.hir_schema();
-    let mut bootstrap_directives = schema_def
-        .directives()
-        .filter(|d| parse_link_if_bootstrap_directive(db, d));
+pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkError> {
+    let mut bootstrap_directives = schema
+        .schema_definition_directives()
+        .iter()
+        .filter(|d| parse_link_if_bootstrap_directive(schema, d));
     let bootstrap_directive = bootstrap_directives.next();
     if bootstrap_directive.is_none() {
         return Ok(None);
@@ -39,15 +26,16 @@ fn bootstrap(db: &dyn AtLinkDatabase) -> Result<Option<LinksMetadata>, LinkError
     }
     // At this point, we know this schema uses "our" @link. So we now "just" want to validate
     // all of the @link usages (starting with the bootstrapping one) and extract their metadata.
-    let link_name_in_schema = bootstrap_directive.unwrap().name();
+    let link_name_in_schema = &bootstrap_directive.unwrap().name;
     let mut links = Vec::new();
     let mut by_identity = HashMap::new();
     let mut by_name_in_schema = HashMap::new();
     let mut types_by_imported_name = HashMap::new();
     let mut directives_by_imported_name = HashMap::new();
-    let link_applications = schema_def
-        .directives()
-        .filter(|d| d.name() == link_name_in_schema);
+    let link_applications = schema
+        .schema_definition_directives()
+        .iter()
+        .filter(|d| d.name == *link_name_in_schema);
     for application in link_applications {
         let link = Arc::new(Link::from_directive_application(application)?);
         links.push(Arc::clone(&link));
@@ -114,150 +102,53 @@ fn bootstrap(db: &dyn AtLinkDatabase) -> Result<Option<LinksMetadata>, LinkError
     }))
 }
 
-// TODO: this should maybe be provided by apollo-compiler directly?
-pub(crate) fn directive_arg_value<'a>(
-    directive: &'a Directive,
-    arg_name: &'static str,
-) -> Option<&'a Value> {
-    directive
-        .arguments()
-        .iter()
-        .find(|arg| arg.name() == arg_name)
-        .map(|arg| arg.value())
-}
-
-pub(crate) fn directive_string_arg_value<'a>(
-    directive: &'a Directive,
-    arg_name: &'static str,
-) -> Option<&'a String> {
-    match directive_arg_value(directive, arg_name) {
-        Some(Value::String { value, loc: _ }) => Some(value),
-        _ => None,
-    }
-}
-
 // Note: currently only recognizing @link, not @core. Doesn't feel worth bothering with @core at
 // this point, but the latter uses the "feature" arg instead of "url".
-fn parse_link_if_bootstrap_directive(db: &dyn AtLinkDatabase, directive: &Directive) -> bool {
-    if let Some(definition) = db.find_directive_definition_by_name(directive.name().to_string()) {
-        let locations = definition.directive_locations();
-        let is_correct_def = definition.repeatable()
+fn parse_link_if_bootstrap_directive(schema: &Schema, directive: &Directive) -> bool {
+    if let Some(definition) = schema.directive_definitions.get(&directive.name) {
+        let locations = &definition.locations;
+        let is_correct_def = definition.repeatable
             && locations.len() == 1
             && locations[0] == DirectiveLocation::Schema;
         let is_correct_def = is_correct_def
             && definition
-                .arguments()
-                .input_values()
+                .arguments
                 .iter()
-                .find(|arg| arg.name() == "as")
-                .filter(|arg| {
-                    let ty = arg.ty();
-                    ty.is_named() && ty.name() == "String"
+                .find(|arg| {
+                    arg.name == "as" && matches!(&*arg.ty, Type::Named(name) if name == "String")
                 })
                 .is_some();
         let is_correct_def = is_correct_def
             && definition
-                .arguments()
-                .input_values()
+                .arguments
                 .iter()
-                .find(|arg| arg.name() == "url")
-                .filter(|arg| {
+                .find(|arg| arg.name == "url" && {
                     // The "true" type of `url` in the @link spec is actually `String` (nullable), and this
                     // for future-proofing reasons (the idea was that we may introduce later other
                     // ways to identify specs that are not urls). But we allow the definition to
                     // have a non-nullable type both for convenience and because some early
                     // federation previews actually generated that.
-                    if let Type::NonNull { ty, loc: _ } = arg.ty() {
-                        return ty.is_named() && ty.name() == "String";
-                    }
-                    let ty = arg.ty();
-                    ty.is_named() && ty.name() == "String"
+                    matches!(&*arg.ty, Type::Named(name) | Type::NonNullNamed(name) if name == "String")
                 })
                 .is_some();
         if !is_correct_def {
             return false;
         }
-        if let Some(url) = directive_string_arg_value(directive, "url") {
+        if let Some(url) = directive
+            .argument_by_name("url")
+            .and_then(|value| value.as_str())
+        {
             let url = url.parse::<Url>();
-            let expected_name: &str = directive_string_arg_value(directive, "as")
-                .map(|v| v.as_ref())
+            let expected_name = directive
+                .argument_by_name("as")
+                .and_then(|value| value.as_str())
                 .unwrap_or(DEFAULT_LINK_NAME);
             return url.map_or(false, |url| {
-                url.identity == Identity::link_identity() && directive.name() == expected_name
+                url.identity == Identity::link_identity() && directive.name == expected_name
             });
         }
     }
     false
-}
-
-#[salsa::database(InputStorage, CstStorage, HirStorage, AtLinkStorage, ReprStorage)]
-#[derive(Default)]
-pub struct AtLinkedRootDatabase {
-    pub storage: salsa::Storage<AtLinkedRootDatabase>,
-}
-
-impl salsa::Database for AtLinkedRootDatabase {}
-
-impl salsa::ParallelDatabase for AtLinkedRootDatabase {
-    fn snapshot(&self) -> salsa::Snapshot<AtLinkedRootDatabase> {
-        salsa::Snapshot::new(AtLinkedRootDatabase {
-            storage: self.storage.snapshot(),
-        })
-    }
-}
-
-impl Upcast<dyn HirDatabase> for AtLinkedRootDatabase {
-    fn upcast(&self) -> &(dyn HirDatabase + 'static) {
-        self
-    }
-}
-
-pub struct AtLinkedCompiler {
-    pub db: AtLinkedRootDatabase,
-}
-
-#[allow(clippy::new_without_default)]
-impl AtLinkedCompiler {
-    pub fn new() -> Self {
-        let mut db = AtLinkedRootDatabase::default();
-        // TODO(@goto-bus-stop) can we make salsa fill in these defaults for us…?
-        db.set_recursion_limit(None);
-        db.set_token_limit(None);
-        db.set_type_system_hir_input(None);
-        db.set_source_files(vec![]);
-
-        Self { db }
-    }
-
-    fn add_input(&mut self, source: Source) -> FileId {
-        let file_id = FileId::new();
-        let mut sources = self.db.source_files();
-        sources.push(file_id);
-        self.db.set_input(file_id, source);
-        self.db.set_source_files(sources);
-
-        file_id
-    }
-
-    pub fn add_type_system(&mut self, input: &str, path: impl AsRef<Path>) -> FileId {
-        if self.db.type_system_hir_input().is_some() {
-            panic!(
-                "Having both string inputs and pre-computed inputs \
-                 for type system definitions is not supported"
-            )
-        }
-        let filename = path.as_ref().to_owned();
-        // TODO: should be added theoretically; but ideally we can "inherit" all this from
-        // ApolloCompiler more easily.
-        //self.add_implicit_types();
-        self.add_input(Source::schema(filename, input))
-    }
-
-    pub fn update_type_system(&mut self, file_id: FileId, input: &str) {
-        let schema = self.db.input(file_id);
-        self.db
-            .set_input(file_id, Source::schema(schema.filename().to_owned(), input))
-    }
 }
 
 #[cfg(test)]
@@ -292,10 +183,12 @@ mod tests {
           directive @link(url: String, as: String, import: [Import], for: link__Purpose) repeatable on SCHEMA
         "#;
 
-        let mut compiler = AtLinkedCompiler::new();
-        compiler.add_type_system(schema, "testSchema");
+        let schema = Schema::parse(schema, "testSchema");
 
-        let meta = compiler.db.links_metadata();
+        let meta = links_metadata(&schema)
+            // TODO: error handling?
+            .unwrap_or_default()
+            .unwrap_or_default();
         let names_in_schema = meta
             .all_links()
             .iter()

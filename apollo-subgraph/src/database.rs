@@ -1,16 +1,23 @@
+//! Valid federation 2 subgraphs.
+//!
+//! Note: technically, federation 1 subgraphs are still accepted as input of
+//! composition. However, there is some pre-composition steps that "massage"
+//! the input schema to transform them in fully valid federation 2 subgraphs,
+//! so the subgraphs seen by composition and query planning are always fully
+//! valid federation 2 ones, and this is what this database handles.
+//! Note2: This does assumes that whichever way an implementation of this
+//! trait is created, some validation that the underlying schema is a valid
+//! federation subgraph (so valid graphql, link to the federation spec, and
+//! pass additional federation validations). If this is not the case, most
+//! of the methods here will panic.
+
 use std::sync::Arc;
 
-use apollo_at_link::{
-    database::{AtLinkDatabase, AtLinkStorage},
-    link::Link,
-    spec::{Identity, APOLLO_SPEC_DOMAIN},
-};
-use apollo_compiler::database::ReprStorage;
-use apollo_compiler::{
-    database::{db::Upcast, CstStorage, HirStorage, InputStorage},
-    hir::{Directive, SelectionSet, Value},
-    HirDatabase,
-};
+use apollo_at_link::database::links_metadata;
+use apollo_at_link::link::Link;
+use apollo_at_link::spec::{Identity, APOLLO_SPEC_DOMAIN};
+use apollo_compiler::executable::{Directive, SelectionSet};
+use apollo_compiler::Schema;
 
 // TODO: we should define this as part as some more generic "FederationSpec" definition, but need
 // to define the ground work for that in `apollo-at-link` first.
@@ -39,94 +46,44 @@ impl Key {
         type_name: &str,
         directive: &Directive,
     ) -> Option<Key> {
-        let fields_arg = directive
-            .arguments()
+        directive
+            .arguments
             .iter()
-            .find(|arg| arg.name() == "fields")
-            .map(|arg| arg.value());
-        if let Some(Value::String { value: _, loc: _ }) = fields_arg {
-            Some(Key {
+            .find(|arg| arg.name == "fields")
+            .and_then(|arg| arg.value.as_str())
+            .map(|_value| Key {
                 type_name: type_name.to_string(),
                 // TODO: obviously not what we want.
                 selections: None,
             })
-        } else {
-            None
-        }
     }
 }
 
-/// Database used for valid federation 2 subgraphs.
-///
-/// Note: technically, federation 1 subgraphs are still accepted as input of
-/// composition. However, there is some pre-composition steps that "massage"
-/// the input schema to transform them in fully valid federation 2 subgraphs,
-/// so the subgraphs seen by composition and query planning are always fully
-/// valid federation 2 ones, and this is what this database handles.
-/// Note2: This does assumes that whichever way an implementation of this
-/// trait is created, some validation that the underlying schema is a valid
-/// federation subgraph (so valid graphql, link to the federation spec, and
-/// pass additional federation validations). If this is not the case, most
-/// of the methods here will panic.
-#[salsa::query_group(SubgraphStorage)]
-pub trait SubgraphDatabase: AtLinkDatabase + HirDatabase {
-    fn federation_link(&self) -> Arc<Link>;
-
-    /// The name of the @key directive in this subgraph.
-    /// This will either return 'federation__key' if the `@key` directive is not imported,
-    /// or whatever never it is imported under otherwise. Commonly, this would just be `key`.
-    fn key_directive_name(&self) -> String;
-
-    fn keys(&self, type_name: String) -> Vec<Key>;
-}
-
-fn federation_link(db: &dyn SubgraphDatabase) -> Arc<Link> {
-    db.links_metadata()
+pub fn federation_link(schema: &Schema) -> Arc<Link> {
+    links_metadata(schema)
+        // TODO: error handling?
+        .unwrap_or_default()
+        .unwrap_or_default()
         .for_identity(&federation_link_identity())
         .expect("The presence of the federation link should have been validated on construction")
 }
 
-fn key_directive_name(db: &dyn SubgraphDatabase) -> String {
-    db.federation_link().directive_name_in_schema("key")
+/// The name of the @key directive in this subgraph.
+/// This will either return 'federation__key' if the `@key` directive is not imported,
+/// or whatever never it is imported under otherwise. Commonly, this would just be `key`.
+pub fn key_directive_name(schema: &Schema) -> String {
+    federation_link(schema).directive_name_in_schema("key")
 }
 
-fn keys(db: &dyn SubgraphDatabase, type_name: String) -> Vec<Key> {
-    let key_name = db.key_directive_name();
-    if let Some(type_def) = db.find_type_definition_by_name(type_name.clone()) {
+pub fn keys(schema: &Schema, type_name: &str) -> Vec<Key> {
+    let key_name = key_directive_name(schema);
+    if let Some(type_def) = schema.types.get(type_name) {
         type_def
-            .directives_by_name(&key_name)
+            .directives()
+            .get_all(&key_name)
             .filter_map(|directive| Key::from_directive_application(&type_name, directive))
             .collect()
     } else {
         vec![]
-    }
-}
-
-#[salsa::database(
-    InputStorage,
-    CstStorage,
-    HirStorage,
-    AtLinkStorage,
-    ReprStorage,
-    SubgraphStorage
-)]
-#[derive(Default)]
-pub struct SubgraphRootDatabase {
-    pub storage: salsa::Storage<SubgraphRootDatabase>,
-}
-
-impl salsa::Database for SubgraphRootDatabase {}
-
-impl salsa::ParallelDatabase for SubgraphRootDatabase {
-    fn snapshot(&self) -> salsa::Snapshot<SubgraphRootDatabase> {
-        salsa::Snapshot::new(SubgraphRootDatabase {
-            storage: self.storage.snapshot(),
-        })
-    }
-}
-
-impl Upcast<dyn HirDatabase> for SubgraphRootDatabase {
-    fn upcast(&self) -> &(dyn HirDatabase + 'static) {
-        self
     }
 }

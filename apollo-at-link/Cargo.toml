@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 #apollo-compiler = "0.10.0"
-apollo-compiler = { git = "https://github.com/apollographql/apollo-rs.git", rev = "3896b9c" }
+apollo-compiler = { git = "https://github.com/apollographql/apollo-rs.git", rev = "apollo-compiler@1.0.0-alpha" }
 salsa = "0.16.1"
 thiserror = "1.0"
 url = "2"

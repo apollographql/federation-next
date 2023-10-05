@@ -1,16 +1,9 @@
+use crate::spec::Identity;
+use crate::spec::Url;
+use apollo_compiler::ast::{Directive, Value};
 use std::fmt;
 use std::str;
 use std::{collections::HashMap, sync::Arc};
-
-use crate::{
-    database::{directive_arg_value, directive_string_arg_value},
-    spec::Identity,
-};
-
-use super::spec::Url;
-
-use apollo_compiler::hir::{Directive, Value};
-
 use thiserror::Error;
 
 pub const DEFAULT_LINK_NAME: &str = "link";
@@ -32,13 +25,9 @@ pub enum Purpose {
 }
 
 impl Purpose {
-    pub fn from_hir_value(value: &Value) -> Result<Purpose, LinkError> {
-        if let Value::Enum {
-            value: name,
-            loc: _,
-        } = value
-        {
-            Ok(name.src().parse::<Purpose>()?)
+    pub fn from_ast_value(value: &Value) -> Result<Purpose, LinkError> {
+        if let Value::Enum(value) = value {
+            Ok(value.parse::<Purpose>()?)
         } else {
             Err(LinkError::BootstrapError(
                 "invalid `purpose` value, should be an enum".to_string(),
@@ -93,7 +82,7 @@ impl Import {
         // (especially since @link(import:) is a list), but `Value` does not implement `Display`
         // currently, so a bit annoying.
         match value {
-            Value::String { value: str, loc: _ } => {
+            Value::String(str) => {
                 let is_directive = str.starts_with('@');
                 let element = if is_directive {
                     str.strip_prefix('@').unwrap().to_string()
@@ -102,26 +91,22 @@ impl Import {
                 };
                 Ok(Import { element, is_directive, alias: None })
             },
-            Value::Object { value:fields, loc: _ } => {
+            Value::Object(fields) => {
                 let mut name: Option<String> = None;
                 let mut alias: Option<String> = None;
                 for (k, v) in fields {
-                    match k.src() {
+                    match k.as_str() {
                         "name" => {
-                            if let Value::String { value: str, loc: _ } = v {
-                                name = Some(str.clone())
-                            } else {
-                                Err(LinkError::BootstrapError("invalid value for `name` field in @link(import:) argument: must be a string".to_string()))?
-                            }
+                            name = Some(v.as_str().ok_or_else(|| {
+                                LinkError::BootstrapError("invalid value for `name` field in @link(import:) argument: must be a string".to_string())
+                            })?.to_owned())
                         },
                         "as" => {
-                            if let Value::String { value: str, loc: _ } = v {
-                                alias = Some(str.clone())
-                            } else {
-                                Err(LinkError::BootstrapError("invalid value for `as` field in @link(import:) argument: must be a string".to_string()))?
-                            }
+                            alias = Some(v.as_str().ok_or_else(|| {
+                                LinkError::BootstrapError("invalid value for `as` field in @link(import:) argument: must be a string".to_string())
+                            })?.to_owned())
                         },
-                        _ => Err(LinkError::BootstrapError(format!("unknown field `{}` in @link(import:) argument", k.src())))?
+                        _ => Err(LinkError::BootstrapError(format!("unknown field `{k}` in @link(import:) argument")))?
                     }
                 }
                 if let Some(element) = name {
@@ -221,23 +206,28 @@ impl Link {
     }
 
     pub fn from_directive_application(directive: &Directive) -> Result<Link, LinkError> {
-        let url = directive_string_arg_value(directive, "url").ok_or(LinkError::BootstrapError(
-            "the `url` argument for @link is mandatory".to_string(),
-        ))?;
+        let url = directive
+            .argument_by_name("url")
+            .and_then(|arg| arg.as_str())
+            .ok_or(LinkError::BootstrapError(
+                "the `url` argument for @link is mandatory".to_string(),
+            ))?;
         let url: Url = url.parse::<Url>().map_err(|e| {
             LinkError::BootstrapError(format!("invalid `url` argument (reason: {})", e))
         })?;
-        let spec_alias = directive_string_arg_value(directive, "as").cloned();
-        let purpose = if let Some(value) = directive_arg_value(directive, "for") {
-            Some(Purpose::from_hir_value(value)?)
+        let spec_alias = directive
+            .argument_by_name("as")
+            .and_then(|arg| arg.as_str())
+            .map(|s| s.to_owned());
+        let purpose = if let Some(value) = directive.argument_by_name("for") {
+            Some(Purpose::from_ast_value(value)?)
         } else {
             None
         };
         let mut imports = Vec::new();
-        if let Some(Value::List {
-            value: values,
-            loc: _,
-        }) = directive_arg_value(directive, "import")
+        if let Some(values) = directive
+            .argument_by_name("import")
+            .and_then(|arg| arg.as_list())
         {
             for v in values {
                 imports.push(Arc::new(Import::from_hir_value(v)?));

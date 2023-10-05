@@ -8,8 +8,7 @@ edition = "2021"
 [dependencies]
 apollo-at-link = { path = "../apollo-at-link", version = "0.1.0" }
 #apollo-compiler = "0.10.0"
-#apollo-encoder = "0.6.0"
-apollo-compiler = { git = "https://github.com/apollographql/apollo-rs.git", rev = "3896b9c" }
-apollo-encoder = { git = "https://github.com/apollographql/apollo-rs.git", rev = "3896b9c" }
+apollo-compiler = { git = "https://github.com/apollographql/apollo-rs.git", rev = "apollo-compiler@1.0.0-alpha" }
+indexmap = "2.0.2"
 salsa = "0.16.1"
 thiserror = "1.0"
