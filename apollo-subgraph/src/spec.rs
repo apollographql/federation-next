@@ -3,11 +3,12 @@ use apollo_at_link::link::{
     Import, Link, DEFAULT_IMPORT_SCALAR_NAME, DEFAULT_LINK_NAME, DEFAULT_PURPOSE_ENUM_NAME,
 };
 use apollo_at_link::spec::{Identity, Url, Version};
-use apollo_compiler::hir::DirectiveLocation;
-use apollo_encoder::{
-    Argument, Directive, DirectiveDefinition, EnumDefinition, EnumValue, InputValueDefinition,
-    ScalarDefinition, Type_, Value,
+use apollo_compiler::ast::{
+    Argument, Directive, DirectiveDefinition, DirectiveLocation, EnumValueDefinition,
+    InputValueDefinition, Type, Value,
 };
+use apollo_compiler::schema::{EnumType, ScalarType};
+use apollo_compiler::Node;
 use std::sync::Arc;
 
 use thiserror::Error;
@@ -86,11 +87,6 @@ macro_rules! applied_specification {
         $(impl AppliedFederationLink for $t {
             /// @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
             fn applied_link_directive(&self) -> Directive {
-                let mut applied_link_directive = Directive::new(DEFAULT_LINK_NAME.to_owned());
-                applied_link_directive.arg(Argument::new(
-                    "url".to_owned(),
-                    Value::String(self.link.url.to_string()),
-                ));
                 let imports = self
                     .link
                     .imports
@@ -98,26 +94,38 @@ macro_rules! applied_specification {
                     .map(|i| {
                         if i.alias.is_some() {
                             Value::Object(vec![
-                                ("name".to_string(), Value::String(i.element.to_owned())),
-                                ("as".to_string(), Value::String(i.imported_display_name())),
+                                ("name".into(), i.element.as_str().into()),
+                                ("as".into(), i.imported_display_name().into()),
                             ])
                         } else {
-                            Value::String(i.imported_display_name())
-                        }
+                            i.imported_display_name().into()
+                        }.into()
                     })
-                    .collect::<Vec<Value>>();
-                applied_link_directive.arg(Argument::new("import".to_owned(), Value::List(imports)));
+                    .collect::<Vec<Node<Value>>>();
+                let mut applied_link_directive = Directive {
+                    name: DEFAULT_LINK_NAME.into(),
+                    arguments: vec![
+                        Argument {
+                            name: "url".into(),
+                            value: self.link.url.to_string().into(),
+                        }.into(),
+                        Argument {
+                            name: "import".into(),
+                            value: Value::List(imports).into(),
+                        }.into(),
+                    ]
+                };
                 if let Some(spec_alias) = &self.link.spec_alias {
-                    applied_link_directive.arg(Argument::new(
-                        "as".to_owned(),
-                        Value::String(spec_alias.to_owned()),
-                    ))
+                    applied_link_directive.arguments.push(Argument {
+                        name: "as".into(),
+                        value: spec_alias.into(),
+                    }.into())
                 }
                 if let Some(purpose) = &self.link.purpose {
-                    applied_link_directive.arg(Argument::new(
-                        "for".to_owned(),
-                        Value::Enum(purpose.to_string()),
-                    ))
+                    applied_link_directive.arguments.push(Argument {
+                        name: "for".into(),
+                        value: Value::Enum(purpose.to_string().into()).into(),
+                    }.into())
                 }
                 applied_link_directive
             }
@@ -199,84 +207,87 @@ impl FederationSpecDefinitions {
     }
 
     /// scalar FieldSet
-    pub fn fieldset_scalar_definition(&self) -> ScalarDefinition {
-        ScalarDefinition::new(self.namespaced_type_name(FIELDSET_SCALAR_NAME, false))
+    pub fn fieldset_scalar_definition(&self) -> ScalarType {
+        ScalarType {
+            description: None,
+            directives: Default::default(),
+        }
     }
 
     fn fields_argument_definition(&self) -> InputValueDefinition {
-        InputValueDefinition::new(
-            "fields".to_owned(),
-            Type_::NonNull {
-                ty: Box::new(Type_::NamedType {
-                    name: self.namespaced_type_name(FIELDSET_SCALAR_NAME, false),
-                }),
-            },
-        )
+        InputValueDefinition {
+            description: None,
+            name: "fields".into(),
+            ty: Type::new_named(&self.namespaced_type_name(FIELDSET_SCALAR_NAME, false))
+                .non_null()
+                .into(),
+            default_value: None,
+            directives: Default::default(),
+        }
     }
 
     /// directive @composeDirective(name: String!) repeatable on SCHEMA
     fn compose_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let compose_directive_name = alias
-            .as_deref()
-            .unwrap_or(COMPOSE_DIRECTIVE_NAME)
-            .to_owned();
-        let mut compose_directive = DirectiveDefinition::new(compose_directive_name);
-        compose_directive.arg(InputValueDefinition::new(
-            "name".to_owned(),
-            Type_::NonNull {
-                ty: Box::new(Type_::NamedType {
-                    name: "String".to_owned(),
-                }),
-            },
-        ));
-
-        compose_directive.location(DirectiveLocation::Schema.to_string());
-        compose_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias.as_deref().unwrap_or(COMPOSE_DIRECTIVE_NAME).into(),
+            arguments: vec![InputValueDefinition {
+                description: None,
+                name: "name".into(),
+                ty: Type::new_named("String").non_null().into(),
+                default_value: None,
+                directives: Default::default(),
+            }
+            .into()],
+            repeatable: true,
+            locations: vec![DirectiveLocation::Schema],
+        }
     }
 
     /// directive @key(fields: FieldSet!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
     fn key_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let key_directive_name = alias.as_deref().unwrap_or(KEY_DIRECTIVE_NAME).to_owned();
-        let mut key_directive = DirectiveDefinition::new(key_directive_name);
-
-        key_directive.arg(self.fields_argument_definition());
-        let mut resolvable_arg = InputValueDefinition::new(
-            "resolvable".to_owned(),
-            Type_::NamedType {
-                name: "Boolean".to_owned(),
-            },
-        );
-        resolvable_arg.default_value("true".to_owned());
-        key_directive.arg(resolvable_arg);
-
-        key_directive.repeatable();
-        key_directive.location(DirectiveLocation::Object.to_string());
-        key_directive.location(DirectiveLocation::Interface.to_string());
-        key_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias.as_deref().unwrap_or(KEY_DIRECTIVE_NAME).into(),
+            arguments: vec![
+                self.fields_argument_definition().into(),
+                InputValueDefinition {
+                    description: None,
+                    name: "resolvable".into(),
+                    ty: Type::new_named("Boolean").into(),
+                    default_value: Some(true.into()),
+                    directives: Default::default(),
+                }
+                .into(),
+            ],
+            repeatable: true,
+            locations: vec![DirectiveLocation::Object, DirectiveLocation::Interface],
+        }
     }
 
     /// directive @extends on OBJECT | INTERFACE
     fn extends_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let extends_directive_name = alias
-            .as_deref()
-            .unwrap_or(EXTENDS_DIRECTIVE_NAME)
-            .to_owned();
-        let mut extends_directive = DirectiveDefinition::new(extends_directive_name);
-        extends_directive.location(DirectiveLocation::Object.to_string());
-        extends_directive.location(DirectiveLocation::Interface.to_string());
-        extends_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias.as_deref().unwrap_or(EXTENDS_DIRECTIVE_NAME).into(),
+            arguments: Vec::new(),
+            repeatable: false,
+            locations: vec![DirectiveLocation::Object, DirectiveLocation::Interface],
+        }
     }
 
     /// directive @external on OBJECT | FIELD_DEFINITION
     fn external_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let external_directive_name = alias
-            .as_deref()
-            .unwrap_or(EXTERNAL_DIRECTIVE_NAME)
-            .to_owned();
-        let mut external_directive = DirectiveDefinition::new(external_directive_name);
-        external_directive.location(DirectiveLocation::Object.to_string());
-        external_directive.location(DirectiveLocation::FieldDefinition.to_string());
-        external_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias.as_deref().unwrap_or(EXTERNAL_DIRECTIVE_NAME).into(),
+            arguments: Vec::new(),
+            repeatable: false,
+            locations: vec![
+                DirectiveLocation::Object,
+                DirectiveLocation::FieldDefinition,
+            ],
+        }
     }
 
     /// directive @inaccessible on
@@ -291,90 +302,95 @@ impl FederationSpecDefinitions {
     ///   | SCALAR
     ///   | UNION
     fn inaccessible_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let inaccessible_directive_name = alias
-            .as_deref()
-            .unwrap_or(INACCESSIBLE_DIRECTIVE_NAME)
-            .to_owned();
-        let mut inaccessible_directive = DirectiveDefinition::new(inaccessible_directive_name);
-        inaccessible_directive.location(DirectiveLocation::ArgumentDefinition.to_string());
-        inaccessible_directive.location(DirectiveLocation::Enum.to_string());
-        inaccessible_directive.location(DirectiveLocation::EnumValue.to_string());
-        inaccessible_directive.location(DirectiveLocation::FieldDefinition.to_string());
-        inaccessible_directive.location(DirectiveLocation::InputFieldDefinition.to_string());
-        inaccessible_directive.location(DirectiveLocation::InputObject.to_string());
-        inaccessible_directive.location(DirectiveLocation::Interface.to_string());
-        inaccessible_directive.location(DirectiveLocation::Object.to_string());
-        inaccessible_directive.location(DirectiveLocation::Scalar.to_string());
-        inaccessible_directive.location(DirectiveLocation::Union.to_string());
-        inaccessible_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias
+                .as_deref()
+                .unwrap_or(INACCESSIBLE_DIRECTIVE_NAME)
+                .into(),
+            arguments: Vec::new(),
+            repeatable: false,
+            locations: vec![
+                DirectiveLocation::ArgumentDefinition,
+                DirectiveLocation::Enum,
+                DirectiveLocation::EnumValue,
+                DirectiveLocation::FieldDefinition,
+                DirectiveLocation::InputFieldDefinition,
+                DirectiveLocation::InputObject,
+                DirectiveLocation::Interface,
+                DirectiveLocation::Object,
+                DirectiveLocation::Scalar,
+                DirectiveLocation::Union,
+            ],
+        }
     }
 
     /// directive @interfaceObject on OBJECT
     fn interface_object_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let interface_object_name = alias
-            .as_deref()
-            .unwrap_or(INTF_OBJECT_DIRECTIVE_NAME)
-            .to_owned();
-        let mut interface_object_directive = DirectiveDefinition::new(interface_object_name);
-        interface_object_directive.location(DirectiveLocation::Object.to_string());
-        interface_object_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias
+                .as_deref()
+                .unwrap_or(INTF_OBJECT_DIRECTIVE_NAME)
+                .into(),
+            arguments: Vec::new(),
+            repeatable: false,
+            locations: vec![DirectiveLocation::Object],
+        }
     }
 
     /// directive @override(from: String!) on FIELD_DEFINITION
     fn override_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let override_directive_name = alias
-            .as_deref()
-            .unwrap_or(OVERRIDE_DIRECTIVE_NAME)
-            .to_owned();
-        let mut override_directive = DirectiveDefinition::new(override_directive_name);
-        override_directive.location(DirectiveLocation::FieldDefinition.to_string());
-
-        override_directive.arg(InputValueDefinition::new(
-            "from".to_owned(),
-            Type_::NonNull {
-                ty: Box::new(Type_::NamedType {
-                    name: "String".to_owned(),
-                }),
-            },
-        ));
-        override_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias.as_deref().unwrap_or(OVERRIDE_DIRECTIVE_NAME).into(),
+            arguments: vec![InputValueDefinition {
+                description: None,
+                name: "from".into(),
+                ty: Type::new_named("String").non_null().into(),
+                default_value: None,
+                directives: Default::default(),
+            }
+            .into()],
+            repeatable: false,
+            locations: vec![DirectiveLocation::FieldDefinition],
+        }
     }
 
     /// directive @provides(fields: FieldSet!) on FIELD_DEFINITION
     fn provides_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let provides_directive_name = alias
-            .as_deref()
-            .unwrap_or(PROVIDES_DIRECTIVE_NAME)
-            .to_owned();
-        let mut provides_directive = DirectiveDefinition::new(provides_directive_name);
-        provides_directive.arg(self.fields_argument_definition());
-        provides_directive.location(DirectiveLocation::FieldDefinition.to_string());
-        provides_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias.as_deref().unwrap_or(PROVIDES_DIRECTIVE_NAME).into(),
+            arguments: vec![self.fields_argument_definition().into()],
+            repeatable: false,
+            locations: vec![DirectiveLocation::FieldDefinition],
+        }
     }
 
     /// directive @requires(fields: FieldSet!) on FIELD_DEFINITION
     fn requires_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let requires_directive_name = alias
-            .as_deref()
-            .unwrap_or(REQUIRES_DIRECTIVE_NAME)
-            .to_owned();
-        let mut requires_directive = DirectiveDefinition::new(requires_directive_name);
-        requires_directive.arg(self.fields_argument_definition());
-        requires_directive.location(DirectiveLocation::FieldDefinition.to_string());
-        requires_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias.as_deref().unwrap_or(REQUIRES_DIRECTIVE_NAME).into(),
+            arguments: vec![self.fields_argument_definition().into()],
+            repeatable: false,
+            locations: vec![DirectiveLocation::FieldDefinition],
+        }
     }
 
     /// directive @shareable repeatable on FIELD_DEFINITION | OBJECT
     fn shareable_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let shareable_directive_name = alias
-            .as_deref()
-            .unwrap_or(SHAREABLE_DIRECTIVE_NAME)
-            .to_owned();
-        let mut shareable_directive = DirectiveDefinition::new(shareable_directive_name);
-        shareable_directive.repeatable();
-        shareable_directive.location(DirectiveLocation::FieldDefinition.to_string());
-        shareable_directive.location(DirectiveLocation::Object.to_string());
-        shareable_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias.as_deref().unwrap_or(SHAREABLE_DIRECTIVE_NAME).into(),
+            arguments: Vec::new(),
+            repeatable: true,
+            locations: vec![
+                DirectiveLocation::FieldDefinition,
+                DirectiveLocation::Object,
+            ],
+        }
     }
 
     /// directive @tag(name: String!) repeatable on
@@ -389,20 +405,31 @@ impl FederationSpecDefinitions {
     ///   | SCALAR
     ///   | UNION
     fn tag_directive_definition(&self, alias: &Option<String>) -> DirectiveDefinition {
-        let tag_directive_name = alias.as_deref().unwrap_or(TAG_DIRECTIVE_NAME).to_owned();
-        let mut tag_directive = DirectiveDefinition::new(tag_directive_name);
-        tag_directive.repeatable();
-        tag_directive.location(DirectiveLocation::ArgumentDefinition.to_string());
-        tag_directive.location(DirectiveLocation::Enum.to_string());
-        tag_directive.location(DirectiveLocation::EnumValue.to_string());
-        tag_directive.location(DirectiveLocation::FieldDefinition.to_string());
-        tag_directive.location(DirectiveLocation::InputFieldDefinition.to_string());
-        tag_directive.location(DirectiveLocation::InputObject.to_string());
-        tag_directive.location(DirectiveLocation::Interface.to_string());
-        tag_directive.location(DirectiveLocation::Object.to_string());
-        tag_directive.location(DirectiveLocation::Scalar.to_string());
-        tag_directive.location(DirectiveLocation::Union.to_string());
-        tag_directive
+        DirectiveDefinition {
+            description: None,
+            name: alias.as_deref().unwrap_or(TAG_DIRECTIVE_NAME).into(),
+            arguments: vec![InputValueDefinition {
+                description: None,
+                name: "name".into(),
+                ty: Type::new_named("String").non_null().into(),
+                default_value: None,
+                directives: Default::default(),
+            }
+            .into()],
+            repeatable: true,
+            locations: vec![
+                DirectiveLocation::ArgumentDefinition,
+                DirectiveLocation::Enum,
+                DirectiveLocation::EnumValue,
+                DirectiveLocation::FieldDefinition,
+                DirectiveLocation::InputFieldDefinition,
+                DirectiveLocation::InputObject,
+                DirectiveLocation::Interface,
+                DirectiveLocation::Object,
+                DirectiveLocation::Scalar,
+                DirectiveLocation::Union,
+            ],
+        }
     }
 }
 
@@ -435,56 +462,88 @@ impl LinkSpecDefinitions {
     }
 
     ///   scalar Import
-    pub fn import_scalar_definition(&self) -> ScalarDefinition {
-        ScalarDefinition::new(self.import_scalar_name.to_owned())
+    pub fn import_scalar_definition(&self) -> ScalarType {
+        ScalarType {
+            description: None,
+            directives: Default::default(),
+        }
     }
 
     ///   enum link__Purpose {
     ///     SECURITY
     ///     EXECUTION
     ///   }
-    pub fn link_purpose_enum_definition(&self) -> EnumDefinition {
-        let mut link_purpose_enum_definition =
-            EnumDefinition::new(self.purpose_enum_name.to_owned());
-        link_purpose_enum_definition.value(EnumValue::new("SECURITY".to_owned()));
-        link_purpose_enum_definition.value(EnumValue::new("EXECUTION".to_owned()));
-        link_purpose_enum_definition
+    pub fn link_purpose_enum_definition(&self) -> EnumType {
+        EnumType {
+            description: None,
+            directives: Default::default(),
+            values: [
+                (
+                    "SECURITY".into(),
+                    EnumValueDefinition {
+                        description: None,
+                        value: "SECURITY".into(),
+                        directives: Default::default(),
+                    }
+                    .into(),
+                ),
+                (
+                    "EXECUTION".into(),
+                    EnumValueDefinition {
+                        description: None,
+                        value: "EXECUTION".into(),
+                        directives: Default::default(),
+                    }
+                    .into(),
+                ),
+            ]
+            .into(),
+        }
     }
 
     ///   directive @link(url: String, as: String, import: [Import], for: link__Purpose) repeatable on SCHEMA
     pub fn link_directive_definition(&self) -> DirectiveDefinition {
-        let mut link_directive_definition = DirectiveDefinition::new(DEFAULT_LINK_NAME.to_owned());
-        link_directive_definition.arg(InputValueDefinition::new(
-            "url".to_owned(),
-            Type_::NonNull {
-                ty: Box::new(Type_::NamedType {
-                    name: "String".to_owned(),
-                }),
-            },
-        ));
-        link_directive_definition.arg(InputValueDefinition::new(
-            "as".to_owned(),
-            Type_::NamedType {
-                name: "String".to_owned(),
-            },
-        ));
-        link_directive_definition.arg(InputValueDefinition::new(
-            "import".to_owned(),
-            Type_::List {
-                ty: Box::new(Type_::NamedType {
-                    name: self.import_scalar_name.to_owned(),
-                }),
-            },
-        ));
-        link_directive_definition.arg(InputValueDefinition::new(
-            "for".to_owned(),
-            Type_::NamedType {
-                name: self.purpose_enum_name.to_owned(),
-            },
-        ));
-        link_directive_definition.repeatable();
-        link_directive_definition.location(DirectiveLocation::Schema.to_string());
-        link_directive_definition
+        DirectiveDefinition {
+            description: None,
+            name: DEFAULT_LINK_NAME.into(),
+            arguments: vec![
+                InputValueDefinition {
+                    description: None,
+                    name: "url".into(),
+                    // TODO: doc-comment disagrees with non-null here
+                    ty: Type::new_named("String").non_null().into(),
+                    default_value: None,
+                    directives: Default::default(),
+                }
+                .into(),
+                InputValueDefinition {
+                    description: None,
+                    name: "as".into(),
+                    ty: Type::new_named("String").into(),
+                    default_value: None,
+                    directives: Default::default(),
+                }
+                .into(),
+                InputValueDefinition {
+                    description: None,
+                    name: "import".into(),
+                    ty: Type::new_named(&self.import_scalar_name).list().into(),
+                    default_value: None,
+                    directives: Default::default(),
+                }
+                .into(),
+                InputValueDefinition {
+                    description: None,
+                    name: "for".into(),
+                    ty: Type::new_named(&self.purpose_enum_name).into(),
+                    default_value: None,
+                    directives: Default::default(),
+                }
+                .into(),
+            ],
+            repeatable: true,
+            locations: vec![DirectiveLocation::Schema],
+        }
     }
 }
 
