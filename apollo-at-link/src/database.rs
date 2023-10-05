@@ -186,7 +186,7 @@ mod tests {
         let schema = Schema::parse(schema, "testSchema");
 
         let meta = links_metadata(&schema)
-            // TODO: error handling?
+            // TODO: error handling?
             .unwrap_or_default()
             .unwrap_or_default();
         let names_in_schema = meta
