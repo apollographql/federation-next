@@ -38,6 +38,7 @@ if [[ "${toolchain_arch}" != "${target_arch}" ]]; then
 fi
 
 printf "Building target: %s\n" "${TARGET}"
+printf "This may take some time, especially on your first run..."
 
 # Before we do any building set CROSS environment up to disable buildx.
 # buildx may not exist in every environment and we don't need it.
