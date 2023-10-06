@@ -7,62 +7,12 @@
 # the tests in a container.
 ###
 
-###
-# Terminate the build and clean up the build directory
-###
-terminate () {
-    printf "%s terminating...\n" "${1}"
-    exit 1
-}
+# shellcheck disable=SC1091
+# shellcheck source=./incl.sh
+source "$(dirname "${0}")/incl.sh"
 
-###
-# Advise about installation/configuration and then terminate
-###
-advise () {
-    printf "%\n" "${1}"
-    exit 2
-}
-
-install_conman_advice="""
-The test harness executes within a container, so your machine must provide some kind of container management facility.
-
-We support:
- - docker
- - podman
-
-You can install/configure them by following the instructions at:
-
-docker
-------
-
-https://docs.docker.com/engine/install/
-
-podman
-------
-
-linux: (Figure this out for your distro. Likely to be something like 'apt install podman')
-
-macOS: 'brew install podman'. Decide if you are all in on podman, if you are also 'brew install podman-desktop', if not 'podman machine init && podman machine start')
-
-Note: Install/Configuring Docker/Podman could be a fairly complex task, these directions are minimal and should be enough to get you started. There's plenty of documentation on the internet if you want to fine tune your installation.
-Once docker/podman is installed, please start the test again.
-"""
-
-install_cross_advice="""
-The test harness makes use of the cargo cross plugin to perform cross compiling.
-
-You can install cross as follows:
-
-cargo install cross --git https://github.com/cross-rs/cross
-
-Once cross is installed, please start the test again.
-"""
-
-# Figure out if we are using docker or podman or need to provide some
-# installation guidance
-
-CONMAN=$(which docker || which podman) || advise "${install_conman_advice}"
-CROSS=$(which cross) || advise "${install_cross_advice}"
+CONMAN=$(which docker || which podman) || advise "${install_conman_advice:?}"
+CROSS=$(which cross) || advise "${install_cross_advice:?}"
 
 printf "Using %s to run the tests...\n" "${CONMAN}"
 
@@ -75,6 +25,17 @@ elif [[ "${PLATFORM}" == "arm64" ]]; then
     TARGET="aarch64-unknown-linux-gnu"
 else
     terminate "unsupported platform ${PLATFORM}"
+fi
+
+# This check makes sure that cross won't be installed with a toolchain which doesn't
+# match the default for the host. This can be the source of extremely strange behaviour
+# such as trying to build amd64 docker images on an arm64 system.
+
+toolchain_arch=$(rustup toolchain list | grep default | cut -d' ' -f 1 | cut -d '-' -f 2)
+target_arch=${TARGET%%-*}
+
+if [[ "${toolchain_arch}" != "${target_arch}" ]]; then
+    terminate "please use 'rustup default <toolchain>' to set your default toolchain to use a stable toolchain with arch: ${target_arch} before re-trying"
 fi
 
 printf "Building target: %s\n" "${TARGET}"
