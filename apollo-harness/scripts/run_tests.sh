@@ -16,6 +16,8 @@ source "$(dirname "${0}")/incl.sh"
 CONMAN=$(which docker || which podman) || advise "${install_conman_advice:?}"
 CROSS=$(which cross) || advise "${install_cross_advice:?}"
 
+printf "Using %s for containerisation...\n" "${CONMAN}"
+
 # Figure out our host platform. We'll use that to decide what kind of target to build
 PLATFORM="$(uname -m)"
 
@@ -38,7 +40,7 @@ if [[ "${toolchain_arch}" != "${target_arch}" ]]; then
 fi
 
 printf "Building target: %s\n" "${TARGET}"
-printf "This may take some time, especially on your first run..."
+printf "This may take some time, especially on your first run...\n\n"
 
 # Before we do any building set CROSS environment up to disable buildx.
 # buildx may not exist in every environment and we don't need it.

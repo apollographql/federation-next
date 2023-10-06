@@ -19,8 +19,6 @@ query="${5}"
 
 CONMAN=$(which docker || which podman) || advise "${install_conman_advice:?}"
 
-printf "Using %s to run the tests...\n" "${CONMAN}"
-
 # Run the test with 1 or 2 arguments
 if [[ "${query}" != "" ]]; then
     ${CONMAN} run \
