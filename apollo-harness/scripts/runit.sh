@@ -2,19 +2,21 @@
 
 timestamp="${1}";
 program="${2}";
+schema="${3}";
+query="${4}";
 
 # Make a directory (if required) for our results
 mkdir -p "$(dirname "${timestamp}")" > /dev/null 2>&1
 
 # Run our test twice, first under the control of heaptrack and second not
-if [[ -n "${4}" ]];then
-    heaptrack -o /results/"${timestamp}" /programs/"${program}" "${3}" "${4}" > /dev/null
+if [[ -n "${query}" ]];then
+    heaptrack -o /results/"${timestamp}" /programs/"${program}" "${schema}" "${query}" > /dev/null
 
-    timed="$(/usr/bin/time -f '%e' /programs/"${program}" "${3}" "${4}" 2>&1 > /dev/null)"
+    timed="$(/usr/bin/time -f '%e' /programs/"${program}" "${schema}" "${query}" 2>&1 > /dev/null)"
 else
-    heaptrack -o /results/"${timestamp}" /programs/"${program}" "${3}" > /dev/null
+    heaptrack -o /results/"${timestamp}" /programs/"${program}" "${schema}" > /dev/null
 
-    timed="$(/usr/bin/time -f '%e' /programs/"${program}" "${3}" 2>&1 > /dev/null)"
+    timed="$(/usr/bin/time -f '%e' /programs/"${program}" "${schema}" 2>&1 > /dev/null)"
 fi
 
 # Output the summary data 
