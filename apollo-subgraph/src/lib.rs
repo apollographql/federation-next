@@ -1,24 +1,17 @@
-use std::fmt::Formatter;
-use std::{collections::BTreeMap, path::Path, sync::Arc};
-
-use apollo_compiler::hir::TypeSystem;
-use apollo_compiler::{ApolloCompiler, FileId, HirDatabase, InputDatabase, Source};
-use apollo_encoder::{Document, SchemaDefinition};
-
-use apollo_at_link::link::LinkError;
-use apollo_at_link::{
-    link::{self, DEFAULT_LINK_NAME},
-    spec::Identity,
-};
-#[allow(unused)]
-use database::{SubgraphDatabase, SubgraphRootDatabase};
-
 use crate::spec::{
     AppliedFederationLink, FederationSpecDefinitions, FederationSpecError, LinkSpecDefinitions,
     FEDERATION_V2_DIRECTIVE_NAMES,
 };
+use apollo_at_link::link::LinkError;
+use apollo_at_link::link::{self, DEFAULT_LINK_NAME};
+use apollo_at_link::spec::Identity;
+use apollo_compiler::Schema;
+use indexmap::map::Entry;
+use std::collections::BTreeMap;
+use std::fmt::Formatter;
+use std::sync::Arc;
 
-mod database;
+pub mod database;
 mod spec;
 
 // TODO: we need a strategy for errors. All (or almost all) federation errors have a code in
@@ -28,6 +21,14 @@ mod spec;
 #[derive(Debug)]
 pub struct SubgraphError {
     pub msg: String,
+}
+
+impl From<apollo_compiler::Diagnostics> for SubgraphError {
+    fn from(value: apollo_compiler::Diagnostics) -> Self {
+        SubgraphError {
+            msg: value.to_string_no_color(),
+        }
+    }
 }
 
 impl From<LinkError> for SubgraphError {
@@ -49,39 +50,25 @@ impl From<FederationSpecError> for SubgraphError {
 pub struct Subgraph {
     pub name: String,
     pub url: String,
-    pub db: SubgraphRootDatabase,
+    pub schema: Schema,
 }
 
 impl Subgraph {
     pub fn new(name: &str, url: &str, schema_str: &str) -> Self {
-        let mut db = SubgraphRootDatabase::default();
-        db.set_recursion_limit(None);
-        db.set_token_limit(None);
-        db.set_type_system_hir_input(None);
-        db.set_source_files(vec![]);
-
-        // TODO: should be added theoretically.
-        //self.add_implicit_types();
-
-        let file_id = FileId::new();
-        let mut sources = db.source_files();
-        sources.push(file_id);
-        let path: &Path = name.as_ref();
-        db.set_input(file_id, Source::schema(path.to_owned(), schema_str));
-        db.set_source_files(sources);
+        let schema = Schema::parse(schema_str, name);
 
         // TODO: ideally, we'd want Subgraph to always represent a valid subgraph: we don't want
         // every possible method that receive a subgraph to have to worry if the underlying schema
         // is actually not a subgraph at all: we want the type-system to help carry known
         // guarantees. This imply we should run validation here (both graphQL ones, but also
         // subgraph specific ones).
-        // This also mean we would ideally want `db` to not export any mutable methods (like
-        // set_input), but not sure what that entail/how doable that is currently.
+        // This also mean we would ideally want `schema` to not export any mutable methods
+        // but not sure what that entail/how doable that is currently.
 
         Self {
             name: name.to_string(),
             url: url.to_string(),
-            db,
+            schema,
         }
     }
 
@@ -90,16 +77,13 @@ impl Subgraph {
         url: &str,
         schema_str: &str,
     ) -> Result<Self, SubgraphError> {
-        let mut compiler = ApolloCompiler::new();
-        compiler.add_type_system(schema_str, "schema.graphqls");
+        let mut schema = Schema::parse(schema_str, name);
 
-        let type_system = compiler.db.type_system();
         let mut imported_federation_definitions: Option<FederationSpecDefinitions> = None;
         let mut imported_link_definitions: Option<LinkSpecDefinitions> = None;
-        let link_directives = type_system
-            .definitions
-            .schema
-            .directives_by_name(DEFAULT_LINK_NAME);
+        let link_directives = schema
+            .schema_definition_directives()
+            .get_all(DEFAULT_LINK_NAME);
 
         for directive in link_directives {
             let link_directive = link::Link::from_directive_application(directive)?;
@@ -125,58 +109,40 @@ impl Subgraph {
         }
 
         // generate additional schema definitions
-        let missing_definitions_document = Self::populate_missing_type_definitions(
-            &type_system,
+        Self::populate_missing_type_definitions(
+            &mut schema,
             imported_federation_definitions,
             imported_link_definitions,
         )?;
-        let missing_definitions = missing_definitions_document.to_string();
-
-        // validate generated schema
-        compiler.add_type_system(&missing_definitions, "federation.graphqls");
-        let diagnostics = compiler.validate();
-        let mut errors = diagnostics.iter().filter(|d| d.data.is_error()).peekable();
-
-        if errors.peek().is_none() {
-            Ok(Subgraph::new(
-                name,
-                url,
-                format!("{}\n\n{}", schema_str, missing_definitions).as_str(),
-            ))
-        } else {
-            let errors = errors
-                .map(|d| d.to_string())
-                .collect::<Vec<String>>()
-                .join("");
-            Err(SubgraphError { msg: errors })
-        }
+        schema.validate()?;
+        Ok(Self {
+            name: name.to_owned(),
+            url: url.to_owned(),
+            schema,
+        })
     }
 
     fn populate_missing_type_definitions(
-        type_system: &Arc<TypeSystem>,
+        schema: &mut Schema,
         imported_federation_definitions: Option<FederationSpecDefinitions>,
         imported_link_definitions: Option<LinkSpecDefinitions>,
-    ) -> Result<Document, SubgraphError> {
-        let mut missing_definitions_document = Document::new();
-        let mut schema_extension: Option<SchemaDefinition> = None;
+    ) -> Result<(), SubgraphError> {
         // populate @link spec definitions
         let link_spec_definitions = match imported_link_definitions {
             Some(definitions) => definitions,
             None => {
                 // need to apply default @link directive for link spec on schema
                 let defaults = LinkSpecDefinitions::default();
-                let mut extension = SchemaDefinition::new();
-                extension.directive(defaults.applied_link_directive());
-                extension.extend();
-                schema_extension = Some(extension);
+                schema
+                    .schema_definition
+                    .get_or_insert_with(Default::default)
+                    .make_mut()
+                    .directives
+                    .push(defaults.applied_link_directive().into());
                 defaults
             }
         };
-        Self::populate_missing_link_definitions(
-            &mut missing_definitions_document,
-            type_system,
-            link_spec_definitions,
-        )?;
+        Self::populate_missing_link_definitions(schema, link_spec_definitions)?;
 
         // populate @link federation spec definitions
         let fed_definitions = match imported_federation_definitions {
@@ -185,82 +151,58 @@ impl Subgraph {
                 // federation v1 schema or user does not import federation spec
                 // need to apply default @link directive for federation spec on schema
                 let defaults = FederationSpecDefinitions::default()?;
-                let mut extension = match schema_extension {
-                    Some(ext) => ext,
-                    None => SchemaDefinition::new(),
-                };
-                extension.directive(defaults.applied_link_directive());
-                extension.extend();
-                schema_extension = Some(extension);
+                schema
+                    .schema_definition
+                    .get_or_insert_with(Default::default)
+                    .make_mut()
+                    .directives
+                    .push(defaults.applied_link_directive().into());
                 defaults
             }
         };
-        Self::populate_missing_federation_definitions(
-            &mut missing_definitions_document,
-            type_system,
-            fed_definitions,
-        )?;
-
-        // add schema extension if needed
-        if let Some(extension) = schema_extension {
-            missing_definitions_document.schema(extension);
-        }
-        Ok(missing_definitions_document)
+        Self::populate_missing_federation_definitions(schema, fed_definitions)
     }
 
     fn populate_missing_link_definitions(
-        missing_definitions_document: &mut Document,
-        type_system: &Arc<TypeSystem>,
+        schema: &mut Schema,
         link_spec_definitions: LinkSpecDefinitions,
     ) -> Result<(), SubgraphError> {
-        if !type_system
-            .type_definitions_by_name
-            .contains_key(&link_spec_definitions.purpose_enum_name)
-        {
-            missing_definitions_document
-                .enum_(link_spec_definitions.link_purpose_enum_definition());
-        }
-        if !type_system
-            .type_definitions_by_name
-            .contains_key(&link_spec_definitions.import_scalar_name)
-        {
-            missing_definitions_document.scalar(link_spec_definitions.import_scalar_definition());
-        }
-        if !type_system
-            .definitions
-            .directives
-            .contains_key(DEFAULT_LINK_NAME)
-        {
-            missing_definitions_document
-                .directive(link_spec_definitions.link_directive_definition());
-        }
+        schema
+            .types
+            .entry(link_spec_definitions.purpose_enum_name.as_str().into())
+            .or_insert_with(|| link_spec_definitions.link_purpose_enum_definition().into());
+        schema
+            .types
+            .entry(link_spec_definitions.import_scalar_name.as_str().into())
+            .or_insert_with(|| link_spec_definitions.import_scalar_definition().into());
+        schema
+            .directive_definitions
+            .entry(DEFAULT_LINK_NAME.into())
+            .or_insert_with(|| link_spec_definitions.link_directive_definition().into());
         Ok(())
     }
 
     fn populate_missing_federation_definitions(
-        missing_definitions_document: &mut Document,
-        type_system: &Arc<TypeSystem>,
+        schema: &mut Schema,
         fed_definitions: FederationSpecDefinitions,
     ) -> Result<(), SubgraphError> {
-        if !type_system
-            .type_definitions_by_name
-            .contains_key(&fed_definitions.fieldset_scalar_name)
-        {
-            missing_definitions_document.scalar(fed_definitions.fieldset_scalar_definition());
-        }
+        schema
+            .types
+            .entry(fed_definitions.fieldset_scalar_name.as_str().into())
+            .or_insert_with(|| fed_definitions.fieldset_scalar_definition().into());
 
         for directive_name in FEDERATION_V2_DIRECTIVE_NAMES {
             let namespaced_directive_name =
                 fed_definitions.namespaced_type_name(directive_name, true);
-            if !type_system
-                .type_definitions_by_name
-                .contains_key(&namespaced_directive_name)
+            if let Entry::Vacant(entry) = schema
+                .directive_definitions
+                .entry(namespaced_directive_name.as_str().into())
             {
                 let directive_definition = fed_definitions.directive_definition(
                     directive_name,
                     &Some(namespaced_directive_name.to_owned()),
                 )?;
-                missing_definitions_document.directive(directive_definition);
+                entry.insert(directive_definition.into());
             }
         }
         Ok(())
@@ -304,6 +246,7 @@ impl Subgraphs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::keys;
 
     #[test]
     fn can_inspect_a_type_key() {
@@ -338,7 +281,7 @@ mod tests {
         "#;
 
         let subgraph = Subgraph::new("S1", "http://s1", schema);
-        let keys = subgraph.db.keys("T".to_string());
+        let keys = keys(&subgraph.schema, "T");
         assert_eq!(keys.len(), 1);
         assert_eq!(keys.get(0).unwrap().type_name, "T");
 
@@ -365,22 +308,11 @@ mod tests {
             println!("{}", e.msg);
             String::from("failed to parse and expand the subgraph, see errors above for details")
         })?;
+        assert!(subgraph.schema.types.contains_key("T"));
+        assert!(subgraph.schema.directive_definitions.contains_key("key"));
         assert!(subgraph
-            .db
-            .type_system()
-            .type_definitions_by_name
-            .contains_key("T"));
-        assert!(subgraph
-            .db
-            .type_system()
-            .definitions
-            .directives
-            .contains_key("key"));
-        assert!(subgraph
-            .db
-            .type_system()
-            .definitions
-            .directives
+            .schema
+            .directive_definitions
             .contains_key("federation__requires"));
         Ok(())
     }
@@ -405,17 +337,10 @@ mod tests {
             println!("{}", e.msg);
             String::from("failed to parse and expand the subgraph, see errors above for details")
         })?;
+        assert!(subgraph.schema.directive_definitions.contains_key("myKey"));
         assert!(subgraph
-            .db
-            .type_system()
-            .definitions
-            .directives
-            .contains_key("myKey"));
-        assert!(subgraph
-            .db
-            .type_system()
-            .definitions
-            .directives
+            .schema
+            .directive_definitions
             .contains_key("provides"));
         Ok(())
     }
@@ -440,17 +365,10 @@ mod tests {
             println!("{}", e.msg);
             String::from("failed to parse and expand the subgraph, see errors above for details")
         })?;
+        assert!(subgraph.schema.directive_definitions.contains_key("key"));
         assert!(subgraph
-            .db
-            .type_system()
-            .definitions
-            .directives
-            .contains_key("key"));
-        assert!(subgraph
-            .db
-            .type_system()
-            .definitions
-            .directives
+            .schema
+            .directive_definitions
             .contains_key("fed__requires"));
         Ok(())
     }
@@ -486,9 +404,8 @@ mod tests {
             String::from("failed to parse and expand the subgraph, see errors above for details")
         })?;
         assert!(subgraph
-            .db
-            .type_system()
-            .type_definitions_by_name
+            .schema
+            .directive_definitions
             .contains_key("Purpose"));
         Ok(())
     }
@@ -510,17 +427,8 @@ mod tests {
             println!("{}", e.msg);
             String::from("failed to parse and expand the subgraph, see errors above for details")
         })?;
-        assert!(subgraph
-            .db
-            .type_system()
-            .type_definitions_by_name
-            .contains_key("T"));
-        assert!(subgraph
-            .db
-            .type_system()
-            .definitions
-            .directives
-            .contains_key("key"));
+        assert!(subgraph.schema.types.contains_key("T"));
+        assert!(subgraph.schema.directive_definitions.contains_key("key"));
         Ok(())
     }
 
