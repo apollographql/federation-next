@@ -78,36 +78,6 @@ temporary memory allocations: 31066 (138687/s)
 peak heap memory consumption: 5.84M
 peak RSS (including heaptrack overhead): 62.13M
 total memory leaked: 250.41K
-Using /usr/local/bin/docker to run the tests...
-Building target: aarch64-unknown-linux-gnu
-heaptrack stats:
-	allocations:          	319121
-	leaked allocations:   	1191
-	temporary allocations:	39045
-
-Results: load 2 -> load_2/2023_10_04_11:38:52.out
-total runtime (un-instrumented): 2.35s
-total runtime: 2.59s.
-calls to allocation functions: 319121 (123307/s)
-temporary memory allocations: 56847 (21965/s)
-peak heap memory consumption: 7.57M
-peak RSS (including heaptrack overhead): 230.15M
-total memory leaked: 254.52K
-Using /usr/local/bin/docker to run the tests...
-Building target: aarch64-unknown-linux-gnu
-heaptrack stats:
-	allocations:          	348186
-	leaked allocations:   	1191
-	temporary allocations:	45595
-
-Results: load 3 -> load_3/2023_10_04_11:39:00.out
-total runtime (un-instrumented): 1.30s
-total runtime: 1.45s.
-calls to allocation functions: 348186 (240128/s)
-temporary memory allocations: 63324 (43671/s)
-peak heap memory consumption: 8.96M
-peak RSS (including heaptrack overhead): 178.72M
-total memory leaked: 254.52K
 garypen@Garys-MacBook-Pro apollo-harness % 
 ```
 

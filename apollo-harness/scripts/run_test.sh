@@ -47,16 +47,16 @@ export CROSS_CONTAINER_ENGINE_NO_BUILDKIT=1
 # Before building make sure the target directory exists.
 # If it doesn't, the docker container will create it as root and that breaks a lot of things
 # We can ignore any fails from this command
-mkdir ../target > /dev/null 2>&1
+mkdir ../target/"${TARGET}"/release > /dev/null 2>&1
 
 # Use cross to cross compile to desired target
-${CROSS} build --release --bin "${2}" --target "${TARGET}" > /dev/null 2>&1
+${CROSS} build --release --bin "${2}" --target "${TARGET}" > /dev/null 2>&1 || terminate "${CROSS} failed to build our test executable"
 
 # Build an image to run our target
 ${CONMAN} build \
     -t apollo_harness:latest \
     -f scripts/Dockerfile.runner \
-    scripts > /dev/null 2>&1
+    scripts > /dev/null 2>&1 || terminate "${CONMAN} failed to build our heaptrack execution container"
 
 # Create a timestamped filename for our test
 timestamp="${1// /_}/$(date +'%Y_%m_%d_%H:%M:%S')"
@@ -72,7 +72,7 @@ if [[ "${4}" != "" ]]; then
         apollo_harness:latest /scripts/runit.sh "${timestamp}" \
         "${2}" \
         "testdata/${3}" \
-        "testdata/${4}"
+        "testdata/${4}" > /dev/null 2>&1 || terminate "${CONMAN} failed to execute our test under heaptrack"
 else
     ${CONMAN} run \
         --rm \
@@ -82,10 +82,11 @@ else
         --mount "type=bind,source=${PWD}/../target/${TARGET}/release,target=/programs" \
         apollo_harness:latest /scripts/runit.sh "${timestamp}" \
         "${2}" \
-        "testdata/${3}"
+        "testdata/${3}" > /dev/null 2>&1 || terminate "${CONMAN} failed to execute our test under heaptrack"
 fi
 
 # Display the heaptrack analyze results
 printf "\nResults: %s -> %s.out\n" "${1}" "${timestamp}"
 cat "results/${timestamp}.out"
+echo
 
