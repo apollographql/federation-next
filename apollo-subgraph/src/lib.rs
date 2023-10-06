@@ -10,6 +10,7 @@ use indexmap::map::Entry;
 use std::collections::BTreeMap;
 use std::fmt::Formatter;
 use std::sync::Arc;
+use apollo_federation_error::error::{ErrorCode, FederationError};
 
 pub mod database;
 mod spec;
@@ -21,6 +22,13 @@ mod spec;
 #[derive(Debug)]
 pub struct SubgraphError {
     pub msg: String,
+}
+
+// TODO: Replace LinkError usages with FederationError.
+impl From<SubgraphError> for FederationError {
+    fn from(value: SubgraphError) -> Self {
+        ErrorCode::InvalidGraphQL.definition().err(value.msg, None).into()
+    }
 }
 
 impl From<apollo_compiler::Diagnostics> for SubgraphError {
@@ -64,7 +72,10 @@ impl Subgraph {
         // subgraph specific ones).
         // This also mean we would ideally want `schema` to not export any mutable methods
         // but not sure what that entail/how doable that is currently.
+        Self::from_schema(name, url, schema)
+    }
 
+    pub fn from_schema(name: &str, url: &str, schema: Schema) -> Self {
         Self {
             name: name.to_string(),
             url: url.to_string(),

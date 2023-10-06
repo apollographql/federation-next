@@ -3,6 +3,7 @@ members = [
   "apollo-at-link",
   "apollo-federation-error",
   "apollo-harness",
+  "apollo-query-graph",
   "apollo-subgraph",
   "apollo-supergraph",
 ]
