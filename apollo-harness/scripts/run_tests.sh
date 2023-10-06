@@ -52,7 +52,7 @@ mkdir ../target/"${TARGET}"/release > /dev/null 2>&1
 ${CONMAN} build \
     -t apollo_harness:latest \
     -f scripts/Dockerfile.runner \
-    scripts || terminate "${CONMAN} failed to build our heaptrack execution container"
+    scripts > /dev/null 2>&1 || terminate "${CONMAN} failed to build our heaptrack execution container"
 
 # Create a timestamp for our tests
 timestamp="$(date +'%Y_%m_%d_%H:%M:%S')"
