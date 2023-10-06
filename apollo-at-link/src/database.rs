@@ -114,23 +114,21 @@ fn parse_link_if_bootstrap_directive(schema: &Schema, directive: &Directive) -> 
             && definition
                 .arguments
                 .iter()
-                .find(|arg| {
+                .any(|arg| {
                     arg.name == "as" && matches!(&*arg.ty, Type::Named(name) if name == "String")
-                })
-                .is_some();
+                });
         let is_correct_def = is_correct_def
             && definition
                 .arguments
                 .iter()
-                .find(|arg| arg.name == "url" && {
+                .any(|arg| arg.name == "url" && {
                     // The "true" type of `url` in the @link spec is actually `String` (nullable), and this
                     // for future-proofing reasons (the idea was that we may introduce later other
                     // ways to identify specs that are not urls). But we allow the definition to
                     // have a non-nullable type both for convenience and because some early
                     // federation previews actually generated that.
                     matches!(&*arg.ty, Type::Named(name) | Type::NonNullNamed(name) if name == "String")
-                })
-                .is_some();
+                });
         if !is_correct_def {
             return false;
         }
