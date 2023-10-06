@@ -6,6 +6,16 @@
  - macOS m1/m2
  - linux x86
 
+We are using `heaptrack` to generate our results. `heaptrack` is only available on linux, but we'd like to support the widely use macOS m1 platform. We achieve our goal via containerisation and cross-compiling code in
+a container (using the `cross` crate).
+
+When you run `scripts/run-tests.sh` for the first time, it will make sure that your system has:
+ - some form of container runtime (docker/podman are supported)
+ - cargo cross crate
+ - rustup toolchain that matches your host platform arch (that's important for when cross is installed)
+
+Once all of these pieces are in place, things should just work. If they don't - let me (slack: @gary) know or file an issue.
+
 # Getting Started
 
 Clone the `federation-next` repo and cd to `apollo-harness`. Some of the scripts make assumptions that you are in this directory, so don't cd away from here.
@@ -13,6 +23,7 @@ Clone the `federation-next` repo and cd to `apollo-harness`. Some of the scripts
 You'll find there are several sub-directories:
 
 ## scripts
+
 The scripts you'll need to run a batch of tests are here.
 
 The only one you will be running is `scripts/run_tests.sh`. This script checks that your execution environment looks ok and provides some advice on installing/configuring required tooling before executing a batch of tests.
@@ -37,7 +48,7 @@ load 2:rb_loader:mohameds-team.graphql:
 load 3:rb_loader:symbiose.graphql:
 ```
 
-This controlfile will result in a batch of tests which will generate results in the results/[test name] directory. All tests will load a schema file, so the schema file argument is mandatory. You may optionally provide a query which is planned.
+This controlfile will result in a batch of tests which will generate results in the results/[test name] directory. All tests will load a schema file, so the schema file argument is mandatory. You may optionally provide a query to plan.
 
 ## results
 
@@ -47,37 +58,31 @@ The results of running each test in the controlfile are generated here. The full
 
 Here's what the output of a typical run looks like:
 ```
-garypen@Garys-MacBook-Pro apollo-harness % ./scripts/run_tests.sh   
-Using /usr/local/bin/docker to run the tests...
+garypen@Garys-MacBook-Pro apollo-harness % ./scripts/run_tests.sh
+Using /usr/local/bin/docker for containerisation...
 Building target: aarch64-unknown-linux-gnu
-heaptrack stats:
-	allocations:          	130821
-	leaked allocations:   	1190
-	temporary allocations:	33166
+This may take some time, especially on your first run...
 
-Results: load and plan 1 -> load_and_plan_1/2023_10_04_11:38:45.out
-total runtime (un-instrumented): 0.15s
-total runtime: 0.29s.
-calls to allocation functions: 130821 (449556/s)
-temporary memory allocations: 35118 (120680/s)
-peak heap memory consumption: 5.87M
-peak RSS (including heaptrack overhead): 62.90M
+
+Results: load_and_plan_1/2023_10_06_11:51:55.out
+total runtime (un-instrumented): 0.14s
+total runtime: 0.26s.
+calls to allocation functions: 130782 (512870/s)
+temporary memory allocations: 35598 (139600/s)
+peak heap memory consumption: 5.71M
+peak RSS (including heaptrack overhead): 62.71M
 total memory leaked: 250.41K
-Using /usr/local/bin/docker to run the tests...
-Building target: aarch64-unknown-linux-gnu
-heaptrack stats:
-	allocations:          	108603
-	leaked allocations:   	1190
-	temporary allocations:	29346
 
-Results: load 1 -> load_1/2023_10_04_11:38:48.out
-total runtime (un-instrumented): 0.13s
+
+Results: load_1/2023_10_06_11:51:55.out
+total runtime (un-instrumented): 0.14s
 total runtime: 0.22s.
-calls to allocation functions: 108603 (484834/s)
-temporary memory allocations: 31066 (138687/s)
-peak heap memory consumption: 5.84M
-peak RSS (including heaptrack overhead): 62.13M
+calls to allocation functions: 108628 (489315/s)
+temporary memory allocations: 31196 (140522/s)
+peak heap memory consumption: 5.64M
+peak RSS (including heaptrack overhead): 60.86M
 total memory leaked: 250.41K
+
 garypen@Garys-MacBook-Pro apollo-harness % 
 ```
 
