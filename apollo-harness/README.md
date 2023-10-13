@@ -36,6 +36,8 @@ When you execute a batch of tests, this code is cross-compiled into a linux cont
 
 You shouldn't need to make any changes to this source code unless you are adding a new federation schema loading query planner. In which case, add a new `[[bin]]` and implement accordingly.
 
+Note: If you are making changes to `src`, you'll need to make sure that `cmake` is installed on your host system since it's required to build `deno-core`.
+
 ## testdata
 
 This directory contains a `controlfile`. Any line beginning with `#` is ignored and the format is documented in the file. For example:
