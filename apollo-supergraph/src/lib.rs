@@ -31,12 +31,12 @@ impl Supergraph {
     }
 
     pub fn compose(subgraphs: Vec<&Subgraph>) -> Result<Self, MergeError> {
-        let mergeResult = match merge(subgraphs) {
+        let merge_result = match merge(subgraphs) {
             Ok(success) => Ok(Self::new(success.schema.to_string().as_str())),
             // TODO handle errors
             Err(_) => Err("failed to compose"),
         };
-        mergeResult
+        merge_result
     }
 
     pub fn print_sdl(&self) -> String {
