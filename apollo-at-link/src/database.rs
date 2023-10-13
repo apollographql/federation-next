@@ -10,7 +10,8 @@ use crate::{
 
 pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkError> {
     let mut bootstrap_directives = schema
-        .schema_definition_directives()
+        .schema_definition
+        .directives
         .iter()
         .filter(|d| parse_link_if_bootstrap_directive(schema, d));
     let bootstrap_directive = bootstrap_directives.next();
@@ -33,7 +34,8 @@ pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkErro
     let mut types_by_imported_name = HashMap::new();
     let mut directives_by_imported_name = HashMap::new();
     let link_applications = schema
-        .schema_definition_directives()
+        .schema_definition
+        .directives
         .iter()
         .filter(|d| d.name == *link_name_in_schema);
     for application in link_applications {
@@ -111,24 +113,19 @@ fn parse_link_if_bootstrap_directive(schema: &Schema, directive: &Directive) -> 
             && locations.len() == 1
             && locations[0] == DirectiveLocation::Schema;
         let is_correct_def = is_correct_def
-            && definition
-                .arguments
-                .iter()
-                .any(|arg| {
-                    arg.name == "as" && matches!(&*arg.ty, Type::Named(name) if name == "String")
-                });
-        let is_correct_def = is_correct_def
-            && definition
-                .arguments
-                .iter()
-                .any(|arg| arg.name == "url" && {
-                    // The "true" type of `url` in the @link spec is actually `String` (nullable), and this
-                    // for future-proofing reasons (the idea was that we may introduce later other
-                    // ways to identify specs that are not urls). But we allow the definition to
-                    // have a non-nullable type both for convenience and because some early
-                    // federation previews actually generated that.
-                    matches!(&*arg.ty, Type::Named(name) | Type::NonNullNamed(name) if name == "String")
-                });
+            && definition.arguments.iter().any(|arg| {
+                arg.name == "as" && matches!(&*arg.ty, Type::Named(name) if name == "String")
+            });
+        let is_correct_def = is_correct_def && definition.arguments.iter().any(|arg| {
+            arg.name == "url" && {
+                // The "true" type of `url` in the @link spec is actually `String` (nullable), and this
+                // for future-proofing reasons (the idea was that we may introduce later other
+                // ways to identify specs that are not urls). But we allow the definition to
+                // have a non-nullable type both for convenience and because some early
+                // federation previews actually generated that.
+                matches!(&*arg.ty, Type::Named(name) | Type::NonNullNamed(name) if name == "String")
+            }
+        });
         if !is_correct_def {
             return false;
         }

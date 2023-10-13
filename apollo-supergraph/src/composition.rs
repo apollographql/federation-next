@@ -80,22 +80,20 @@ pub fn merge(subgraphs: Vec<&Subgraph>) -> Result<MergeSuccess, MergeFailure> {
         // explicitly add @join__type info to Query type in order to handle __entities queries
         let subgraph_query_type_exists = subgraph
             .schema
-            .query_root_operation()
-            .is_some_and(|query_type| subgraph.schema.types.contains_key(query_type));
+            .schema_definition
+            .query
+            .as_ref()
+            .is_some_and(|query_type| subgraph.schema.types.contains_key(query_type.as_str()));
         if !subgraph_query_type_exists {
-            if supergraph.query_root_operation().is_none() {
-                supergraph
-                    .schema_definition
-                    .get_or_insert_with(Default::default)
-                    .make_mut()
-                    .query = Some("Query".into());
+            if supergraph.schema_definition.query.is_none() {
+                supergraph.schema_definition.make_mut().query = Some("Query".into());
             }
             let join_type_directives =
                 join_type_applied_directive(&subgraph_name, iter::empty(), false);
-            if let Some(query_type_name) = supergraph.query_root_operation() {
+            if let Some(query_type_name) = &supergraph.schema_definition.query {
                 let query_type = supergraph
                     .types
-                    .entry(query_type_name.clone())
+                    .entry(NamedType::new(query_type_name.as_str()))
                     .or_insert_with(|| {
                         ExtendedType::Object(Node::new(ObjectType {
                             description: None,
@@ -135,17 +133,8 @@ fn is_executable_directive(directive: &Node<DirectiveDefinition>) -> bool {
 }
 
 fn merge_schema(supergraph_schema: &mut Schema, subgraph: &Subgraph) {
-    let (supergraph_def, subgraph_def) = match (
-        &mut supergraph_schema.schema_definition,
-        &subgraph.schema.schema_definition,
-    ) {
-        (_, None) => return,
-        (None, Some(_)) => {
-            supergraph_schema.schema_definition = subgraph.schema.schema_definition.clone();
-            return;
-        }
-        (Some(supergraph_def), Some(subgraph_def)) => (supergraph_def.make_mut(), subgraph_def),
-    };
+    let supergraph_def = &mut supergraph_schema.schema_definition.make_mut();
+    let subgraph_def = &subgraph.schema.schema_definition;
     merge_descriptions(&mut supergraph_def.description, &subgraph_def.description);
 
     if subgraph_def.query.is_some() {
@@ -632,7 +621,6 @@ fn add_core_feature_link(supergraph: &mut Schema) {
     // @link(url: "https://specs.apollo.dev/link/v1.0")
     supergraph
         .schema_definition
-        .get_or_insert_with(Default::default)
         .make_mut()
         .directives
         .push(Component::new(Directive {
@@ -750,7 +738,6 @@ fn add_core_feature_join(supergraph: &mut Schema, subgraphs: &Vec<&Subgraph>) {
     // @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
     supergraph
         .schema_definition
-        .get_or_insert_with(Default::default)
         .make_mut()
         .directives
         .push(Component::new(Directive {
