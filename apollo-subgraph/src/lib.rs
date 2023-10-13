@@ -82,7 +82,8 @@ impl Subgraph {
         let mut imported_federation_definitions: Option<FederationSpecDefinitions> = None;
         let mut imported_link_definitions: Option<LinkSpecDefinitions> = None;
         let link_directives = schema
-            .schema_definition_directives()
+            .schema_definition
+            .directives
             .get_all(DEFAULT_LINK_NAME);
 
         for directive in link_directives {
@@ -135,7 +136,6 @@ impl Subgraph {
                 let defaults = LinkSpecDefinitions::default();
                 schema
                     .schema_definition
-                    .get_or_insert_with(Default::default)
                     .make_mut()
                     .directives
                     .push(defaults.applied_link_directive().into());
@@ -153,7 +153,6 @@ impl Subgraph {
                 let defaults = FederationSpecDefinitions::default()?;
                 schema
                     .schema_definition
-                    .get_or_insert_with(Default::default)
                     .make_mut()
                     .directives
                     .push(defaults.applied_link_directive().into());

@@ -81,7 +81,7 @@ pub fn keys(schema: &Schema, type_name: &str) -> Vec<Key> {
         type_def
             .directives()
             .get_all(&key_name)
-            .filter_map(|directive| Key::from_directive_application(&type_name, directive))
+            .filter_map(|directive| Key::from_directive_application(type_name, directive))
             .collect()
     } else {
         vec![]

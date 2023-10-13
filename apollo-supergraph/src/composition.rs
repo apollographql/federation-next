@@ -80,22 +80,20 @@ pub fn merge(subgraphs: Vec<&Subgraph>) -> Result<MergeSuccess, MergeFailure> {
         // explicitly add @join__type info to Query type in order to handle __entities queries
         let subgraph_query_type_exists = subgraph
             .schema
-            .query_root_operation()
-            .is_some_and(|query_type| subgraph.schema.types.contains_key(query_type));
+            .schema_definition
+            .query
+            .as_ref()
+            .is_some_and(|query_type| subgraph.schema.types.contains_key(query_type.as_str()));
         if !subgraph_query_type_exists {
-            if supergraph.query_root_operation().is_none() {
-                supergraph
-                    .schema_definition
-                    .get_or_insert_with(Default::default)
-                    .make_mut()
-                    .query = Some("Query".into());
+            if supergraph.schema_definition.query.is_none() {
+                supergraph.schema_definition.make_mut().query = Some("Query".into());
             }
             let join_type_directives =
                 join_type_applied_directive(&subgraph_name, iter::empty(), false);
-            if let Some(query_type_name) = supergraph.query_root_operation() {
+            if let Some(query_type_name) = &supergraph.schema_definition.query {
                 let query_type = supergraph
                     .types
-                    .entry(query_type_name.clone())
+                    .entry(NamedType::new(query_type_name.as_str()))
                     .or_insert_with(|| {
                         ExtendedType::Object(Node::new(ObjectType {
                             description: None,
@@ -135,17 +133,8 @@ fn is_executable_directive(directive: &Node<DirectiveDefinition>) -> bool {
 }
 
 fn merge_schema(supergraph_schema: &mut Schema, subgraph: &Subgraph) {
-    let (supergraph_def, subgraph_def) = match (
-        &mut supergraph_schema.schema_definition,
-        &subgraph.schema.schema_definition,
-    ) {
-        (_, None) => return,
-        (None, Some(_)) => {
-            supergraph_schema.schema_definition = subgraph.schema.schema_definition.clone();
-            return;
-        }
-        (Some(supergraph_def), Some(subgraph_def)) => (supergraph_def.make_mut(), subgraph_def),
-    };
+    let supergraph_def = &mut supergraph_schema.schema_definition.make_mut();
+    let subgraph_def = &subgraph.schema.schema_definition;
     merge_descriptions(&mut supergraph_def.description, &subgraph_def.description);
 
     if subgraph_def.query.is_some() {
@@ -196,8 +185,7 @@ fn merge_enum_type(
 ) {
     let existing_type = types.entry(enum_name).or_insert(copy_enum_type(enum_type));
     if let ExtendedType::Enum(e) = existing_type {
-        let join_type_directives =
-            join_type_applied_directive(&subgraph_name, iter::empty(), false);
+        let join_type_directives = join_type_applied_directive(subgraph_name, iter::empty(), false);
         e.make_mut().directives.extend(join_type_directives);
 
         merge_descriptions(&mut e.make_mut().description, &enum_type.description);
@@ -220,7 +208,7 @@ fn merge_enum_type(
                 arguments: vec![
                     (Node::new(Argument {
                         name: Name::new("graph"),
-                        value: Node::new(Value::Enum(Name::new(&subgraph_name))),
+                        value: Node::new(Value::Enum(Name::new(subgraph_name))),
                     })),
                 ],
             }));
@@ -244,13 +232,13 @@ fn merge_input_object_type(
         let mutable_object = obj.make_mut();
         mutable_object.directives.extend(join_type_directives);
 
-        for (field_name, field) in input_object.fields.iter() {
+        for (field_name, _field) in input_object.fields.iter() {
             let existing_field = mutable_object.fields.entry(field_name.clone());
             match existing_field {
-                Vacant(i) => {
+                Vacant(_i) => {
                     // TODO warning - mismatch on input fields
                 }
-                Occupied(i) => {
+                Occupied(_i) => {
                     // merge_options(&i.get_mut().description, &field.description);
                     // TODO check description
                     // TODO check type
@@ -276,7 +264,7 @@ fn merge_interface_type(
     if let ExtendedType::Interface(intf) = existing_type {
         let key_directives = interface.directives.get_all("key");
         let join_type_directives =
-            join_type_applied_directive(&subgraph_name, key_directives, false);
+            join_type_applied_directive(subgraph_name, key_directives, false);
         let mutable_intf = intf.make_mut();
         mutable_intf.directives.extend(join_type_directives);
 
@@ -293,7 +281,7 @@ fn merge_interface_type(
                         directives: Default::default(),
                     }));
                 }
-                Occupied(i) => {
+                Occupied(_i) => {
                     // TODO check description
                     // TODO check type
                     // TODO check default value
@@ -315,7 +303,7 @@ fn merge_object_type(
     let is_interface_object = object.directives.has("interfaceObject");
     let existing_type = types
         .entry(object_name.clone())
-        .or_insert(copy_object_type_stub(&object, is_interface_object));
+        .or_insert(copy_object_type_stub(object, is_interface_object));
     if let ExtendedType::Object(obj) = existing_type {
         let key_fields: HashSet<&str> = parse_keys(object.directives.get_all("key"));
         let is_join_field = !key_fields.is_empty() || object_name.eq("Query");
@@ -330,7 +318,7 @@ fn merge_object_type(
             mutable_object
                 .implements_interfaces
                 .insert(intf_name.clone());
-            let join_implements_directive = join_type_implements(&subgraph_name, intf_name);
+            let join_implements_directive = join_type_implements(subgraph_name, intf_name);
             mutable_object.directives.push(join_implements_directive);
         });
 
@@ -357,7 +345,7 @@ fn merge_object_type(
             );
             let mut existing_args = supergraph_field.arguments.iter();
             for arg in field.arguments.iter() {
-                if let Some(existing_arg) = &existing_args.find(|a| a.name.eq(&arg.name)) {
+                if let Some(_existing_arg) = &existing_args.find(|a| a.name.eq(&arg.name)) {
                 } else {
                     // TODO mismatch no args
                 }
@@ -421,11 +409,11 @@ fn merge_union_type(
                 arguments: vec![
                     Node::new(Argument {
                         name: Name::new("graph"),
-                        value: Node::new(Value::Enum(Name::new(&subgraph_name))),
+                        value: Node::new(Value::Enum(Name::new(subgraph_name))),
                     }),
                     Node::new(Argument {
                         name: Name::new("member"),
-                        value: Node::new(Value::String(Name::new(&union_member))),
+                        value: Node::new(Value::String(Name::new(union_member))),
                     }),
                 ],
             }));
@@ -525,7 +513,7 @@ fn copy_fields(
     new_fields
 }
 
-fn copy_union_type(name: &NamedType, description: Option<NodeStr>) -> ExtendedType {
+fn copy_union_type(_name: &NamedType, description: Option<NodeStr>) -> ExtendedType {
     ExtendedType::Union(Node::new(UnionType {
         description,
         directives: Default::default(),
@@ -632,7 +620,6 @@ fn add_core_feature_link(supergraph: &mut Schema) {
     // @link(url: "https://specs.apollo.dev/link/v1.0")
     supergraph
         .schema_definition
-        .get_or_insert_with(Default::default)
         .make_mut()
         .directives
         .push(Component::new(Directive {
@@ -750,7 +737,6 @@ fn add_core_feature_join(supergraph: &mut Schema, subgraphs: &Vec<&Subgraph>) {
     // @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
     supergraph
         .schema_definition
-        .get_or_insert_with(Default::default)
         .make_mut()
         .directives
         .push(Component::new(Directive {
