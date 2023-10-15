@@ -76,39 +76,7 @@ pub fn merge(subgraphs: Vec<&Subgraph>) -> Result<MergeSuccess, MergeFailure> {
                 merge_directive(&mut supergraph.directive_definitions, directive);
             }
         }
-
-        // explicitly add @join__type info to Query type in order to handle __entities queries
-        let subgraph_query_type_exists = subgraph
-            .schema
-            .schema_definition
-            .query
-            .as_ref()
-            .is_some_and(|query_type| subgraph.schema.types.contains_key(query_type.as_str()));
-        if !subgraph_query_type_exists {
-            if supergraph.schema_definition.query.is_none() {
-                supergraph.schema_definition.make_mut().query = Some("Query".into());
-            }
-            let join_type_directives =
-                join_type_applied_directive(&subgraph_name, iter::empty(), false);
-            if let Some(query_type_name) = &supergraph.schema_definition.query {
-                let query_type = supergraph
-                    .types
-                    .entry(NamedType::new(query_type_name.as_str()))
-                    .or_insert_with(|| {
-                        ExtendedType::Object(Node::new(ObjectType {
-                            description: None,
-                            directives: Default::default(),
-                            fields: IndexMap::new(),
-                            implements_interfaces: IndexSet::new(),
-                        }))
-                    });
-                if let ExtendedType::Object(query) = query_type {
-                    query.make_mut().directives.extend(join_type_directives);
-                }
-            }
-        }
     }
-    // println!("{}", supergraph);
     Ok(MergeSuccess {
         schema: supergraph,
         composition_hints: vec![],
@@ -323,6 +291,11 @@ fn merge_object_type(
         });
 
         for (field_name, field) in object.fields.iter() {
+            // skip federation built-in queries
+            if field_name.eq(&Name::new("_service")) || field_name.eq(&Name::new("_entities")) {
+                continue;
+            }
+
             let existing_field = mutable_object.fields.entry(field_name.clone());
             let supergraph_field = match existing_field {
                 Occupied(f) => {
@@ -487,6 +460,10 @@ fn copy_fields(
 ) -> IndexMap<Name, Component<FieldDefinition>> {
     let mut new_fields: IndexMap<Name, Component<FieldDefinition>> = IndexMap::new();
     for (field_name, field) in fields_to_copy {
+        // skip federation built-in queries
+        if field_name.eq(&Name::new("_service")) || field_name.eq(&Name::new("_entities")) {
+            continue;
+        }
         let args: Vec<Node<InputValueDefinition>> = field
             .arguments
             .iter()

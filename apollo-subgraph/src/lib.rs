@@ -1,12 +1,16 @@
 use crate::spec::{
     AppliedFederationLink, FederationSpecDefinitions, FederationSpecError, LinkSpecDefinitions,
-    FEDERATION_V2_DIRECTIVE_NAMES,
+    ANY_SCALAR_NAME, ENTITIES_QUERY, ENTITY_UNION_NAME, FEDERATION_V2_DIRECTIVE_NAMES,
+    KEY_DIRECTIVE_NAME, SERVICE_SDL_QUERY, SERVICE_TYPE,
 };
 use apollo_at_link::link::LinkError;
 use apollo_at_link::link::{self, DEFAULT_LINK_NAME};
 use apollo_at_link::spec::Identity;
-use apollo_compiler::Schema;
+use apollo_compiler::ast::{Name, NamedType};
+use apollo_compiler::schema::{ComponentStr, ExtendedType, ObjectType};
+use apollo_compiler::{Node, Schema};
 use indexmap::map::Entry;
+use indexmap::{IndexMap, IndexSet};
 use std::collections::BTreeMap;
 use std::fmt::Formatter;
 use std::sync::Arc;
@@ -77,7 +81,10 @@ impl Subgraph {
         url: &str,
         schema_str: &str,
     ) -> Result<Self, SubgraphError> {
-        let mut schema = Schema::parse(schema_str, name);
+        let mut schema = Schema::builder()
+            .adopt_orphan_extensions()
+            .parse(schema_str, name)
+            .build();
 
         let mut imported_federation_definitions: Option<FederationSpecDefinitions> = None;
         let mut imported_link_definitions: Option<LinkSpecDefinitions> = None;
@@ -159,7 +166,8 @@ impl Subgraph {
                 defaults
             }
         };
-        Self::populate_missing_federation_definitions(schema, fed_definitions)
+        Self::populate_missing_federation_directive_definitions(schema, &fed_definitions)?;
+        Self::populate_missing_federation_types(schema, &fed_definitions)
     }
 
     fn populate_missing_link_definitions(
@@ -181,9 +189,9 @@ impl Subgraph {
         Ok(())
     }
 
-    fn populate_missing_federation_definitions(
+    fn populate_missing_federation_directive_definitions(
         schema: &mut Schema,
-        fed_definitions: FederationSpecDefinitions,
+        fed_definitions: &FederationSpecDefinitions,
     ) -> Result<(), SubgraphError> {
         schema
             .types
@@ -205,6 +213,89 @@ impl Subgraph {
             }
         }
         Ok(())
+    }
+
+    fn populate_missing_federation_types(
+        schema: &mut Schema,
+        fed_definitions: &FederationSpecDefinitions,
+    ) -> Result<(), SubgraphError> {
+        schema
+            .types
+            .entry(NamedType::new(SERVICE_TYPE))
+            .or_insert_with(|| fed_definitions.service_object_type_definition());
+
+        let entities = Self::locate_entities(schema, fed_definitions);
+        let entities_present = !entities.is_empty();
+        if entities_present {
+            schema
+                .types
+                .entry(NamedType::new(ENTITY_UNION_NAME))
+                .or_insert_with(|| fed_definitions.entity_union_definition(entities));
+            schema
+                .types
+                .entry(NamedType::new(ANY_SCALAR_NAME))
+                .or_insert_with(|| fed_definitions.any_scalar_definition());
+        }
+
+        let query_type_name = schema
+            .schema_definition
+            .make_mut()
+            .query
+            .get_or_insert(ComponentStr::new("Query"));
+        if let ExtendedType::Object(query_type) = schema
+            .types
+            .entry(NamedType::new(query_type_name.as_str()))
+            .or_insert(ExtendedType::Object(Node::new(ObjectType {
+                description: None,
+                directives: Default::default(),
+                fields: IndexMap::new(),
+                implements_interfaces: IndexSet::new(),
+            })))
+        {
+            let query_type = query_type.make_mut();
+            query_type
+                .fields
+                .entry(Name::new(SERVICE_SDL_QUERY))
+                .or_insert_with(|| fed_definitions.service_sdl_query_field());
+            if entities_present {
+                // _entities(representations: [_Any!]!): [_Entity]!
+                query_type
+                    .fields
+                    .entry(Name::new(ENTITIES_QUERY))
+                    .or_insert_with(|| fed_definitions.entities_query_field());
+            }
+        }
+        Ok(())
+    }
+
+    fn locate_entities(
+        schema: &mut Schema,
+        fed_definitions: &FederationSpecDefinitions,
+    ) -> IndexSet<ComponentStr> {
+        let mut entities = Vec::new();
+        let immutable_type_map = schema.types.to_owned();
+        for (named_type, extended_type) in immutable_type_map.iter() {
+            let is_entity = extended_type
+                .directives()
+                .iter()
+                .find(|d| {
+                    d.name.eq(&Name::new(
+                        fed_definitions
+                            .namespaced_type_name(KEY_DIRECTIVE_NAME, true)
+                            .as_str(),
+                    ))
+                })
+                .map(|_| true)
+                .unwrap_or(false);
+            if is_entity {
+                entities.push(named_type);
+            }
+        }
+        let entity_set: IndexSet<ComponentStr> = entities
+            .iter()
+            .map(|e| ComponentStr::new(e.as_str()))
+            .collect();
+        entity_set
     }
 }
 
@@ -402,10 +493,7 @@ mod tests {
             println!("{}", e.msg);
             String::from("failed to parse and expand the subgraph, see errors above for details")
         })?;
-        assert!(subgraph
-            .schema
-            .directive_definitions
-            .contains_key("Purpose"));
+        assert!(subgraph.schema.types.contains_key("Purpose"));
         Ok(())
     }
 

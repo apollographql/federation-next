@@ -5,10 +5,13 @@ use apollo_at_link::link::{
 use apollo_at_link::spec::{Identity, Url, Version};
 use apollo_compiler::ast::{
     Argument, Directive, DirectiveDefinition, DirectiveLocation, EnumValueDefinition,
-    InputValueDefinition, Type, Value,
+    FieldDefinition, InputValueDefinition, Name, NamedType, Type, Value,
 };
-use apollo_compiler::schema::{EnumType, ScalarType};
+use apollo_compiler::schema::{
+    Component, ComponentStr, EnumType, ExtendedType, ObjectType, ScalarType, UnionType,
+};
 use apollo_compiler::Node;
+use indexmap::{IndexMap, IndexSet};
 use std::sync::Arc;
 
 use thiserror::Error;
@@ -25,6 +28,14 @@ pub const REQUIRES_DIRECTIVE_NAME: &str = "requires";
 pub const SHAREABLE_DIRECTIVE_NAME: &str = "shareable";
 pub const TAG_DIRECTIVE_NAME: &str = "tag";
 pub const FIELDSET_SCALAR_NAME: &str = "FieldSet";
+
+// federated types
+pub const ANY_SCALAR_NAME: &str = "_Any";
+pub const ENTITY_UNION_NAME: &str = "_Entity";
+pub const SERVICE_TYPE: &str = "_Service";
+
+pub const ENTITIES_QUERY: &str = "_entities";
+pub const SERVICE_SDL_QUERY: &str = "_service";
 
 pub const FEDERATION_V1_DIRECTIVE_NAMES: [&str; 5] = [
     KEY_DIRECTIVE_NAME,
@@ -430,6 +441,70 @@ impl FederationSpecDefinitions {
                 DirectiveLocation::Union,
             ],
         }
+    }
+
+    pub(crate) fn any_scalar_definition(&self) -> ExtendedType {
+        let any_scalar = ScalarType {
+            description: None,
+            directives: Default::default(),
+        };
+        ExtendedType::Scalar(Node::new(any_scalar))
+    }
+
+    pub(crate) fn entity_union_definition(&self, entities: IndexSet<ComponentStr>) -> ExtendedType {
+        let service_type = UnionType {
+            description: None,
+            directives: Default::default(),
+            members: entities,
+        };
+        ExtendedType::Union(Node::new(service_type))
+    }
+    pub(crate) fn service_object_type_definition(&self) -> ExtendedType {
+        let mut service_type = ObjectType {
+            description: None,
+            directives: Default::default(),
+            fields: IndexMap::new(),
+            implements_interfaces: IndexSet::new(),
+        };
+        service_type.fields.insert(
+            Name::new("_sdl"),
+            Component::new(FieldDefinition {
+                name: Name::new("_sdl"),
+                description: None,
+                directives: Default::default(),
+                arguments: Vec::new(),
+                ty: Type::Named(NamedType::new("String")),
+            }),
+        );
+        ExtendedType::Object(Node::new(service_type))
+    }
+
+    pub(crate) fn entities_query_field(&self) -> Component<FieldDefinition> {
+        Component::new(FieldDefinition {
+            name: Name::new(ENTITIES_QUERY),
+            description: None,
+            directives: Default::default(),
+            arguments: vec![Node::new(InputValueDefinition {
+                name: Name::new("representations"),
+                description: None,
+                directives: Default::default(),
+                ty: Node::new(Type::NonNullList(Box::new(Type::NonNullNamed(
+                    NamedType::new(ANY_SCALAR_NAME),
+                )))),
+                default_value: None,
+            })],
+            ty: Type::NonNullList(Box::new(Type::Named(NamedType::new(ENTITY_UNION_NAME)))),
+        })
+    }
+
+    pub(crate) fn service_sdl_query_field(&self) -> Component<FieldDefinition> {
+        Component::new(FieldDefinition {
+            name: Name::new(SERVICE_SDL_QUERY),
+            description: None,
+            directives: Default::default(),
+            arguments: Vec::new(),
+            ty: Type::NonNullNamed(NamedType::new(SERVICE_TYPE)),
+        })
     }
 }
 
