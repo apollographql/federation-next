@@ -1,10 +1,10 @@
-use crate::composition::merge;
+use crate::merge::merge_subgraphs;
 use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::Schema;
 use apollo_subgraph::Subgraph;
 
-pub mod composition;
 pub mod database;
+pub mod merge;
 
 type MergeError = &'static str;
 
@@ -31,7 +31,7 @@ impl Supergraph {
     }
 
     pub fn compose(subgraphs: Vec<&Subgraph>) -> Result<Self, MergeError> {
-        let merge_result = match merge(subgraphs) {
+        let merge_result = match merge_subgraphs(subgraphs) {
             Ok(success) => Ok(Self::new(success.schema.to_string().as_str())),
             // TODO handle errors
             Err(_) => Err("failed to compose"),
