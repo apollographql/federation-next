@@ -123,6 +123,12 @@ impl Supergraph {
     }
 }
 
+impl From<Schema> for Supergraph {
+    fn from(schema: Schema) -> Self {
+        Self { schema }
+    }
+}
+
 const JOIN_TYPES: [&str; 4] = [
     "join__Graph",
     "link__Purpose",
