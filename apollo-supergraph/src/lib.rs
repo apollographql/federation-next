@@ -50,10 +50,10 @@ impl Supergraph {
         // remove known internal types
         api_schema.types.retain(|type_name, graphql_type| {
             !is_join_type(type_name.as_str())
-                && graphql_type
+                && !graphql_type
                     .directives()
                     .iter()
-                    .any(|d| d.name.ne("inaccessible") && d.name.ne("federation__inaccessible"))
+                    .any(|d| d.name.eq("inaccessible"))
         });
         // remove directive applications
         for (_, graphql_type) in api_schema.types.iter_mut() {
@@ -134,9 +134,7 @@ fn is_join_type(type_name: &str) -> bool {
 }
 
 fn is_inaccessible_applied(directives: &Directives) -> bool {
-    directives
-        .iter()
-        .any(|d| d.name.eq("inaccessible") || d.name.eq("federation__inaccessible"))
+    directives.iter().any(|d| d.name.eq("inaccessible"))
 }
 
 #[cfg(test)]
