@@ -1,4 +1,5 @@
 use crate::merge::merge_subgraphs;
+use apollo_compiler::ast::Directives;
 use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::Schema;
 use apollo_subgraph::Subgraph;
@@ -47,11 +48,14 @@ impl Supergraph {
         api_schema.schema_definition.make_mut().directives.clear();
 
         // remove known internal types
-        api_schema
-            .types
-            .retain(|type_name, _| !is_join_type(type_name.as_str()));
+        api_schema.types.retain(|type_name, graphql_type| {
+            !is_join_type(type_name.as_str())
+                && graphql_type
+                    .directives()
+                    .iter()
+                    .any(|d| d.name.ne("inaccessible") && d.name.ne("federation__inaccessible"))
+        });
         // remove directive applications
-        // TODO handle inaccessible fields
         for (_, graphql_type) in api_schema.types.iter_mut() {
             match graphql_type {
                 ExtendedType::Scalar(scalar) => {
@@ -60,9 +64,15 @@ impl Supergraph {
                 ExtendedType::Object(object) => {
                     let object = object.make_mut();
                     object.directives.clear();
+                    object
+                        .fields
+                        .retain(|_, field| !is_inaccessible_applied(&field.directives));
                     for (_, field) in object.fields.iter_mut() {
                         let field = field.make_mut();
                         field.directives.clear();
+                        field
+                            .arguments
+                            .retain(|arg| !is_inaccessible_applied(&arg.directives));
                         for arg in field.arguments.iter_mut() {
                             arg.make_mut().directives.clear();
                         }
@@ -71,6 +81,8 @@ impl Supergraph {
                 ExtendedType::Interface(intf) => {
                     let intf = intf.make_mut();
                     intf.directives.clear();
+                    intf.fields
+                        .retain(|_, field| !is_inaccessible_applied(&field.directives));
                     for (_, field) in intf.fields.iter_mut() {
                         let field = field.make_mut();
                         field.directives.clear();
@@ -85,6 +97,9 @@ impl Supergraph {
                 ExtendedType::Enum(enum_type) => {
                     let enum_type = enum_type.make_mut();
                     enum_type.directives.clear();
+                    enum_type
+                        .values
+                        .retain(|_, enum_value| !is_inaccessible_applied(&enum_value.directives));
                     for (_, enum_value) in enum_type.values.iter_mut() {
                         enum_value.make_mut().directives.clear();
                     }
@@ -92,6 +107,9 @@ impl Supergraph {
                 ExtendedType::InputObject(input_object) => {
                     let input_object = input_object.make_mut();
                     input_object.directives.clear();
+                    input_object
+                        .fields
+                        .retain(|_, input_field| !is_inaccessible_applied(&input_field.directives));
                     for (_, input_field) in input_object.fields.iter_mut() {
                         input_field.make_mut().directives.clear();
                     }
@@ -113,6 +131,12 @@ const JOIN_TYPES: [&str; 4] = [
 ];
 fn is_join_type(type_name: &str) -> bool {
     JOIN_TYPES.contains(&type_name)
+}
+
+fn is_inaccessible_applied(directives: &Directives) -> bool {
+    directives
+        .iter()
+        .any(|d| d.name.eq("inaccessible") || d.name.eq("federation__inaccessible"))
 }
 
 #[cfg(test)]
