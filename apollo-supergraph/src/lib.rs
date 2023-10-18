@@ -39,35 +39,92 @@ impl Supergraph {
         merge_result
     }
 
-    pub fn print_sdl(&self) -> String {
-        let mut schema = self.schema.clone();
-        schema.types.sort_by(|k1, v1, k2, v2| {
-            let type_order = print_type_order(v1).cmp(&print_type_order(v2));
-            if type_order.is_eq() {
-                k1.cmp(k2)
-            } else {
-                type_order
+    /// Generates API schema from the supergraph schema.
+    pub fn to_api_schema(&self) -> Schema {
+        let mut api_schema = self.schema.clone();
+
+        // remove schema directives
+        api_schema.schema_definition.make_mut().directives.clear();
+
+        // remove known internal types
+        api_schema
+            .types
+            .retain(|type_name, _| !is_join_type(type_name.as_str()));
+        // remove directive applications
+        // TODO handle inaccessible fields
+        for (_, graphql_type) in api_schema.types.iter_mut() {
+            match graphql_type {
+                ExtendedType::Scalar(scalar) => {
+                    scalar.make_mut().directives.clear();
+                }
+                ExtendedType::Object(object) => {
+                    let object = object.make_mut();
+                    object.directives.clear();
+                    for (_, field) in object.fields.iter_mut() {
+                        let field = field.make_mut();
+                        field.directives.clear();
+                        for arg in field.arguments.iter_mut() {
+                            arg.make_mut().directives.clear();
+                        }
+                    }
+                }
+                ExtendedType::Interface(intf) => {
+                    let intf = intf.make_mut();
+                    intf.directives.clear();
+                    for (_, field) in intf.fields.iter_mut() {
+                        let field = field.make_mut();
+                        field.directives.clear();
+                        for arg in field.arguments.iter_mut() {
+                            arg.make_mut().directives.clear();
+                        }
+                    }
+                }
+                ExtendedType::Union(union) => {
+                    union.make_mut().directives.clear();
+                }
+                ExtendedType::Enum(enum_type) => {
+                    let enum_type = enum_type.make_mut();
+                    enum_type.directives.clear();
+                    for (_, enum_value) in enum_type.values.iter_mut() {
+                        enum_value.make_mut().directives.clear();
+                    }
+                }
+                ExtendedType::InputObject(input_object) => {
+                    let input_object = input_object.make_mut();
+                    input_object.directives.clear();
+                    for (_, input_field) in input_object.fields.iter_mut() {
+                        input_field.make_mut().directives.clear();
+                    }
+                }
             }
-        });
-        schema.directive_definitions.sort_keys();
-        schema.to_string()
+        }
+        // remove directives
+        api_schema.directive_definitions.clear();
+
+        api_schema
     }
 }
 
-fn print_type_order(extended_type: &ExtendedType) -> i8 {
-    match extended_type {
-        ExtendedType::Enum(_) => 1,
-        ExtendedType::Interface(_) => 2,
-        ExtendedType::Union(_) => 3,
-        ExtendedType::Object(_) => 4,
-        ExtendedType::InputObject(_) => 5,
-        ExtendedType::Scalar(_) => 6,
-    }
+const JOIN_TYPES: [&str; 4] = [
+    "join__Graph",
+    "link__Purpose",
+    "join__FieldSet",
+    "link__Import",
+];
+fn is_join_type(type_name: &str) -> bool {
+    JOIN_TYPES.contains(&type_name)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn print_sdl(schema: &Schema) -> String {
+        let mut schema = schema.clone();
+        schema.types.sort_keys();
+        schema.directive_definitions.sort_keys();
+        schema.to_string()
+    }
 
     #[test]
     fn can_extract_subgraph() {
@@ -221,20 +278,6 @@ enum E @join__type(graph: SUBGRAPH2) {
   V2 @join__enumValue(graph: SUBGRAPH2)
 }
 
-enum join__Graph {
-  SUBGRAPH1 @join__graph(name: "Subgraph1", url: "https://subgraph1")
-  SUBGRAPH2 @join__graph(name: "Subgraph2", url: "https://subgraph2")
-}
-
-enum link__Purpose {
-  "SECURITY features provide metadata necessary to securely resolve fields."
-  SECURITY
-  "EXECUTION features provide metadata necessary for operation execution."
-  EXECUTION
-}
-
-union U @join__type(graph: SUBGRAPH1) @join__unionMember(graph: SUBGRAPH1, member: "S") @join__unionMember(graph: SUBGRAPH1, member: "T") = S | T
-
 type Query @join__type(graph: SUBGRAPH1) @join__type(graph: SUBGRAPH2) {
   t: T @join__field(graph: SUBGRAPH1)
 }
@@ -249,11 +292,49 @@ type T @join__type(graph: SUBGRAPH1, key: "k") @join__type(graph: SUBGRAPH2, key
   b: String @join__field(graph: SUBGRAPH2)
 }
 
+union U @join__type(graph: SUBGRAPH1) @join__unionMember(graph: SUBGRAPH1, member: "S") @join__unionMember(graph: SUBGRAPH1, member: "T") = S | T
+
 scalar join__FieldSet
 
+enum join__Graph {
+  SUBGRAPH1 @join__graph(name: "Subgraph1", url: "https://subgraph1")
+  SUBGRAPH2 @join__graph(name: "Subgraph2", url: "https://subgraph2")
+}
+
 scalar link__Import
+
+enum link__Purpose {
+  "SECURITY features provide metadata necessary to securely resolve fields."
+  SECURITY
+  "EXECUTION features provide metadata necessary for operation execution."
+  EXECUTION
+}
 "#;
-        assert_eq!(supergraph.print_sdl(), expected_supergraph_sdl);
+        assert_eq!(print_sdl(&supergraph.schema), expected_supergraph_sdl);
+
+        let expected_api_schema = r#"enum E {
+  V1
+  V2
+}
+
+type Query {
+  t: T
+}
+
+type S {
+  x: Int
+}
+
+type T {
+  k: ID
+  a: Int
+  b: String
+}
+
+union U = S | T
+"#;
+
+        assert_eq!(print_sdl(&supergraph.to_api_schema()), expected_api_schema);
     }
 
     #[test]
@@ -333,18 +414,6 @@ enum E @join__type(graph: SUBGRAPH2) {
   B @join__enumValue(graph: SUBGRAPH2)
 }
 
-enum join__Graph {
-  SUBGRAPH1 @join__graph(name: "Subgraph1", url: "https://subgraph1")
-  SUBGRAPH2 @join__graph(name: "Subgraph2", url: "https://subgraph2")
-}
-
-enum link__Purpose {
-  "SECURITY features provide metadata necessary to securely resolve fields."
-  SECURITY
-  "EXECUTION features provide metadata necessary for operation execution."
-  EXECUTION
-}
-
 "Available queries\nNot much yet"
 type Query @join__type(graph: SUBGRAPH1) @join__type(graph: SUBGRAPH2) {
   "Returns tea"
@@ -356,12 +425,48 @@ type Query @join__type(graph: SUBGRAPH1) @join__type(graph: SUBGRAPH2) {
 
 scalar join__FieldSet
 
+enum join__Graph {
+  SUBGRAPH1 @join__graph(name: "Subgraph1", url: "https://subgraph1")
+  SUBGRAPH2 @join__graph(name: "Subgraph2", url: "https://subgraph2")
+}
+
 scalar link__Import
+
+enum link__Purpose {
+  "SECURITY features provide metadata necessary to securely resolve fields."
+  SECURITY
+  "EXECUTION features provide metadata necessary for operation execution."
+  EXECUTION
+}
 "#;
         let supergraph = Supergraph::compose(vec![&s1, &s2]).unwrap();
         // TODO currently printer does not respect multi line comments
         // TODO printer also adds extra comma after arguments
-        assert_eq!(supergraph.print_sdl(), expected_supergraph_sdl);
+        assert_eq!(print_sdl(&supergraph.schema), expected_supergraph_sdl);
+
+        let expected_api_schema = r#""A cool schema"
+schema {
+  query: Query
+}
+
+"An enum"
+enum E {
+  "The A value"
+  A
+  "The B value"
+  B
+}
+
+"Available queries\nNot much yet"
+type Query {
+  "Returns tea"
+  t(
+    "An argument that is very important"
+    x: String!,
+  ): String
+}
+"#;
+        assert_eq!(print_sdl(&supergraph.to_api_schema()), expected_api_schema);
     }
 
     #[test]
@@ -412,18 +517,6 @@ directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on
 
 directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
 
-enum join__Graph {
-  SUBGRAPHA @join__graph(name: "SubgraphA", url: "https://subgraphA")
-  SUBGRAPHB @join__graph(name: "SubgraphB", url: "https://subgraphB")
-}
-
-enum link__Purpose {
-  "SECURITY features provide metadata necessary to securely resolve fields."
-  SECURITY
-  "EXECUTION features provide metadata necessary for operation execution."
-  EXECUTION
-}
-
 type Product @join__type(graph: SUBGRAPHA) {
   sku: String!
   name: String!
@@ -440,10 +533,39 @@ type User @join__type(graph: SUBGRAPHB) {
 
 scalar join__FieldSet
 
+enum join__Graph {
+  SUBGRAPHA @join__graph(name: "SubgraphA", url: "https://subgraphA")
+  SUBGRAPHB @join__graph(name: "SubgraphB", url: "https://subgraphB")
+}
+
 scalar link__Import
+
+enum link__Purpose {
+  "SECURITY features provide metadata necessary to securely resolve fields."
+  SECURITY
+  "EXECUTION features provide metadata necessary for operation execution."
+  EXECUTION
+}
 "#;
         let supergraph = Supergraph::compose(vec![&s1, &s2]).unwrap();
-        assert_eq!(supergraph.print_sdl(), expected_supergraph_sdl);
+        assert_eq!(print_sdl(&supergraph.schema), expected_supergraph_sdl);
+
+        let expected_api_schema = r#"type Product {
+  sku: String!
+  name: String!
+}
+
+type Query {
+  products: [Product!]
+}
+
+type User {
+  name: String
+  email: String!
+}
+"#;
+
+        assert_eq!(print_sdl(&supergraph.to_api_schema()), expected_api_schema);
     }
 
     #[test]
@@ -498,18 +620,6 @@ directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on
 
 directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
 
-enum join__Graph {
-  SUBGRAPHA @join__graph(name: "SubgraphA", url: "https://subgraphA")
-  SUBGRAPHB @join__graph(name: "SubgraphB", url: "https://subgraphB")
-}
-
-enum link__Purpose {
-  "SECURITY features provide metadata necessary to securely resolve fields."
-  SECURITY
-  "EXECUTION features provide metadata necessary for operation execution."
-  EXECUTION
-}
-
 type Product @join__type(graph: SUBGRAPHA, key: "sku") @join__type(graph: SUBGRAPHB, key: "sku") {
   sku: String!
   name: String! @join__field(graph: SUBGRAPHA, external: true) @join__field(graph: SUBGRAPHB)
@@ -521,10 +631,34 @@ type Query @join__type(graph: SUBGRAPHA) @join__type(graph: SUBGRAPHB) {
 
 scalar join__FieldSet
 
+enum join__Graph {
+  SUBGRAPHA @join__graph(name: "SubgraphA", url: "https://subgraphA")
+  SUBGRAPHB @join__graph(name: "SubgraphB", url: "https://subgraphB")
+}
+
 scalar link__Import
+
+enum link__Purpose {
+  "SECURITY features provide metadata necessary to securely resolve fields."
+  SECURITY
+  "EXECUTION features provide metadata necessary for operation execution."
+  EXECUTION
+}
 "#;
 
         let supergraph = Supergraph::compose(vec![&s1, &s2]).unwrap();
-        assert_eq!(supergraph.print_sdl(), expected_supergraph_sdl);
+        assert_eq!(print_sdl(&supergraph.schema), expected_supergraph_sdl);
+
+        let expected_api_schema = r#"type Product {
+  sku: String!
+  name: String!
+}
+
+type Query {
+  products: [Product!]
+}
+"#;
+
+        assert_eq!(print_sdl(&supergraph.to_api_schema()), expected_api_schema);
     }
 }

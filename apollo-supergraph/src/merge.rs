@@ -47,6 +47,9 @@ impl Merger {
         }
     }
     fn merge(&mut self, subgraphs: Vec<&Subgraph>) -> Result<MergeSuccess, MergeFailure> {
+        let mut subgraphs = subgraphs.clone();
+        subgraphs.sort_by(|s1, s2| s1.name.cmp(&s2.name));
+
         let mut supergraph = Schema::new();
         // TODO handle @compose
 
