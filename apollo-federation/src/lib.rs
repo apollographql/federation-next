@@ -1,8 +1,9 @@
-use crate::merge::merge_subgraphs;
-use crate::subgraph::subgraph::Subgraph;
 use apollo_compiler::ast::Directives;
 use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::Schema;
+
+use crate::merge::merge_subgraphs;
+use crate::subgraph::Subgraph;
 
 pub mod database;
 pub mod error;

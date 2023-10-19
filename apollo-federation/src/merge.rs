@@ -1,4 +1,6 @@
-use crate::subgraph::subgraph::Subgraph;
+use std::collections::HashSet;
+use std::iter;
+
 use apollo_compiler::ast::Directives;
 use apollo_compiler::ast::{
     Argument, Directive, DirectiveDefinition, DirectiveLocation, EnumValueDefinition,
@@ -12,8 +14,8 @@ use apollo_compiler::{Node, NodeStr, Schema};
 use indexmap::map::Entry::{Occupied, Vacant};
 use indexmap::map::Iter;
 use indexmap::{IndexMap, IndexSet};
-use std::collections::HashSet;
-use std::iter;
+
+use crate::subgraph::Subgraph;
 
 type MergeWarning = &'static str;
 type MergeError = &'static str;

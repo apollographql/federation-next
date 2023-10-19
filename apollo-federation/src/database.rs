@@ -1,12 +1,14 @@
+use std::sync::Arc;
+
+use apollo_compiler::Schema;
+
 use crate::link::{
     database::links_metadata,
-    link::Link,
     spec::{Identity, APOLLO_SPEC_DOMAIN},
+    Link,
 };
-use crate::subgraph::subgraph::Subgraphs;
+use crate::subgraph::Subgraphs;
 use crate::{Supergraph, SupergraphError};
-use apollo_compiler::Schema;
-use std::sync::Arc;
 
 // TODO: we should define this as part as some more generic "JoinSpec" definition, but need
 // to define the ground work for that in `apollo-at-link` first.

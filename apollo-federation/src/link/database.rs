@@ -4,8 +4,8 @@ use apollo_compiler::ast::{Directive, DirectiveLocation, Type};
 use apollo_compiler::Schema;
 
 use crate::link::{
-    link::{Link, LinkError, LinksMetadata, DEFAULT_LINK_NAME},
     spec::{Identity, Url},
+    {Link, LinkError, LinksMetadata, DEFAULT_LINK_NAME},
 };
 
 pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkError> {
@@ -149,8 +149,8 @@ fn parse_link_if_bootstrap_directive(schema: &Schema, directive: &Directive) -> 
 #[cfg(test)]
 mod tests {
     use crate::link::{
-        link::{Import, Purpose},
         spec::{Version, APOLLO_SPEC_DOMAIN},
+        {Import, Purpose},
     };
 
     use super::*;
