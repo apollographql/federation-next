@@ -13,9 +13,9 @@
 
 use std::sync::Arc;
 
-use apollo_at_link::database::links_metadata;
-use apollo_at_link::link::Link;
-use apollo_at_link::spec::{Identity, APOLLO_SPEC_DOMAIN};
+use crate::link::database::links_metadata;
+use crate::link::link::Link;
+use crate::link::spec::{Identity, APOLLO_SPEC_DOMAIN};
 use apollo_compiler::executable::{Directive, SelectionSet};
 use apollo_compiler::Schema;
 

@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use apollo_compiler::ast::{Directive, DirectiveLocation, Type};
 use apollo_compiler::Schema;
 
-use crate::{
+use crate::link::{
     link::{Link, LinkError, LinksMetadata, DEFAULT_LINK_NAME},
     spec::{Identity, Url},
 };
@@ -148,7 +148,7 @@ fn parse_link_if_bootstrap_directive(schema: &Schema, directive: &Directive) -> 
 
 #[cfg(test)]
 mod tests {
-    use crate::{
+    use crate::link::{
         link::{Import, Purpose},
         spec::{Version, APOLLO_SPEC_DOMAIN},
     };

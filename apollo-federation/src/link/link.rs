@@ -1,5 +1,5 @@
-use crate::spec::Identity;
-use crate::spec::Url;
+use crate::link::spec::Identity;
+use crate::link::spec::Url;
 use apollo_compiler::ast::{Directive, Value};
 use std::fmt;
 use std::str;

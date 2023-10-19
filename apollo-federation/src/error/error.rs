@@ -1,4 +1,4 @@
-use crate::ast::AstNode;
+use crate::error::ast::AstNode;
 use indexmap::IndexMap;
 use lazy_static::lazy_static;
 use std::fmt::{Display, Formatter, Write};

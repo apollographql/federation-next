@@ -1,11 +1,11 @@
-use crate::spec::{
+use crate::link::link::LinkError;
+use crate::link::link::{self, DEFAULT_LINK_NAME};
+use crate::link::spec::Identity;
+use crate::subgraph::spec::{
     AppliedFederationLink, FederationSpecDefinitions, FederationSpecError, LinkSpecDefinitions,
     ANY_SCALAR_NAME, ENTITIES_QUERY, ENTITY_UNION_NAME, FEDERATION_V2_DIRECTIVE_NAMES,
     KEY_DIRECTIVE_NAME, SERVICE_SDL_QUERY, SERVICE_TYPE,
 };
-use apollo_at_link::link::LinkError;
-use apollo_at_link::link::{self, DEFAULT_LINK_NAME};
-use apollo_at_link::spec::Identity;
 use apollo_compiler::ast::{Name, NamedType};
 use apollo_compiler::schema::{ComponentStr, ExtendedType, ObjectType};
 use apollo_compiler::{Node, Schema};
@@ -14,9 +14,6 @@ use indexmap::{IndexMap, IndexSet};
 use std::collections::BTreeMap;
 use std::fmt::Formatter;
 use std::sync::Arc;
-
-pub mod database;
-mod spec;
 
 // TODO: we need a strategy for errors. All (or almost all) federation errors have a code in
 // particular (and the way we deal with this in typescript, having all errors declared in one place
@@ -336,7 +333,7 @@ impl Subgraphs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::keys;
+    use crate::subgraph::database::keys;
 
     #[test]
     fn can_inspect_a_type_key() {
