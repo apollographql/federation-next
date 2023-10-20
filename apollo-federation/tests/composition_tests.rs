@@ -34,7 +34,7 @@ mod tests {
                 union U = S | T
             "#,
         )
-            .unwrap();
+        .unwrap();
         let s2 = Subgraph::parse_and_expand(
             "Subgraph2",
             "https://subgraph2",
@@ -51,7 +51,7 @@ mod tests {
                 }
             "#,
         )
-            .unwrap();
+        .unwrap();
 
         let supergraph = Supergraph::compose(vec![&s1, &s2]).unwrap();
         insta::assert_snapshot!(print_sdl(&supergraph.schema));
@@ -85,7 +85,7 @@ mod tests {
                 }
             "#,
         )
-            .unwrap();
+        .unwrap();
 
         let s2 = Subgraph::parse_and_expand(
             "Subgraph2",
@@ -103,7 +103,7 @@ mod tests {
                 }
             "#,
         )
-            .unwrap();
+        .unwrap();
 
         let supergraph = Supergraph::compose(vec![&s1, &s2]).unwrap();
         insta::assert_snapshot!(print_sdl(&supergraph.schema));
@@ -126,7 +126,7 @@ mod tests {
                 }
             "#,
         )
-            .unwrap();
+        .unwrap();
 
         let s2 = Subgraph::parse_and_expand(
             "SubgraphB",
@@ -138,7 +138,7 @@ mod tests {
                 }
             "#,
         )
-            .unwrap();
+        .unwrap();
         let supergraph = Supergraph::compose(vec![&s1, &s2]).unwrap();
         insta::assert_snapshot!(print_sdl(&supergraph.schema));
         insta::assert_snapshot!(print_sdl(&supergraph.to_api_schema()));
