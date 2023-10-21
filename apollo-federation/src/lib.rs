@@ -9,6 +9,8 @@ pub mod database;
 pub mod error;
 pub mod link;
 pub mod merge;
+pub mod query_graph;
+pub mod schema;
 pub mod subgraph;
 
 type MergeError = &'static str;
