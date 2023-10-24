@@ -61,7 +61,7 @@ workflows:
   release:
     jobs:
       - test:
-          name: Test (<< matrix.rust_channel >> rust on << matrix.platform >>)
+          name: Test stable rust on linux
           matrix:
             parameters:
               platform: [linux]
@@ -73,6 +73,8 @@ workflows:
             parameters:
               platform: [linux]
               rust_channel: [stable]
+          requires:
+            - "Test stable rust on linux"
           <<: *crate_release
 
   security-scans:
