@@ -3825,7 +3825,7 @@ impl EnumValueDefinitionLocation {
                     self, value.value,
                 ),
             }
-                .into());
+            .into());
         }
         if self.try_get(&schema.schema).is_some() {
             return Err(SingleFederationError::Internal {

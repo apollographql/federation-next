@@ -2,13 +2,13 @@ use crate::error::{FederationError, SingleFederationError};
 use crate::link::link_spec_definition::{LinkSpecDefinition, CORE_VERSIONS, LINK_VERSIONS};
 use crate::link::spec::Identity;
 use crate::link::spec::Url;
+use crate::link::spec_definition::spec_definitions;
 use apollo_compiler::ast::{Directive, Value};
 use std::fmt;
+use std::ops::Deref;
 use std::str;
 use std::{collections::HashMap, sync::Arc};
-use std::ops::Deref;
 use thiserror::Error;
-use crate::link::spec_definition::spec_definitions;
 
 mod argument;
 pub mod database;
@@ -34,8 +34,9 @@ pub enum LinkError {
 impl From<LinkError> for FederationError {
     fn from(value: LinkError) -> Self {
         SingleFederationError::InvalidLinkDirectiveUsage {
-            message: value.to_string()
-        }.into()
+            message: value.to_string(),
+        }
+        .into()
     }
 }
 
@@ -319,21 +320,24 @@ impl LinksMetadata {
                 .find(&link_link.url.version)
                 .ok_or_else(|| {
                     SingleFederationError::Internal {
-                        message: format!("Unexpected link spec version {}", link_link.url.version)
-                    }.into()
+                        message: format!("Unexpected link spec version {}", link_link.url.version),
+                    }
+                    .into()
                 })
         } else if let Some(core_link) = self.for_identity(&Identity::core_identity()) {
             spec_definitions(CORE_VERSIONS.deref())?
                 .find(&core_link.url.version)
                 .ok_or_else(|| {
                     SingleFederationError::Internal {
-                        message: format!("Unexpected core spec version {}", core_link.url.version)
-                    }.into()
+                        message: format!("Unexpected core spec version {}", core_link.url.version),
+                    }
+                    .into()
                 })
         } else {
             Err(SingleFederationError::Internal {
                 message: "Unexpectedly could not find core/link spec".to_owned(),
-            }.into())
+            }
+            .into())
         }
     }
 

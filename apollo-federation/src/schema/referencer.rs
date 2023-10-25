@@ -1,15 +1,14 @@
-use std::hash::Hash;
 use crate::schema::location::{
     DirectiveArgumentDefinitionLocation, EnumTypeDefinitionLocation, EnumValueDefinitionLocation,
     InputObjectFieldDefinitionLocation, InputObjectTypeDefinitionLocation,
     InterfaceFieldArgumentDefinitionLocation, InterfaceFieldDefinitionLocation,
     InterfaceTypeDefinitionLocation, ObjectFieldArgumentDefinitionLocation,
     ObjectFieldDefinitionLocation, ObjectTypeDefinitionLocation, ScalarTypeDefinitionLocation,
-    SchemaDefinitionLocation, SchemaRootDefinitionLocation,
-    UnionTypeDefinitionLocation,
+    SchemaDefinitionLocation, SchemaRootDefinitionLocation, UnionTypeDefinitionLocation,
 };
 use apollo_compiler::schema::Name;
 use indexmap::{Equivalent, IndexMap, IndexSet};
+use std::hash::Hash;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Referencers {
@@ -24,12 +23,12 @@ pub(crate) struct Referencers {
 
 impl Referencers {
     pub(crate) fn contains_type_name<Q: Hash + Equivalent<Name>>(&self, name: &Q) -> bool {
-        self.scalar_types.contains_key(name) ||
-            self.object_types.contains_key(name) ||
-            self.interface_types.contains_key(name) ||
-            self.union_types.contains_key(name) ||
-            self.enum_types.contains_key(name) ||
-            self.input_object_types.contains_key(name)
+        self.scalar_types.contains_key(name)
+            || self.object_types.contains_key(name)
+            || self.interface_types.contains_key(name)
+            || self.union_types.contains_key(name)
+            || self.enum_types.contains_key(name)
+            || self.input_object_types.contains_key(name)
     }
 }
 

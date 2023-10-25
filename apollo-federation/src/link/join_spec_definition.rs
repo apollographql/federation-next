@@ -92,11 +92,10 @@ impl JoinSpecDefinition {
         &self,
         schema: &'schema FederationSchema,
     ) -> Result<&'schema Node<EnumType>, FederationError> {
-        let type_ = self.type_definition(schema, JOIN_GRAPH_ENUM_NAME_IN_SPEC)?
-            .ok_or_else(|| {
-                SingleFederationError::Internal {
-                    message: "Unexpectedly could not find join spec in schema".to_owned(),
-                }
+        let type_ = self
+            .type_definition(schema, JOIN_GRAPH_ENUM_NAME_IN_SPEC)?
+            .ok_or_else(|| SingleFederationError::Internal {
+                message: "Unexpectedly could not find join spec in schema".to_owned(),
             })?;
         if let ExtendedType::Enum(ref type_) = type_ {
             Ok(type_)
@@ -105,8 +104,9 @@ impl JoinSpecDefinition {
                 message: format!(
                     "Unexpectedly found non-enum for join spec's \"{}\" enum definition",
                     JOIN_GRAPH_ENUM_NAME_IN_SPEC,
-                )
-            }.into())
+                ),
+            }
+            .into())
         }
     }
 
@@ -119,7 +119,7 @@ impl JoinSpecDefinition {
                 SingleFederationError::Internal {
                     message: "Unexpectedly could not find join spec in schema".to_owned(),
                 }
-                    .into()
+                .into()
             })
     }
 
@@ -142,7 +142,7 @@ impl JoinSpecDefinition {
                 SingleFederationError::Internal {
                     message: "Unexpectedly could not find join spec in schema".to_owned(),
                 }
-                    .into()
+                .into()
             })
     }
 
@@ -180,7 +180,7 @@ impl JoinSpecDefinition {
                 SingleFederationError::Internal {
                     message: "Unexpectedly could not find join spec in schema".to_owned(),
                 }
-                    .into()
+                .into()
             })
     }
 
@@ -199,8 +199,14 @@ impl JoinSpecDefinition {
                 JOIN_PROVIDES_ARGUMENT_NAME,
             )?,
             type_: directive_optional_string_argument(application, JOIN_TYPE_ARGUMENT_NAME)?,
-            external: directive_optional_boolean_argument(application, JOIN_EXTERNAL_ARGUMENT_NAME)?,
-            override_: directive_optional_string_argument(application, JOIN_OVERRIDE_ARGUMENT_NAME)?,
+            external: directive_optional_boolean_argument(
+                application,
+                JOIN_EXTERNAL_ARGUMENT_NAME,
+            )?,
+            override_: directive_optional_string_argument(
+                application,
+                JOIN_OVERRIDE_ARGUMENT_NAME,
+            )?,
             user_overridden: directive_optional_boolean_argument(
                 application,
                 JOIN_USEROVERRIDDEN_ARGUMENT_NAME,
@@ -220,8 +226,9 @@ impl JoinSpecDefinition {
                 SingleFederationError::Internal {
                     message: "Unexpectedly could not find join spec in schema".to_owned(),
                 }
-                    .into()
-            }).map(Some)
+                .into()
+            })
+            .map(Some)
     }
 
     pub(crate) fn implements_directive_arguments(
@@ -249,8 +256,9 @@ impl JoinSpecDefinition {
                 SingleFederationError::Internal {
                     message: "Unexpectedly could not find join spec in schema".to_owned(),
                 }
-                    .into()
-            }).map(Some)
+                .into()
+            })
+            .map(Some)
     }
 
     pub(crate) fn union_member_directive_arguments(
@@ -275,8 +283,9 @@ impl JoinSpecDefinition {
                 SingleFederationError::Internal {
                     message: "Unexpectedly could not find join spec in schema".to_owned(),
                 }
-                    .into()
-            }).map(Some)
+                .into()
+            })
+            .map(Some)
     }
 
     pub(crate) fn enum_value_directive_arguments(

@@ -46,7 +46,7 @@ pub(crate) trait SpecDefinition {
             return Err(SingleFederationError::Internal {
                 message: "Schema is not a core schema (add @link first)".to_owned(),
             }
-                .into());
+            .into());
         };
         Ok(metadata
             .source_link_of_type(name_in_schema)
@@ -59,7 +59,8 @@ pub(crate) trait SpecDefinition {
         schema: &FederationSchema,
         name_in_spec: &str,
     ) -> Result<Option<String>, FederationError> {
-        Ok(self.link_in_schema(schema)?
+        Ok(self
+            .link_in_schema(schema)?
             .map(|link| link.directive_name_in_schema(name_in_spec)))
     }
 
@@ -68,7 +69,8 @@ pub(crate) trait SpecDefinition {
         schema: &FederationSchema,
         name_in_spec: &str,
     ) -> Result<Option<String>, FederationError> {
-        Ok(self.link_in_schema(schema)?
+        Ok(self
+            .link_in_schema(schema)?
             .map(|link| link.type_name_in_schema(name_in_spec)))
     }
 
@@ -78,20 +80,20 @@ pub(crate) trait SpecDefinition {
         name_in_spec: &str,
     ) -> Result<Option<&'schema Node<DirectiveDefinition>>, FederationError> {
         match self.directive_name_in_schema(schema, name_in_spec)? {
-            Some(name) => {
-                schema
-                    .schema()
-                    .directive_definitions
-                    .get(&NodeStr::new(&name))
-                    .ok_or_else(|| {
-                        SingleFederationError::Internal {
-                            message: format!(
-                                "Unexpectedly could not find spec directive \"@{}\" in schema",
-                                name
-                            ),
-                        }.into()
-                    }).map(Some)
-            }
+            Some(name) => schema
+                .schema()
+                .directive_definitions
+                .get(&NodeStr::new(&name))
+                .ok_or_else(|| {
+                    SingleFederationError::Internal {
+                        message: format!(
+                            "Unexpectedly could not find spec directive \"@{}\" in schema",
+                            name
+                        ),
+                    }
+                    .into()
+                })
+                .map(Some),
             None => Ok(None),
         }
     }
@@ -102,20 +104,20 @@ pub(crate) trait SpecDefinition {
         name_in_spec: &str,
     ) -> Result<Option<&'schema ExtendedType>, FederationError> {
         match self.type_name_in_schema(schema, name_in_spec)? {
-            Some(name) => {
-                schema
-                    .schema()
-                    .types
-                    .get(&NodeStr::new(&name))
-                    .ok_or_else(|| {
-                        SingleFederationError::Internal {
-                            message: format!(
-                                "Unexpectedly could not find spec type \"{}\" in schema",
-                                name
-                            ),
-                        }.into()
-                    }).map(Some)
-            }
+            Some(name) => schema
+                .schema()
+                .types
+                .get(&NodeStr::new(&name))
+                .ok_or_else(|| {
+                    SingleFederationError::Internal {
+                        message: format!(
+                            "Unexpectedly could not find spec type \"{}\" in schema",
+                            name
+                        ),
+                    }
+                    .into()
+                })
+                .map(Some),
             None => Ok(None),
         }
     }
@@ -125,11 +127,10 @@ pub(crate) trait SpecDefinition {
         schema: &FederationSchema,
     ) -> Result<Option<Arc<Link>>, FederationError> {
         let Some(ref metadata) = schema.metadata() else {
-            return Err(
-                SingleFederationError::Internal {
-                    message: "Schema is not a core schema (add @link first)".to_owned(),
-                }.into()
-            );
+            return Err(SingleFederationError::Internal {
+                message: "Schema is not a core schema (add @link first)".to_owned(),
+            }
+            .into());
         };
         Ok(metadata.for_identity(self.identity()))
     }
@@ -154,15 +155,14 @@ impl<T: SpecDefinition> SpecDefinitions<T> {
 
     pub(crate) fn add(&mut self, definition: T) -> Result<(), FederationError> {
         if *definition.identity() != self.identity {
-            return Err(
-                SingleFederationError::Internal {
-                    message: format!(
-                        "Cannot add definition for {} to the versions of definitions for {}",
-                        definition.to_string(),
-                        self.identity
-                    ),
-                }.into()
-            )
+            return Err(SingleFederationError::Internal {
+                message: format!(
+                    "Cannot add definition for {} to the versions of definitions for {}",
+                    definition.to_string(),
+                    self.identity
+                ),
+            }
+            .into());
         }
         if self.definitions.contains_key(definition.version()) {
             return Ok(());
@@ -182,7 +182,7 @@ impl<T: SpecDefinition> SpecDefinitions<T> {
 }
 
 pub(crate) fn spec_definitions<T: SpecDefinition>(
-    spec_definitions: &'static Result<SpecDefinitions<T>, FederationError>
+    spec_definitions: &'static Result<SpecDefinitions<T>, FederationError>,
 ) -> Result<&'static SpecDefinitions<T>, FederationError> {
     match spec_definitions {
         Ok(spec_definitions) => Ok(spec_definitions),

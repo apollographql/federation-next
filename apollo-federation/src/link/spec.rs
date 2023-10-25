@@ -18,7 +18,8 @@ impl From<SpecError> for FederationError {
     fn from(value: SpecError) -> Self {
         SingleFederationError::InvalidLinkIdentifier {
             message: value.to_string(),
-        }.into()
+        }
+        .into()
     }
 }
 
