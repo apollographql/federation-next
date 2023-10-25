@@ -314,7 +314,9 @@ pub struct LinksMetadata {
 }
 
 impl LinksMetadata {
-    pub fn link_spec_definition(&self) -> Result<&'static LinkSpecDefinition, FederationError> {
+    pub(crate) fn link_spec_definition(
+        &self,
+    ) -> Result<&'static LinkSpecDefinition, FederationError> {
         if let Some(link_link) = self.for_identity(&Identity::link_identity()) {
             spec_definitions(LINK_VERSIONS.deref())?
                 .find(&link_link.url.version)

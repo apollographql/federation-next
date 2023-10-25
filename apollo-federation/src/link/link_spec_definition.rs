@@ -3,13 +3,13 @@ use crate::link::spec::{Identity, Url, Version};
 use crate::link::spec_definition::{SpecDefinition, SpecDefinitions};
 use lazy_static::lazy_static;
 
-pub struct LinkSpecDefinition {
+pub(crate) struct LinkSpecDefinition {
     url: Url,
     minimum_federation_version: Option<Version>,
 }
 
 impl LinkSpecDefinition {
-    pub fn new(
+    pub(crate) fn new(
         version: Version,
         minimum_federation_version: Option<Version>,
         identity: Identity,
