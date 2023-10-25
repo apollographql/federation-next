@@ -90,7 +90,7 @@ pub(crate) trait SpecDefinition {
                                 name
                             ),
                         }.into()
-                    }).map(|d| Some(d))
+                    }).map(Some)
             }
             None => Ok(None),
         }
@@ -114,7 +114,7 @@ pub(crate) trait SpecDefinition {
                                 name
                             ),
                         }.into()
-                    }).map(|t| Some(t))
+                    }).map(Some)
             }
             None => Ok(None),
         }

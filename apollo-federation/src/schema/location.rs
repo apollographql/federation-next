@@ -21,47 +21,47 @@ use std::ops::Deref;
 use strum::IntoEnumIterator;
 
 pub(crate) enum TypeDefinitionLocation {
-    ScalarTypeDefinitionLocation(ScalarTypeDefinitionLocation),
-    ObjectTypeDefinitionLocation(ObjectTypeDefinitionLocation),
-    InterfaceTypeDefinitionLocation(InterfaceTypeDefinitionLocation),
-    UnionTypeDefinitionLocation(UnionTypeDefinitionLocation),
-    EnumTypeDefinitionLocation(EnumTypeDefinitionLocation),
-    InputObjectTypeDefinitionLocation(InputObjectTypeDefinitionLocation),
+    Scalar(ScalarTypeDefinitionLocation),
+    Object(ObjectTypeDefinitionLocation),
+    Interface(InterfaceTypeDefinitionLocation),
+    Union(UnionTypeDefinitionLocation),
+    Enum(EnumTypeDefinitionLocation),
+    InputObject(InputObjectTypeDefinitionLocation),
 }
 
 impl From<ScalarTypeDefinitionLocation> for TypeDefinitionLocation {
     fn from(value: ScalarTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::ScalarTypeDefinitionLocation(value)
+        TypeDefinitionLocation::Scalar(value)
     }
 }
 
 impl From<ObjectTypeDefinitionLocation> for TypeDefinitionLocation {
     fn from(value: ObjectTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::ObjectTypeDefinitionLocation(value)
+        TypeDefinitionLocation::Object(value)
     }
 }
 
 impl From<InterfaceTypeDefinitionLocation> for TypeDefinitionLocation {
     fn from(value: InterfaceTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::InterfaceTypeDefinitionLocation(value)
+        TypeDefinitionLocation::Interface(value)
     }
 }
 
 impl From<UnionTypeDefinitionLocation> for TypeDefinitionLocation {
     fn from(value: UnionTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::UnionTypeDefinitionLocation(value)
+        TypeDefinitionLocation::Union(value)
     }
 }
 
 impl From<EnumTypeDefinitionLocation> for TypeDefinitionLocation {
     fn from(value: EnumTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::EnumTypeDefinitionLocation(value)
+        TypeDefinitionLocation::Enum(value)
     }
 }
 
 impl From<InputObjectTypeDefinitionLocation> for TypeDefinitionLocation {
     fn from(value: InputObjectTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::InputObjectTypeDefinitionLocation(value)
+        TypeDefinitionLocation::InputObject(value)
     }
 }
 

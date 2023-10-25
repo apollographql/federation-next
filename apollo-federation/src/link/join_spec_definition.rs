@@ -184,9 +184,9 @@ impl JoinSpecDefinition {
             })
     }
 
-    pub(crate) fn field_directive_arguments<'schema>(
+    pub(crate) fn field_directive_arguments(
         &self,
-        application: &'schema Node<Directive>,
+        application: &Node<Directive>,
     ) -> Result<FieldDirectiveArguments, FederationError> {
         Ok(FieldDirectiveArguments {
             graph: directive_optional_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME)?,
@@ -221,12 +221,12 @@ impl JoinSpecDefinition {
                     message: "Unexpectedly could not find join spec in schema".to_owned(),
                 }
                     .into()
-            }).map(|d| Some(d))
+            }).map(Some)
     }
 
-    pub(crate) fn implements_directive_arguments<'schema>(
+    pub(crate) fn implements_directive_arguments(
         &self,
-        application: &'schema Node<Directive>,
+        application: &Node<Directive>,
     ) -> Result<ImplementsDirectiveArguments, FederationError> {
         Ok(ImplementsDirectiveArguments {
             graph: directive_required_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME)?,
@@ -250,7 +250,7 @@ impl JoinSpecDefinition {
                     message: "Unexpectedly could not find join spec in schema".to_owned(),
                 }
                     .into()
-            }).map(|d| Some(d))
+            }).map(Some)
     }
 
     pub(crate) fn union_member_directive_arguments(
@@ -276,7 +276,7 @@ impl JoinSpecDefinition {
                     message: "Unexpectedly could not find join spec in schema".to_owned(),
                 }
                     .into()
-            }).map(|d| Some(d))
+            }).map(Some)
     }
 
     pub(crate) fn enum_value_directive_arguments(

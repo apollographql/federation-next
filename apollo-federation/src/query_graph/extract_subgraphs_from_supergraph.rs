@@ -63,7 +63,11 @@ fn extract_subgraphs_from_supergraph(
             &graph_enum_value_name_to_subgraph_name,
             graph_enum_value,
         )?;
-        let federation_spec_definition = federation_spec_definitions.get(graph_enum_value).unwrap();
+        let federation_spec_definition = federation_spec_definitions.get(graph_enum_value).ok_or_else(|| {
+            SingleFederationError::InvalidFederationSupergraph {
+                message: "Subgraph unexpectedly does not use federation spec".to_owned(),
+            }
+        })?;
         add_federation_operations(subgraph, federation_spec_definition)?;
         if validate_extracted_subgraphs {
             let Some(diagnostics) = subgraph.schema.schema().validate().err() else {
@@ -90,16 +94,13 @@ fn extract_subgraphs_from_supergraph(
     Ok(subgraphs)
 }
 
-fn validate_supergraph(
-    supergraph_schema: Schema,
-) -> Result<
-    (
-        FederationSchema,
-        &'static LinkSpecDefinition,
-        &'static JoinSpecDefinition,
-    ),
-    FederationError,
-> {
+type ValidateSupergraphOk = (
+    FederationSchema,
+    &'static LinkSpecDefinition,
+    &'static JoinSpecDefinition,
+);
+
+fn validate_supergraph(supergraph_schema: Schema) -> Result<ValidateSupergraphOk, FederationError> {
     let supergraph_schema = FederationSchema::new(supergraph_schema)?;
     let Some(metadata) = supergraph_schema.metadata() else {
         return Err(SingleFederationError::InvalidFederationSupergraph {
@@ -128,20 +129,21 @@ fn validate_supergraph(
     ))
 }
 
+type CollectEmptySubgraphsOk<'schema> = (
+    FederationSubgraphs,
+    IndexMap<&'schema Name, &'static FederationSpecDefinition>,
+    IndexMap<&'schema Name, NodeStr>,
+);
 fn collect_empty_subgraphs<'schema>(
     supergraph_schema: &'schema FederationSchema,
     join_spec_definition: &JoinSpecDefinition,
 ) -> Result<
-    (
-        FederationSubgraphs,
-        IndexMap<&'schema Name, &'static FederationSpecDefinition>,
-        IndexMap<&'schema Name, NodeStr>,
-    ),
+    CollectEmptySubgraphsOk<'schema>,
     FederationError,
 > {
     let mut subgraphs = FederationSubgraphs::new();
-    let graph_directive = join_spec_definition.graph_directive_definition(&supergraph_schema)?;
-    let graph_enum = join_spec_definition.graph_enum_definition(&supergraph_schema)?;
+    let graph_directive = join_spec_definition.graph_directive_definition(supergraph_schema)?;
+    let graph_enum = join_spec_definition.graph_enum_definition(supergraph_schema)?;
     let mut federation_spec_definitions = IndexMap::new();
     let mut graph_enum_value_name_to_subgraph_name = IndexMap::new();
     for (enum_value_name, enum_value_definition) in graph_enum.values.iter() {
@@ -264,9 +266,9 @@ struct TypeInfos<'schema> {
     input_object_types: Vec<TypeInfo<'schema>>,
 }
 
-fn extract_subgraphs_from_fed_2_supergraph<'subgraph, 'schema>(
+fn extract_subgraphs_from_fed_2_supergraph<'schema>(
     supergraph_schema: &'schema FederationSchema,
-    subgraphs: &'subgraph mut FederationSubgraphs,
+    subgraphs: &mut FederationSubgraphs,
     graph_enum_value_name_to_subgraph_name: &IndexMap<&'schema Name, NodeStr>,
     federation_spec_definitions: &IndexMap<&Name, &'static FederationSpecDefinition>,
     join_spec_definition: &'static JoinSpecDefinition,
@@ -341,7 +343,7 @@ fn extract_subgraphs_from_fed_2_supergraph<'subgraph, 'schema>(
                 .locations
                 .iter()
                 .filter(|location| EXECUTABLE_DIRECTIVE_LOCATIONS.contains(*location))
-                .map(|location| location.clone())
+                .copied()
                 .collect::<Vec<_>>();
             if executable_locations.is_empty() {
                 return None;
@@ -383,9 +385,9 @@ fn extract_subgraphs_from_fed_2_supergraph<'subgraph, 'schema>(
     Ok(())
 }
 
-fn add_all_empty_subgraph_types<'subgraph, 'schema>(
+fn add_all_empty_subgraph_types<'schema>(
     supergraph_schema: &'schema FederationSchema,
-    subgraphs: &'subgraph mut FederationSubgraphs,
+    subgraphs: &mut FederationSubgraphs,
     graph_enum_value_name_to_subgraph_name: &IndexMap<&'schema Name, NodeStr>,
     federation_spec_definitions: &IndexMap<&Name, &'static FederationSpecDefinition>,
     join_spec_definition: &'static JoinSpecDefinition,
@@ -499,11 +501,11 @@ fn add_all_empty_subgraph_types<'subgraph, 'schema>(
     })
 }
 
-fn add_empty_type<'subgraph, 'schema>(
+fn add_empty_type<'schema>(
     type_name: &'schema NamedType,
     type_: &'schema ExtendedType,
     type_directive_applications: &Vec<TypeDirectiveArguments>,
-    subgraphs: &'subgraph mut FederationSubgraphs,
+    subgraphs: &mut FederationSubgraphs,
     graph_enum_value_name_to_subgraph_name: &IndexMap<&'schema Name, NodeStr>,
     federation_spec_definitions: &IndexMap<&Name, &'static FederationSpecDefinition>,
 ) -> Result<TypeInfo<'schema>, FederationError> {
@@ -735,7 +737,7 @@ fn extract_object_type_content<'schema>(
     graph_enum_value_name_to_subgraph_name: &IndexMap<&'schema Name, NodeStr>,
     federation_spec_definitions: &IndexMap<&Name, &'static FederationSpecDefinition>,
     join_spec_definition: &JoinSpecDefinition,
-    info: &Vec<TypeInfo<'schema>>,
+    info: &[TypeInfo<'schema>],
 ) -> Result<(), FederationError> {
     let field_directive_definition =
         join_spec_definition.field_directive_definition(supergraph_schema)?;
@@ -755,7 +757,7 @@ fn extract_object_type_content<'schema>(
     } in info.iter()
     {
         let loc = ObjectTypeDefinitionLocation { type_name: (*type_name).clone() };
-        let type_ = loc.get(&supergraph_schema.schema())?;
+        let type_ = loc.get(supergraph_schema.schema())?;
 
         for directive in type_.directives.iter() {
             if directive.name != implements_directive_definition.name {
@@ -877,13 +879,13 @@ fn extract_object_type_content<'schema>(
     Ok(())
 }
 
-fn extract_interface_type_content<'subgraph, 'schema>(
+fn extract_interface_type_content<'schema>(
     supergraph_schema: &'schema FederationSchema,
     subgraphs: &mut FederationSubgraphs,
     graph_enum_value_name_to_subgraph_name: &IndexMap<&'schema Name, NodeStr>,
     federation_spec_definitions: &IndexMap<&Name, &'static FederationSpecDefinition>,
     join_spec_definition: &JoinSpecDefinition,
-    info: &Vec<TypeInfo<'schema>>,
+    info: &[TypeInfo<'schema>],
 ) -> Result<(), FederationError> {
     let field_directive_definition =
         join_spec_definition.field_directive_definition(supergraph_schema)?;
@@ -903,7 +905,7 @@ fn extract_interface_type_content<'subgraph, 'schema>(
     } in info.iter()
     {
         let loc = InterfaceTypeDefinitionLocation { type_name: (*type_name).clone() };
-        let type_ = loc.get(&supergraph_schema.schema())?;
+        let type_ = loc.get(supergraph_schema.schema())?;
 
         for directive in type_.directives.iter() {
             if directive.name != implements_directive_definition.name {
@@ -1021,7 +1023,7 @@ fn extract_interface_type_content<'subgraph, 'schema>(
                     let subgraph = get_subgraph(
                         subgraphs,
                         graph_enum_value_name_to_subgraph_name,
-                        &graph_enum_value,
+                        graph_enum_value,
                     )?;
                     let federation_spec_definition =
                         federation_spec_definitions.get(graph_enum_value).ok_or_else(|| {
@@ -1058,12 +1060,12 @@ fn extract_interface_type_content<'subgraph, 'schema>(
     Ok(())
 }
 
-fn extract_union_type_content<'subgraph, 'schema>(
+fn extract_union_type_content<'schema>(
     supergraph_schema: &'schema FederationSchema,
     subgraphs: &mut FederationSubgraphs,
     graph_enum_value_name_to_subgraph_name: &IndexMap<&'schema Name, NodeStr>,
     join_spec_definition: &JoinSpecDefinition,
-    info: &Vec<TypeInfo<'schema>>,
+    info: &[TypeInfo<'schema>],
 ) -> Result<(), FederationError> {
     // This was added in join 0.3, so it can genuinely be None.
     let union_member_directive_definition =
@@ -1078,7 +1080,7 @@ fn extract_union_type_content<'subgraph, 'schema>(
     } in info.iter()
     {
         let loc = UnionTypeDefinitionLocation { type_name: (*type_name).clone() };
-        let type_ = loc.get(&supergraph_schema.schema())?;
+        let type_ = loc.get(supergraph_schema.schema())?;
 
         let mut union_member_directive_applications = Vec::new();
         if let Some(union_member_directive_definition) = union_member_directive_definition {
@@ -1105,7 +1107,7 @@ fn extract_union_type_content<'subgraph, 'schema>(
                     .members
                     .iter()
                     .filter(|member| subgraph.schema.schema().types.contains_key((*member).deref()))
-                    .map(|member| member.clone())
+                    .cloned()
                     .collect::<Vec<_>>();
                 for member in subgraph_members {
                     loc.insert_member(
@@ -1146,12 +1148,12 @@ fn extract_union_type_content<'subgraph, 'schema>(
     Ok(())
 }
 
-fn extract_enum_type_content<'subgraph, 'schema>(
+fn extract_enum_type_content<'schema>(
     supergraph_schema: &'schema FederationSchema,
     subgraphs: &mut FederationSubgraphs,
     graph_enum_value_name_to_subgraph_name: &IndexMap<&'schema Name, NodeStr>,
     join_spec_definition: &JoinSpecDefinition,
-    info: &Vec<TypeInfo<'schema>>,
+    info: &[TypeInfo<'schema>],
 ) -> Result<(), FederationError> {
     // This was added in join 0.3, so it can genuinely be None.
     let enum_value_directive_definition =
@@ -1163,7 +1165,7 @@ fn extract_enum_type_content<'subgraph, 'schema>(
     } in info.iter()
     {
         let loc = EnumTypeDefinitionLocation { type_name: (*type_name).clone() };
-        let type_ = loc.get(&supergraph_schema.schema())?;
+        let type_ = loc.get(supergraph_schema.schema())?;
 
         for (value_name, value) in type_.values.iter() {
             let mut enum_value_directive_applications = Vec::new();
@@ -1233,12 +1235,12 @@ fn extract_enum_type_content<'subgraph, 'schema>(
     Ok(())
 }
 
-fn extract_input_object_type_content<'subgraph, 'schema>(
+fn extract_input_object_type_content<'schema>(
     supergraph_schema: &'schema FederationSchema,
     subgraphs: &mut FederationSubgraphs,
     graph_enum_value_name_to_subgraph_name: &IndexMap<&'schema Name, NodeStr>,
     join_spec_definition: &JoinSpecDefinition,
-    info: &Vec<TypeInfo<'schema>>,
+    info: &[TypeInfo<'schema>],
 ) -> Result<(), FederationError> {
     let field_directive_definition =
         join_spec_definition.field_directive_definition(supergraph_schema)?;
@@ -1249,7 +1251,7 @@ fn extract_input_object_type_content<'subgraph, 'schema>(
     } in info.iter()
     {
         let loc = InputObjectTypeDefinitionLocation { type_name: (*type_name).clone() };
-        let type_ = loc.get(&supergraph_schema.schema())?;
+        let type_ = loc.get(supergraph_schema.schema())?;
 
         for (input_field_name, input_field) in type_.fields.iter() {
             let mut field_directive_applications = Vec::new();
@@ -1315,11 +1317,11 @@ fn extract_input_object_type_content<'subgraph, 'schema>(
     Ok(())
 }
 
-fn add_subgraph_field<'subgraph, 'schema>(
+fn add_subgraph_field<'schema>(
     field_name: &'schema Name,
     field: &'schema FieldDefinition,
     type_name: &'schema NamedType,
-    subgraph: &'subgraph mut FederationSubgraph,
+    subgraph: &mut FederationSubgraph,
     federation_spec_definition: &'static FederationSpecDefinition,
     is_shareable: bool,
     field_directive_application: Option<&FieldDirectiveArguments>,
@@ -1442,11 +1444,11 @@ fn add_subgraph_field<'subgraph, 'schema>(
     Ok(())
 }
 
-fn add_subgraph_input_field<'subgraph, 'schema>(
+fn add_subgraph_input_field<'schema>(
     input_field_name: &'schema Name,
     input_field: &'schema InputValueDefinition,
     type_name: &'schema NamedType,
-    subgraph: &'subgraph mut FederationSubgraph,
+    subgraph: &mut FederationSubgraph,
     field_directive_application: Option<&FieldDirectiveArguments>,
 ) -> Result<(), FederationError> {
     let field_directive_application =
@@ -1635,16 +1637,16 @@ fn remove_unused_types_from_subgraph(subgraph: &mut FederationSubgraph) -> Resul
     // the type was not in this subgraph, nothing that depends on it should be either.
     for location in type_definition_locations {
         match location {
-            TypeDefinitionLocation::ObjectTypeDefinitionLocation(location) => {
+            TypeDefinitionLocation::Object(location) => {
                 location.remove_recursive(&mut subgraph.schema)?;
             }
-            TypeDefinitionLocation::InterfaceTypeDefinitionLocation(location) => {
+            TypeDefinitionLocation::Interface(location) => {
                 location.remove_recursive(&mut subgraph.schema)?;
             }
-            TypeDefinitionLocation::UnionTypeDefinitionLocation(location) => {
+            TypeDefinitionLocation::Union(location) => {
                 location.remove_recursive(&mut subgraph.schema)?;
             }
-            TypeDefinitionLocation::InputObjectTypeDefinitionLocation(location) => {
+            TypeDefinitionLocation::InputObject(location) => {
                 location.remove_recursive(&mut subgraph.schema)?;
             }
             _ => panic!("Encountered type kind that shouldn't have been removed"),
@@ -1740,7 +1742,7 @@ fn add_federation_operations(
     }
 
     let query_root_loc = SchemaRootDefinitionLocation { root_kind: SchemaRootDefinitionKind::Query };
-    if query_root_loc.try_get(&subgraph.schema.schema()).is_none() {
+    if query_root_loc.try_get(subgraph.schema.schema()).is_none() {
         let default_query_type_loc = ObjectTypeDefinitionLocation {
             type_name: NodeStr::new("Query")
         };
@@ -1760,7 +1762,7 @@ fn add_federation_operations(
         )?;
     }
 
-    let query_root_type_name = query_root_loc.get(&subgraph.schema.schema())?.node.clone();
+    let query_root_type_name = query_root_loc.get(subgraph.schema.schema())?.node.clone();
     let entity_field_loc = ObjectFieldDefinitionLocation {
         type_name: query_root_type_name.clone(),
         field_name: NodeStr::new(FEDERATION_ENTITIES_FIELD_NAME),
