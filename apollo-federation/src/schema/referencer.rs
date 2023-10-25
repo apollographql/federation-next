@@ -1,10 +1,10 @@
-use crate::schema::location::{
-    DirectiveArgumentDefinitionLocation, EnumTypeDefinitionLocation, EnumValueDefinitionLocation,
-    InputObjectFieldDefinitionLocation, InputObjectTypeDefinitionLocation,
-    InterfaceFieldArgumentDefinitionLocation, InterfaceFieldDefinitionLocation,
-    InterfaceTypeDefinitionLocation, ObjectFieldArgumentDefinitionLocation,
-    ObjectFieldDefinitionLocation, ObjectTypeDefinitionLocation, ScalarTypeDefinitionLocation,
-    SchemaDefinitionLocation, SchemaRootDefinitionLocation, UnionTypeDefinitionLocation,
+use crate::schema::position::{
+    DirectiveArgumentDefinitionPosition, EnumTypeDefinitionPosition, EnumValueDefinitionPosition,
+    InputObjectFieldDefinitionPosition, InputObjectTypeDefinitionPosition,
+    InterfaceFieldArgumentDefinitionPosition, InterfaceFieldDefinitionPosition,
+    InterfaceTypeDefinitionPosition, ObjectFieldArgumentDefinitionPosition,
+    ObjectFieldDefinitionPosition, ObjectTypeDefinitionPosition, ScalarTypeDefinitionPosition,
+    SchemaDefinitionPosition, SchemaRootDefinitionPosition, UnionTypeDefinitionPosition,
 };
 use apollo_compiler::schema::Name;
 use indexmap::{Equivalent, IndexMap, IndexSet};
@@ -34,68 +34,68 @@ impl Referencers {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ScalarTypeReferencers {
-    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionLocation>,
-    pub(crate) object_field_arguments: IndexSet<ObjectFieldArgumentDefinitionLocation>,
-    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionLocation>,
-    pub(crate) interface_field_arguments: IndexSet<InterfaceFieldArgumentDefinitionLocation>,
-    pub(crate) input_object_fields: IndexSet<InputObjectFieldDefinitionLocation>,
-    pub(crate) directive_arguments: IndexSet<DirectiveArgumentDefinitionLocation>,
+    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionPosition>,
+    pub(crate) object_field_arguments: IndexSet<ObjectFieldArgumentDefinitionPosition>,
+    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionPosition>,
+    pub(crate) interface_field_arguments: IndexSet<InterfaceFieldArgumentDefinitionPosition>,
+    pub(crate) input_object_fields: IndexSet<InputObjectFieldDefinitionPosition>,
+    pub(crate) directive_arguments: IndexSet<DirectiveArgumentDefinitionPosition>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ObjectTypeReferencers {
-    pub(crate) schema_roots: IndexSet<SchemaRootDefinitionLocation>,
-    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionLocation>,
-    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionLocation>,
-    pub(crate) union_types: IndexSet<UnionTypeDefinitionLocation>,
+    pub(crate) schema_roots: IndexSet<SchemaRootDefinitionPosition>,
+    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionPosition>,
+    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionPosition>,
+    pub(crate) union_types: IndexSet<UnionTypeDefinitionPosition>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct InterfaceTypeReferencers {
-    pub(crate) object_types: IndexSet<ObjectTypeDefinitionLocation>,
-    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionLocation>,
-    pub(crate) interface_types: IndexSet<InterfaceTypeDefinitionLocation>,
-    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionLocation>,
+    pub(crate) object_types: IndexSet<ObjectTypeDefinitionPosition>,
+    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionPosition>,
+    pub(crate) interface_types: IndexSet<InterfaceTypeDefinitionPosition>,
+    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionPosition>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UnionTypeReferencers {
-    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionLocation>,
-    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionLocation>,
+    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionPosition>,
+    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionPosition>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct EnumTypeReferencers {
-    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionLocation>,
-    pub(crate) object_field_arguments: IndexSet<ObjectFieldArgumentDefinitionLocation>,
-    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionLocation>,
-    pub(crate) interface_field_arguments: IndexSet<InterfaceFieldArgumentDefinitionLocation>,
-    pub(crate) input_object_fields: IndexSet<InputObjectFieldDefinitionLocation>,
-    pub(crate) directive_arguments: IndexSet<DirectiveArgumentDefinitionLocation>,
+    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionPosition>,
+    pub(crate) object_field_arguments: IndexSet<ObjectFieldArgumentDefinitionPosition>,
+    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionPosition>,
+    pub(crate) interface_field_arguments: IndexSet<InterfaceFieldArgumentDefinitionPosition>,
+    pub(crate) input_object_fields: IndexSet<InputObjectFieldDefinitionPosition>,
+    pub(crate) directive_arguments: IndexSet<DirectiveArgumentDefinitionPosition>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct InputObjectTypeReferencers {
-    pub(crate) object_field_arguments: IndexSet<ObjectFieldArgumentDefinitionLocation>,
-    pub(crate) interface_field_arguments: IndexSet<InterfaceFieldArgumentDefinitionLocation>,
-    pub(crate) input_object_fields: IndexSet<InputObjectFieldDefinitionLocation>,
-    pub(crate) directive_arguments: IndexSet<DirectiveArgumentDefinitionLocation>,
+    pub(crate) object_field_arguments: IndexSet<ObjectFieldArgumentDefinitionPosition>,
+    pub(crate) interface_field_arguments: IndexSet<InterfaceFieldArgumentDefinitionPosition>,
+    pub(crate) input_object_fields: IndexSet<InputObjectFieldDefinitionPosition>,
+    pub(crate) directive_arguments: IndexSet<DirectiveArgumentDefinitionPosition>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DirectiveReferencers {
-    pub(crate) schema: Option<SchemaDefinitionLocation>,
-    pub(crate) scalar_types: IndexSet<ScalarTypeDefinitionLocation>,
-    pub(crate) object_types: IndexSet<ObjectTypeDefinitionLocation>,
-    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionLocation>,
-    pub(crate) object_field_arguments: IndexSet<ObjectFieldArgumentDefinitionLocation>,
-    pub(crate) interface_types: IndexSet<InterfaceTypeDefinitionLocation>,
-    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionLocation>,
-    pub(crate) interface_field_arguments: IndexSet<InterfaceFieldArgumentDefinitionLocation>,
-    pub(crate) union_types: IndexSet<UnionTypeDefinitionLocation>,
-    pub(crate) enum_types: IndexSet<EnumTypeDefinitionLocation>,
-    pub(crate) enum_values: IndexSet<EnumValueDefinitionLocation>,
-    pub(crate) input_object_types: IndexSet<InputObjectTypeDefinitionLocation>,
-    pub(crate) input_object_fields: IndexSet<InputObjectFieldDefinitionLocation>,
-    pub(crate) directive_arguments: IndexSet<DirectiveArgumentDefinitionLocation>,
+    pub(crate) schema: Option<SchemaDefinitionPosition>,
+    pub(crate) scalar_types: IndexSet<ScalarTypeDefinitionPosition>,
+    pub(crate) object_types: IndexSet<ObjectTypeDefinitionPosition>,
+    pub(crate) object_fields: IndexSet<ObjectFieldDefinitionPosition>,
+    pub(crate) object_field_arguments: IndexSet<ObjectFieldArgumentDefinitionPosition>,
+    pub(crate) interface_types: IndexSet<InterfaceTypeDefinitionPosition>,
+    pub(crate) interface_fields: IndexSet<InterfaceFieldDefinitionPosition>,
+    pub(crate) interface_field_arguments: IndexSet<InterfaceFieldArgumentDefinitionPosition>,
+    pub(crate) union_types: IndexSet<UnionTypeDefinitionPosition>,
+    pub(crate) enum_types: IndexSet<EnumTypeDefinitionPosition>,
+    pub(crate) enum_values: IndexSet<EnumValueDefinitionPosition>,
+    pub(crate) input_object_types: IndexSet<InputObjectTypeDefinitionPosition>,
+    pub(crate) input_object_fields: IndexSet<InputObjectFieldDefinitionPosition>,
+    pub(crate) directive_arguments: IndexSet<DirectiveArgumentDefinitionPosition>,
 }

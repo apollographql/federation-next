@@ -20,55 +20,55 @@ use std::hash::Hash;
 use std::ops::Deref;
 use strum::IntoEnumIterator;
 
-pub(crate) enum TypeDefinitionLocation {
-    Scalar(ScalarTypeDefinitionLocation),
-    Object(ObjectTypeDefinitionLocation),
-    Interface(InterfaceTypeDefinitionLocation),
-    Union(UnionTypeDefinitionLocation),
-    Enum(EnumTypeDefinitionLocation),
-    InputObject(InputObjectTypeDefinitionLocation),
+pub(crate) enum TypeDefinitionPosition {
+    Scalar(ScalarTypeDefinitionPosition),
+    Object(ObjectTypeDefinitionPosition),
+    Interface(InterfaceTypeDefinitionPosition),
+    Union(UnionTypeDefinitionPosition),
+    Enum(EnumTypeDefinitionPosition),
+    InputObject(InputObjectTypeDefinitionPosition),
 }
 
-impl From<ScalarTypeDefinitionLocation> for TypeDefinitionLocation {
-    fn from(value: ScalarTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::Scalar(value)
+impl From<ScalarTypeDefinitionPosition> for TypeDefinitionPosition {
+    fn from(value: ScalarTypeDefinitionPosition) -> Self {
+        TypeDefinitionPosition::Scalar(value)
     }
 }
 
-impl From<ObjectTypeDefinitionLocation> for TypeDefinitionLocation {
-    fn from(value: ObjectTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::Object(value)
+impl From<ObjectTypeDefinitionPosition> for TypeDefinitionPosition {
+    fn from(value: ObjectTypeDefinitionPosition) -> Self {
+        TypeDefinitionPosition::Object(value)
     }
 }
 
-impl From<InterfaceTypeDefinitionLocation> for TypeDefinitionLocation {
-    fn from(value: InterfaceTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::Interface(value)
+impl From<InterfaceTypeDefinitionPosition> for TypeDefinitionPosition {
+    fn from(value: InterfaceTypeDefinitionPosition) -> Self {
+        TypeDefinitionPosition::Interface(value)
     }
 }
 
-impl From<UnionTypeDefinitionLocation> for TypeDefinitionLocation {
-    fn from(value: UnionTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::Union(value)
+impl From<UnionTypeDefinitionPosition> for TypeDefinitionPosition {
+    fn from(value: UnionTypeDefinitionPosition) -> Self {
+        TypeDefinitionPosition::Union(value)
     }
 }
 
-impl From<EnumTypeDefinitionLocation> for TypeDefinitionLocation {
-    fn from(value: EnumTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::Enum(value)
+impl From<EnumTypeDefinitionPosition> for TypeDefinitionPosition {
+    fn from(value: EnumTypeDefinitionPosition) -> Self {
+        TypeDefinitionPosition::Enum(value)
     }
 }
 
-impl From<InputObjectTypeDefinitionLocation> for TypeDefinitionLocation {
-    fn from(value: InputObjectTypeDefinitionLocation) -> Self {
-        TypeDefinitionLocation::InputObject(value)
+impl From<InputObjectTypeDefinitionPosition> for TypeDefinitionPosition {
+    fn from(value: InputObjectTypeDefinitionPosition) -> Self {
+        TypeDefinitionPosition::InputObject(value)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct SchemaDefinitionLocation;
+pub(crate) struct SchemaDefinitionPosition;
 
-impl SchemaDefinitionLocation {
+impl SchemaDefinitionPosition {
     pub(crate) fn get<'schema>(&self, schema: &'schema Schema) -> &'schema Node<SchemaDefinition> {
         &schema.schema_definition
     }
@@ -154,7 +154,7 @@ impl SchemaDefinitionLocation {
             self.insert_directive_name_references(referencers, &directive_reference.name)?;
         }
         for root_kind in SchemaRootDefinitionKind::iter() {
-            let child = SchemaRootDefinitionLocation {
+            let child = SchemaRootDefinitionPosition {
                 root_kind: root_kind.clone(),
             };
             match root_kind {
@@ -191,7 +191,7 @@ impl SchemaDefinitionLocation {
                 ),
             }
         })?;
-        directive_referencers.schema = Some(SchemaDefinitionLocation);
+        directive_referencers.schema = Some(SchemaDefinitionPosition);
         Ok(())
     }
 
@@ -236,13 +236,13 @@ pub(crate) enum SchemaRootDefinitionKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct SchemaRootDefinitionLocation {
+pub(crate) struct SchemaRootDefinitionPosition {
     pub(crate) root_kind: SchemaRootDefinitionKind,
 }
 
-impl SchemaRootDefinitionLocation {
-    pub(crate) fn parent(&self) -> SchemaDefinitionLocation {
-        SchemaDefinitionLocation
+impl SchemaRootDefinitionPosition {
+    pub(crate) fn parent(&self) -> SchemaDefinitionPosition {
+        SchemaDefinitionPosition
     }
 
     pub(crate) fn get<'schema>(
@@ -401,18 +401,18 @@ impl SchemaRootDefinitionLocation {
     }
 }
 
-impl Display for SchemaRootDefinitionLocation {
+impl Display for SchemaRootDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.root_kind)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct ScalarTypeDefinitionLocation {
+pub(crate) struct ScalarTypeDefinitionPosition {
     pub(crate) type_name: Name,
 }
 
-impl ScalarTypeDefinitionLocation {
+impl ScalarTypeDefinitionPosition {
     pub(crate) fn get<'schema>(
         &self,
         schema: &'schema Schema,
@@ -718,18 +718,18 @@ impl ScalarTypeDefinitionLocation {
     }
 }
 
-impl Display for ScalarTypeDefinitionLocation {
+impl Display for ScalarTypeDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.type_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct ObjectTypeDefinitionLocation {
+pub(crate) struct ObjectTypeDefinitionPosition {
     pub(crate) type_name: Name,
 }
 
-impl ObjectTypeDefinitionLocation {
+impl ObjectTypeDefinitionPosition {
     pub(crate) fn get<'schema>(
         &self,
         schema: &'schema Schema,
@@ -1017,7 +1017,7 @@ impl ObjectTypeDefinitionLocation {
             )?;
         }
         for (field_name, field) in type_.fields.iter() {
-            ObjectFieldDefinitionLocation {
+            ObjectFieldDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: field_name.clone(),
             }
@@ -1042,7 +1042,7 @@ impl ObjectTypeDefinitionLocation {
             );
         }
         for (field_name, field) in type_.fields.iter() {
-            ObjectFieldDefinitionLocation {
+            ObjectFieldDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: field_name.clone(),
             }
@@ -1110,21 +1110,21 @@ impl ObjectTypeDefinitionLocation {
     }
 }
 
-impl Display for ObjectTypeDefinitionLocation {
+impl Display for ObjectTypeDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.type_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct ObjectFieldDefinitionLocation {
+pub(crate) struct ObjectFieldDefinitionPosition {
     pub(crate) type_name: Name,
     pub(crate) field_name: Name,
 }
 
-impl ObjectFieldDefinitionLocation {
-    pub(crate) fn parent(&self) -> ObjectTypeDefinitionLocation {
-        ObjectTypeDefinitionLocation {
+impl ObjectFieldDefinitionPosition {
+    pub(crate) fn parent(&self) -> ObjectTypeDefinitionPosition {
+        ObjectTypeDefinitionPosition {
             type_name: self.type_name.clone(),
         }
     }
@@ -1312,7 +1312,7 @@ impl ObjectFieldDefinitionLocation {
         self.insert_type_references(field, schema, referencers)?;
         validate_arguments(&field.arguments)?;
         for argument in field.arguments.iter() {
-            ObjectFieldArgumentDefinitionLocation {
+            ObjectFieldArgumentDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: self.field_name.clone(),
                 argument_name: argument.name.clone(),
@@ -1333,7 +1333,7 @@ impl ObjectFieldDefinitionLocation {
         }
         self.remove_type_references(field, schema, referencers)?;
         for argument in field.arguments.iter() {
-            ObjectFieldArgumentDefinitionLocation {
+            ObjectFieldArgumentDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: self.field_name.clone(),
                 argument_name: argument.name.clone(),
@@ -1521,22 +1521,22 @@ impl ObjectFieldDefinitionLocation {
     }
 }
 
-impl Display for ObjectFieldDefinitionLocation {
+impl Display for ObjectFieldDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.type_name, self.field_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct ObjectFieldArgumentDefinitionLocation {
+pub(crate) struct ObjectFieldArgumentDefinitionPosition {
     pub(crate) type_name: Name,
     pub(crate) field_name: Name,
     pub(crate) argument_name: Name,
 }
 
-impl ObjectFieldArgumentDefinitionLocation {
-    pub(crate) fn parent(&self) -> ObjectFieldDefinitionLocation {
-        ObjectFieldDefinitionLocation {
+impl ObjectFieldArgumentDefinitionPosition {
+    pub(crate) fn parent(&self) -> ObjectFieldDefinitionPosition {
+        ObjectFieldDefinitionPosition {
             type_name: self.type_name.clone(),
             field_name: self.field_name.clone(),
         }
@@ -1879,7 +1879,7 @@ impl ObjectFieldArgumentDefinitionLocation {
     }
 }
 
-impl Display for ObjectFieldArgumentDefinitionLocation {
+impl Display for ObjectFieldArgumentDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1890,11 +1890,11 @@ impl Display for ObjectFieldArgumentDefinitionLocation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct InterfaceTypeDefinitionLocation {
+pub(crate) struct InterfaceTypeDefinitionPosition {
     pub(crate) type_name: Name,
 }
 
-impl InterfaceTypeDefinitionLocation {
+impl InterfaceTypeDefinitionPosition {
     pub(crate) fn get<'schema>(
         &self,
         schema: &'schema Schema,
@@ -2182,7 +2182,7 @@ impl InterfaceTypeDefinitionLocation {
             )?;
         }
         for (field_name, field) in type_.fields.iter() {
-            InterfaceFieldDefinitionLocation {
+            InterfaceFieldDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: field_name.clone(),
             }
@@ -2207,7 +2207,7 @@ impl InterfaceTypeDefinitionLocation {
             );
         }
         for (field_name, field) in type_.fields.iter() {
-            InterfaceFieldDefinitionLocation {
+            InterfaceFieldDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: field_name.clone(),
             }
@@ -2277,21 +2277,21 @@ impl InterfaceTypeDefinitionLocation {
     }
 }
 
-impl Display for InterfaceTypeDefinitionLocation {
+impl Display for InterfaceTypeDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.type_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct InterfaceFieldDefinitionLocation {
+pub(crate) struct InterfaceFieldDefinitionPosition {
     pub(crate) type_name: Name,
     pub(crate) field_name: Name,
 }
 
-impl InterfaceFieldDefinitionLocation {
-    pub(crate) fn parent(&self) -> InterfaceTypeDefinitionLocation {
-        InterfaceTypeDefinitionLocation {
+impl InterfaceFieldDefinitionPosition {
+    pub(crate) fn parent(&self) -> InterfaceTypeDefinitionPosition {
+        InterfaceTypeDefinitionPosition {
             type_name: self.type_name.clone(),
         }
     }
@@ -2479,7 +2479,7 @@ impl InterfaceFieldDefinitionLocation {
         self.insert_type_references(field, schema, referencers)?;
         validate_arguments(&field.arguments)?;
         for argument in field.arguments.iter() {
-            InterfaceFieldArgumentDefinitionLocation {
+            InterfaceFieldArgumentDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: self.field_name.clone(),
                 argument_name: argument.name.clone(),
@@ -2500,7 +2500,7 @@ impl InterfaceFieldDefinitionLocation {
         }
         self.remove_type_references(field, schema, referencers)?;
         for argument in field.arguments.iter() {
-            InterfaceFieldArgumentDefinitionLocation {
+            InterfaceFieldArgumentDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: self.field_name.clone(),
                 argument_name: argument.name.clone(),
@@ -2692,22 +2692,22 @@ impl InterfaceFieldDefinitionLocation {
     }
 }
 
-impl Display for InterfaceFieldDefinitionLocation {
+impl Display for InterfaceFieldDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.type_name, self.field_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct InterfaceFieldArgumentDefinitionLocation {
+pub(crate) struct InterfaceFieldArgumentDefinitionPosition {
     pub(crate) type_name: Name,
     pub(crate) field_name: Name,
     pub(crate) argument_name: Name,
 }
 
-impl InterfaceFieldArgumentDefinitionLocation {
-    pub(crate) fn parent(&self) -> InterfaceFieldDefinitionLocation {
-        InterfaceFieldDefinitionLocation {
+impl InterfaceFieldArgumentDefinitionPosition {
+    pub(crate) fn parent(&self) -> InterfaceFieldDefinitionPosition {
+        InterfaceFieldDefinitionPosition {
             type_name: self.type_name.clone(),
             field_name: self.field_name.clone(),
         }
@@ -3053,7 +3053,7 @@ impl InterfaceFieldArgumentDefinitionLocation {
     }
 }
 
-impl Display for InterfaceFieldArgumentDefinitionLocation {
+impl Display for InterfaceFieldArgumentDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -3064,11 +3064,11 @@ impl Display for InterfaceFieldArgumentDefinitionLocation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct UnionTypeDefinitionLocation {
+pub(crate) struct UnionTypeDefinitionPosition {
     pub(crate) type_name: Name,
 }
 
-impl UnionTypeDefinitionLocation {
+impl UnionTypeDefinitionPosition {
     pub(crate) fn get<'schema>(
         &self,
         schema: &'schema Schema,
@@ -3417,18 +3417,18 @@ impl UnionTypeDefinitionLocation {
     }
 }
 
-impl Display for UnionTypeDefinitionLocation {
+impl Display for UnionTypeDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.type_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct EnumTypeDefinitionLocation {
+pub(crate) struct EnumTypeDefinitionPosition {
     pub(crate) type_name: Name,
 }
 
-impl EnumTypeDefinitionLocation {
+impl EnumTypeDefinitionPosition {
     pub(crate) fn get<'schema>(
         &self,
         schema: &'schema Schema,
@@ -3688,7 +3688,7 @@ impl EnumTypeDefinitionLocation {
             self.insert_directive_name_references(referencers, &directive_reference.name)?;
         }
         for (value_name, value) in type_.values.iter() {
-            EnumValueDefinitionLocation {
+            EnumValueDefinitionPosition {
                 type_name: self.type_name.clone(),
                 value_name: value_name.clone(),
             }
@@ -3702,7 +3702,7 @@ impl EnumTypeDefinitionLocation {
             self.remove_directive_name_references(referencers, &directive_reference.name);
         }
         for (value_name, value) in type_.values.iter() {
-            EnumValueDefinitionLocation {
+            EnumValueDefinitionPosition {
                 type_name: self.type_name.clone(),
                 value_name: value_name.clone(),
             }
@@ -3740,21 +3740,21 @@ impl EnumTypeDefinitionLocation {
     }
 }
 
-impl Display for EnumTypeDefinitionLocation {
+impl Display for EnumTypeDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.type_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct EnumValueDefinitionLocation {
+pub(crate) struct EnumValueDefinitionPosition {
     pub(crate) type_name: Name,
     pub(crate) value_name: Name,
 }
 
-impl EnumValueDefinitionLocation {
-    pub(crate) fn parent(&self) -> EnumTypeDefinitionLocation {
-        EnumTypeDefinitionLocation {
+impl EnumValueDefinitionPosition {
+    pub(crate) fn parent(&self) -> EnumTypeDefinitionPosition {
+        EnumTypeDefinitionPosition {
             type_name: self.type_name.clone(),
         }
     }
@@ -3980,18 +3980,18 @@ impl EnumValueDefinitionLocation {
     }
 }
 
-impl Display for EnumValueDefinitionLocation {
+impl Display for EnumValueDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.type_name, self.value_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct InputObjectTypeDefinitionLocation {
+pub(crate) struct InputObjectTypeDefinitionPosition {
     pub(crate) type_name: Name,
 }
 
-impl InputObjectTypeDefinitionLocation {
+impl InputObjectTypeDefinitionPosition {
     pub(crate) fn get<'schema>(
         &self,
         schema: &'schema Schema,
@@ -4244,7 +4244,7 @@ impl InputObjectTypeDefinitionLocation {
             self.insert_directive_name_references(referencers, &directive_reference.name)?;
         }
         for (field_name, field) in type_.fields.iter() {
-            InputObjectFieldDefinitionLocation {
+            InputObjectFieldDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: field_name.clone(),
             }
@@ -4263,7 +4263,7 @@ impl InputObjectTypeDefinitionLocation {
             self.remove_directive_name_references(referencers, &directive_reference.name);
         }
         for (field_name, field) in type_.fields.iter() {
-            InputObjectFieldDefinitionLocation {
+            InputObjectFieldDefinitionPosition {
                 type_name: self.type_name.clone(),
                 field_name: field_name.clone(),
             }
@@ -4304,21 +4304,21 @@ impl InputObjectTypeDefinitionLocation {
     }
 }
 
-impl Display for InputObjectTypeDefinitionLocation {
+impl Display for InputObjectTypeDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.type_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct InputObjectFieldDefinitionLocation {
+pub(crate) struct InputObjectFieldDefinitionPosition {
     pub(crate) type_name: Name,
     pub(crate) field_name: Name,
 }
 
-impl InputObjectFieldDefinitionLocation {
-    pub(crate) fn parent(&self) -> InputObjectTypeDefinitionLocation {
-        InputObjectTypeDefinitionLocation {
+impl InputObjectFieldDefinitionPosition {
+    pub(crate) fn parent(&self) -> InputObjectTypeDefinitionPosition {
+        InputObjectTypeDefinitionPosition {
             type_name: self.type_name.clone(),
         }
     }
@@ -4663,18 +4663,18 @@ impl InputObjectFieldDefinitionLocation {
     }
 }
 
-impl Display for InputObjectFieldDefinitionLocation {
+impl Display for InputObjectFieldDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.type_name, self.field_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct DirectiveDefinitionLocation {
+pub(crate) struct DirectiveDefinitionPosition {
     pub(crate) directive_name: Name,
 }
 
-impl DirectiveDefinitionLocation {
+impl DirectiveDefinitionPosition {
     pub(crate) fn get<'schema>(
         &self,
         schema: &'schema Schema,
@@ -4868,7 +4868,7 @@ impl DirectiveDefinitionLocation {
         referencers: &mut Referencers,
     ) -> Result<(), FederationError> {
         for argument in directive.arguments.iter() {
-            DirectiveArgumentDefinitionLocation {
+            DirectiveArgumentDefinitionPosition {
                 directive_name: self.directive_name.clone(),
                 argument_name: argument.name.clone(),
             }
@@ -4884,7 +4884,7 @@ impl DirectiveDefinitionLocation {
         referencers: &mut Referencers,
     ) -> Result<(), FederationError> {
         for argument in directive.arguments.iter() {
-            DirectiveArgumentDefinitionLocation {
+            DirectiveArgumentDefinitionPosition {
                 directive_name: self.directive_name.clone(),
                 argument_name: argument.name.clone(),
             }
@@ -4894,21 +4894,21 @@ impl DirectiveDefinitionLocation {
     }
 }
 
-impl Display for DirectiveDefinitionLocation {
+impl Display for DirectiveDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "@{}", self.directive_name)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct DirectiveArgumentDefinitionLocation {
+pub(crate) struct DirectiveArgumentDefinitionPosition {
     pub(crate) directive_name: Name,
     pub(crate) argument_name: Name,
 }
 
-impl DirectiveArgumentDefinitionLocation {
-    pub(crate) fn parent(&self) -> DirectiveDefinitionLocation {
-        DirectiveDefinitionLocation {
+impl DirectiveArgumentDefinitionPosition {
+    pub(crate) fn parent(&self) -> DirectiveDefinitionPosition {
+        DirectiveDefinitionPosition {
             directive_name: self.directive_name.clone(),
         }
     }
@@ -5247,7 +5247,7 @@ impl DirectiveArgumentDefinitionLocation {
     }
 }
 
-impl Display for DirectiveArgumentDefinitionLocation {
+impl Display for DirectiveArgumentDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "@{}({}:)", self.directive_name, self.argument_name)
     }
@@ -5387,41 +5387,41 @@ impl FederationSchema {
         }
 
         // Deep pass to find references.
-        SchemaDefinitionLocation.insert_references(&schema.schema_definition, &mut referencers)?;
+        SchemaDefinitionPosition.insert_references(&schema.schema_definition, &mut referencers)?;
         for (type_name, type_) in schema.types.iter() {
             match type_ {
                 ExtendedType::Scalar(type_) => {
-                    ScalarTypeDefinitionLocation {
+                    ScalarTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     }
                     .insert_references(type_, &mut referencers)?;
                 }
                 ExtendedType::Object(type_) => {
-                    ObjectTypeDefinitionLocation {
+                    ObjectTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     }
                     .insert_references(type_, &schema, &mut referencers)?;
                 }
                 ExtendedType::Interface(type_) => {
-                    InterfaceTypeDefinitionLocation {
+                    InterfaceTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     }
                     .insert_references(type_, &schema, &mut referencers)?;
                 }
                 ExtendedType::Union(type_) => {
-                    UnionTypeDefinitionLocation {
+                    UnionTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     }
                     .insert_references(type_, &mut referencers)?;
                 }
                 ExtendedType::Enum(type_) => {
-                    EnumTypeDefinitionLocation {
+                    EnumTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     }
                     .insert_references(type_, &mut referencers)?;
                 }
                 ExtendedType::InputObject(type_) => {
-                    InputObjectTypeDefinitionLocation {
+                    InputObjectTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     }
                     .insert_references(type_, &schema, &mut referencers)?;
@@ -5429,7 +5429,7 @@ impl FederationSchema {
             }
         }
         for (directive_name, directive) in schema.directive_definitions.iter() {
-            DirectiveDefinitionLocation {
+            DirectiveDefinitionPosition {
                 directive_name: directive_name.clone(),
             }
             .insert_references(directive, &schema, &mut referencers)?;

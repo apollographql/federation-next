@@ -6,13 +6,13 @@ use crate::link::join_spec_definition::{
 use crate::link::link_spec_definition::LinkSpecDefinition;
 use crate::link::spec::{Identity, Version};
 use crate::link::spec_definition::{spec_definitions, SpecDefinition};
-use crate::schema::location::{
-    DirectiveDefinitionLocation, EnumTypeDefinitionLocation, EnumValueDefinitionLocation,
-    InputObjectFieldDefinitionLocation, InputObjectTypeDefinitionLocation,
-    InterfaceFieldDefinitionLocation, InterfaceTypeDefinitionLocation,
-    ObjectFieldDefinitionLocation, ObjectTypeDefinitionLocation, ScalarTypeDefinitionLocation,
-    SchemaRootDefinitionKind, SchemaRootDefinitionLocation, TypeDefinitionLocation,
-    UnionTypeDefinitionLocation,
+use crate::schema::position::{
+    DirectiveDefinitionPosition, EnumTypeDefinitionPosition, EnumValueDefinitionPosition,
+    InputObjectFieldDefinitionPosition, InputObjectTypeDefinitionPosition,
+    InterfaceFieldDefinitionPosition, InterfaceTypeDefinitionPosition,
+    ObjectFieldDefinitionPosition, ObjectTypeDefinitionPosition, ScalarTypeDefinitionPosition,
+    SchemaRootDefinitionKind, SchemaRootDefinitionPosition, TypeDefinitionPosition,
+    UnionTypeDefinitionPosition,
 };
 use crate::schema::FederationSchema;
 use apollo_compiler::ast::FieldDefinition;
@@ -373,7 +373,7 @@ fn extract_subgraphs_from_fed_2_supergraph<'schema>(
         // TODO: removeInactiveProvidesAndRequires(subgraph.schema)
         remove_unused_types_from_subgraph(subgraph)?;
         for definition in all_executable_directive_definitions.iter() {
-            DirectiveDefinitionLocation {
+            DirectiveDefinitionPosition {
                 directive_name: definition.name.clone(),
             }
             .insert(&mut subgraph.schema, definition.clone())?;
@@ -428,11 +428,11 @@ fn add_all_empty_subgraph_types<'schema>(
                         graph_enum_value_name_to_subgraph_name,
                         &type_directive_application.graph,
                     )?;
-                    let loc = ScalarTypeDefinitionLocation {
+                    let pos = ScalarTypeDefinitionPosition {
                         type_name: (*type_name).clone(),
                     };
-                    loc.pre_insert(&mut subgraph.schema)?;
-                    loc.insert(
+                    pos.pre_insert(&mut subgraph.schema)?;
+                    pos.insert(
                         &mut subgraph.schema,
                         Node::new(ScalarType {
                             description: None,
@@ -570,31 +570,31 @@ fn add_empty_type<'schema>(
                         .into());
                     }
                     ExtendedType::Object(_) => {
-                        ObjectTypeDefinitionLocation {
+                        ObjectTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         }
                         .insert_directive(&mut subgraph.schema, key_directive)?;
                     }
                     ExtendedType::Interface(_) => {
-                        InterfaceTypeDefinitionLocation {
+                        InterfaceTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         }
                         .insert_directive(&mut subgraph.schema, key_directive)?;
                     }
                     ExtendedType::Union(_) => {
-                        UnionTypeDefinitionLocation {
+                        UnionTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         }
                         .insert_directive(&mut subgraph.schema, key_directive)?;
                     }
                     ExtendedType::Enum(_) => {
-                        EnumTypeDefinitionLocation {
+                        EnumTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         }
                         .insert_directive(&mut subgraph.schema, key_directive)?;
                     }
                     ExtendedType::InputObject(_) => {
-                        InputObjectTypeDefinitionLocation {
+                        InputObjectTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         }
                         .insert_directive(&mut subgraph.schema, key_directive)?;
@@ -611,11 +611,11 @@ fn add_empty_type<'schema>(
                     .into());
                 }
                 ExtendedType::Object(_) => {
-                    let loc = ObjectTypeDefinitionLocation {
+                    let pos = ObjectTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     };
-                    loc.pre_insert(&mut subgraph.schema)?;
-                    loc.insert(
+                    pos.pre_insert(&mut subgraph.schema)?;
+                    pos.insert(
                         &mut subgraph.schema,
                         Node::new(ObjectType {
                             description: None,
@@ -625,25 +625,25 @@ fn add_empty_type<'schema>(
                         }),
                     )?;
                     if type_name == "Query" {
-                        let loc = SchemaRootDefinitionLocation {
+                        let pos = SchemaRootDefinitionPosition {
                             root_kind: SchemaRootDefinitionKind::Query,
                         };
-                        if loc.try_get(subgraph.schema.schema()).is_none() {
-                            loc.insert(&mut subgraph.schema, ComponentStr::new(type_name))?;
+                        if pos.try_get(subgraph.schema.schema()).is_none() {
+                            pos.insert(&mut subgraph.schema, ComponentStr::new(type_name))?;
                         }
                     } else if type_name == "Mutation" {
-                        let loc = SchemaRootDefinitionLocation {
+                        let pos = SchemaRootDefinitionPosition {
                             root_kind: SchemaRootDefinitionKind::Mutation,
                         };
-                        if loc.try_get(subgraph.schema.schema()).is_none() {
-                            loc.insert(&mut subgraph.schema, ComponentStr::new(type_name))?;
+                        if pos.try_get(subgraph.schema.schema()).is_none() {
+                            pos.insert(&mut subgraph.schema, ComponentStr::new(type_name))?;
                         }
                     } else if type_name == "Subscription" {
-                        let loc = SchemaRootDefinitionLocation {
+                        let pos = SchemaRootDefinitionPosition {
                             root_kind: SchemaRootDefinitionKind::Subscription,
                         };
-                        if loc.try_get(subgraph.schema.schema()).is_none() {
-                            loc.insert(&mut subgraph.schema, ComponentStr::new(type_name))?;
+                        if pos.try_get(subgraph.schema.schema()).is_none() {
+                            pos.insert(&mut subgraph.schema, ComponentStr::new(type_name))?;
                         }
                     }
                 }
@@ -652,11 +652,11 @@ fn add_empty_type<'schema>(
                         is_interface_object = true;
                         let interface_object_directive = federation_spec_definition
                             .interface_object_directive(&subgraph.schema)?;
-                        let loc = ObjectTypeDefinitionLocation {
+                        let pos = ObjectTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         };
-                        loc.pre_insert(&mut subgraph.schema)?;
-                        loc.insert(
+                        pos.pre_insert(&mut subgraph.schema)?;
+                        pos.insert(
                             &mut subgraph.schema,
                             Node::new(ObjectType {
                                 description: None,
@@ -668,11 +668,11 @@ fn add_empty_type<'schema>(
                             }),
                         )?;
                     } else {
-                        let loc = InterfaceTypeDefinitionLocation {
+                        let pos = InterfaceTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         };
-                        loc.pre_insert(&mut subgraph.schema)?;
-                        loc.insert(
+                        pos.pre_insert(&mut subgraph.schema)?;
+                        pos.insert(
                             &mut subgraph.schema,
                             Node::new(InterfaceType {
                                 description: None,
@@ -684,11 +684,11 @@ fn add_empty_type<'schema>(
                     }
                 }
                 ExtendedType::Union(_) => {
-                    let loc = UnionTypeDefinitionLocation {
+                    let pos = UnionTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     };
-                    loc.pre_insert(&mut subgraph.schema)?;
-                    loc.insert(
+                    pos.pre_insert(&mut subgraph.schema)?;
+                    pos.insert(
                         &mut subgraph.schema,
                         Node::new(UnionType {
                             description: None,
@@ -698,11 +698,11 @@ fn add_empty_type<'schema>(
                     )?;
                 }
                 ExtendedType::Enum(_) => {
-                    let loc = EnumTypeDefinitionLocation {
+                    let pos = EnumTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     };
-                    loc.pre_insert(&mut subgraph.schema)?;
-                    loc.insert(
+                    pos.pre_insert(&mut subgraph.schema)?;
+                    pos.insert(
                         &mut subgraph.schema,
                         Node::new(EnumType {
                             description: None,
@@ -712,11 +712,11 @@ fn add_empty_type<'schema>(
                     )?;
                 }
                 ExtendedType::InputObject(_) => {
-                    let loc = InputObjectTypeDefinitionLocation {
+                    let pos = InputObjectTypeDefinitionPosition {
                         type_name: type_name.clone(),
                     };
-                    loc.pre_insert(&mut subgraph.schema)?;
-                    loc.insert(
+                    pos.pre_insert(&mut subgraph.schema)?;
+                    pos.insert(
                         &mut subgraph.schema,
                         Node::new(InputObjectType {
                             description: None,
@@ -759,10 +759,10 @@ fn extract_object_type_content<'schema>(
         subgraph_info,
     } in info.iter()
     {
-        let loc = ObjectTypeDefinitionLocation {
+        let pos = ObjectTypeDefinitionPosition {
             type_name: (*type_name).clone(),
         };
-        let type_ = loc.get(supergraph_schema.schema())?;
+        let type_ = pos.get(supergraph_schema.schema())?;
 
         for directive in type_.directives.iter() {
             if directive.name != implements_directive_definition.name {
@@ -786,7 +786,7 @@ fn extract_object_type_content<'schema>(
                 graph_enum_value_name_to_subgraph_name,
                 &implements_directive_application.graph,
             )?;
-            loc.insert_implements_interface(
+            pos.insert_implements_interface(
                 &mut subgraph.schema,
                 implements_directive_application.interface.clone(),
             )?;
@@ -907,10 +907,10 @@ fn extract_interface_type_content<'schema>(
         subgraph_info,
     } in info.iter()
     {
-        let loc = InterfaceTypeDefinitionLocation {
+        let pos = InterfaceTypeDefinitionPosition {
             type_name: (*type_name).clone(),
         };
-        let type_ = loc.get(supergraph_schema.schema())?;
+        let type_ = pos.get(supergraph_schema.schema())?;
 
         for directive in type_.directives.iter() {
             if directive.name != implements_directive_definition.name {
@@ -951,10 +951,10 @@ fn extract_interface_type_content<'schema>(
                             }.into()
                         );
                     }
-                    let loc = ObjectTypeDefinitionLocation {
+                    let pos = ObjectTypeDefinitionPosition {
                         type_name: (*type_name).clone(),
                     };
-                    loc.insert_implements_interface(
+                    pos.insert_implements_interface(
                         &mut subgraph.schema,
                         implements_directive_application.interface.clone(),
                     )?;
@@ -967,7 +967,7 @@ fn extract_interface_type_content<'schema>(
                             }.into()
                         );
                     }
-                    loc.insert_implements_interface(
+                    pos.insert_implements_interface(
                         &mut subgraph.schema,
                         implements_directive_application.interface.clone(),
                     )?;
@@ -1083,10 +1083,10 @@ fn extract_union_type_content<'schema>(
         subgraph_info,
     } in info.iter()
     {
-        let loc = UnionTypeDefinitionLocation {
+        let pos = UnionTypeDefinitionPosition {
             type_name: (*type_name).clone(),
         };
-        let type_ = loc.get(supergraph_schema.schema())?;
+        let type_ = pos.get(supergraph_schema.schema())?;
 
         let mut union_member_directive_applications = Vec::new();
         if let Some(union_member_directive_definition) = union_member_directive_definition {
@@ -1122,7 +1122,7 @@ fn extract_union_type_content<'schema>(
                     .cloned()
                     .collect::<Vec<_>>();
                 for member in subgraph_members {
-                    loc.insert_member(&mut subgraph.schema, member.node)?;
+                    pos.insert_member(&mut subgraph.schema, member.node)?;
                 }
             }
         } else {
@@ -1146,7 +1146,7 @@ fn extract_union_type_content<'schema>(
                 // Note that object types in the supergraph are guaranteed to be object types in
                 // subgraphs. We also know that the type must exist in this case (we don't generate
                 // broken @join__unionMember).
-                loc.insert_member(
+                pos.insert_member(
                     &mut subgraph.schema,
                     union_member_directive_application.member.clone(),
                 )?;
@@ -1173,10 +1173,10 @@ fn extract_enum_type_content<'schema>(
         subgraph_info,
     } in info.iter()
     {
-        let loc = EnumTypeDefinitionLocation {
+        let pos = EnumTypeDefinitionPosition {
             type_name: (*type_name).clone(),
         };
-        let type_ = loc.get(supergraph_schema.schema())?;
+        let type_ = pos.get(supergraph_schema.schema())?;
 
         for (value_name, value) in type_.values.iter() {
             let mut enum_value_directive_applications = Vec::new();
@@ -1196,7 +1196,7 @@ fn extract_enum_type_content<'schema>(
                         graph_enum_value_name_to_subgraph_name,
                         graph_enum_value,
                     )?;
-                    EnumValueDefinitionLocation {
+                    EnumValueDefinitionPosition {
                         type_name: (*type_name).clone(),
                         value_name: value_name.clone(),
                     }
@@ -1228,7 +1228,7 @@ fn extract_enum_type_content<'schema>(
                             }.into()
                         );
                     }
-                    EnumValueDefinitionLocation {
+                    EnumValueDefinitionPosition {
                         type_name: (*type_name).clone(),
                         value_name: value_name.clone(),
                     }
@@ -1263,10 +1263,10 @@ fn extract_input_object_type_content<'schema>(
         subgraph_info,
     } in info.iter()
     {
-        let loc = InputObjectTypeDefinitionLocation {
+        let pos = InputObjectTypeDefinitionPosition {
             type_name: (*type_name).clone(),
         };
-        let type_ = loc.get(supergraph_schema.schema())?;
+        let type_ = pos.get(supergraph_schema.schema())?;
 
         for (input_field_name, input_field) in type_.fields.iter() {
             let mut field_directive_applications = Vec::new();
@@ -1420,14 +1420,14 @@ fn add_subgraph_field<'schema>(
             ),
         })? {
         ExtendedType::Object(_) => {
-            ObjectFieldDefinitionLocation {
+            ObjectFieldDefinitionPosition {
                 type_name: type_name.clone(),
                 field_name: field_name.clone(),
             }
             .insert(&mut subgraph.schema, Component::from(subgraph_field))?;
         }
         ExtendedType::Interface(_) => {
-            InterfaceFieldDefinitionLocation {
+            InterfaceFieldDefinitionPosition {
                 type_name: type_name.clone(),
                 field_name: field_name.clone(),
             }
@@ -1475,7 +1475,7 @@ fn add_subgraph_input_field<'schema>(
         directives: Default::default(),
     };
 
-    InputObjectFieldDefinitionLocation {
+    InputObjectFieldDefinitionPosition {
         type_name: type_name.clone(),
         field_name: input_field_name.clone(),
     }
@@ -1572,16 +1572,16 @@ impl FederationSubgraphs {
 
 lazy_static! {
     static ref EXECUTABLE_DIRECTIVE_LOCATIONS: IndexSet<DirectiveLocation> = {
-        let mut locations = IndexSet::new();
-        locations.insert(DirectiveLocation::Query);
-        locations.insert(DirectiveLocation::Mutation);
-        locations.insert(DirectiveLocation::Subscription);
-        locations.insert(DirectiveLocation::Field);
-        locations.insert(DirectiveLocation::FragmentDefinition);
-        locations.insert(DirectiveLocation::FragmentSpread);
-        locations.insert(DirectiveLocation::InlineFragment);
-        locations.insert(DirectiveLocation::VariableDefinition);
-        locations
+        IndexSet::from([
+            DirectiveLocation::Query,
+            DirectiveLocation::Mutation,
+            DirectiveLocation::Subscription,
+            DirectiveLocation::Field,
+            DirectiveLocation::FragmentDefinition,
+            DirectiveLocation::FragmentSpread,
+            DirectiveLocation::InlineFragment,
+            DirectiveLocation::VariableDefinition,
+        ])
     };
 }
 
@@ -1594,13 +1594,13 @@ fn remove_unused_types_from_subgraph(
     // they may be empty (indicating they clearly didn't belong to the subgraph in the first) and we
     // need to remove them. Note that need to do this _after_ the `add_external_fields()` call above
     // since it may have added (external) fields to some of the types.
-    let mut type_definition_locations: Vec<TypeDefinitionLocation> = Vec::new();
+    let mut type_definition_positions: Vec<TypeDefinitionPosition> = Vec::new();
     for (type_name, type_) in subgraph.schema.schema().types.iter() {
         match type_ {
             ExtendedType::Object(type_) => {
                 if type_.fields.is_empty() {
-                    type_definition_locations.push(
-                        ObjectTypeDefinitionLocation {
+                    type_definition_positions.push(
+                        ObjectTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         }
                         .into(),
@@ -1609,8 +1609,8 @@ fn remove_unused_types_from_subgraph(
             }
             ExtendedType::Interface(type_) => {
                 if type_.fields.is_empty() {
-                    type_definition_locations.push(
-                        InterfaceTypeDefinitionLocation {
+                    type_definition_positions.push(
+                        InterfaceTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         }
                         .into(),
@@ -1619,8 +1619,8 @@ fn remove_unused_types_from_subgraph(
             }
             ExtendedType::Union(type_) => {
                 if type_.members.is_empty() {
-                    type_definition_locations.push(
-                        UnionTypeDefinitionLocation {
+                    type_definition_positions.push(
+                        UnionTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         }
                         .into(),
@@ -1629,8 +1629,8 @@ fn remove_unused_types_from_subgraph(
             }
             ExtendedType::InputObject(type_) => {
                 if type_.fields.is_empty() {
-                    type_definition_locations.push(
-                        InputObjectTypeDefinitionLocation {
+                    type_definition_positions.push(
+                        InputObjectTypeDefinitionPosition {
                             type_name: type_name.clone(),
                         }
                         .into(),
@@ -1643,19 +1643,19 @@ fn remove_unused_types_from_subgraph(
 
     // Note that we have to use remove_recursive() or this could leave the subgraph invalid. But if
     // the type was not in this subgraph, nothing that depends on it should be either.
-    for location in type_definition_locations {
-        match location {
-            TypeDefinitionLocation::Object(location) => {
-                location.remove_recursive(&mut subgraph.schema)?;
+    for position in type_definition_positions {
+        match position {
+            TypeDefinitionPosition::Object(position) => {
+                position.remove_recursive(&mut subgraph.schema)?;
             }
-            TypeDefinitionLocation::Interface(location) => {
-                location.remove_recursive(&mut subgraph.schema)?;
+            TypeDefinitionPosition::Interface(position) => {
+                position.remove_recursive(&mut subgraph.schema)?;
             }
-            TypeDefinitionLocation::Union(location) => {
-                location.remove_recursive(&mut subgraph.schema)?;
+            TypeDefinitionPosition::Union(position) => {
+                position.remove_recursive(&mut subgraph.schema)?;
             }
-            TypeDefinitionLocation::InputObject(location) => {
-                location.remove_recursive(&mut subgraph.schema)?;
+            TypeDefinitionPosition::InputObject(position) => {
+                position.remove_recursive(&mut subgraph.schema)?;
             }
             _ => {
                 return Err(SingleFederationError::Internal {
@@ -1682,11 +1682,11 @@ fn add_federation_operations(
     federation_spec_definition: &'static FederationSpecDefinition,
 ) -> Result<(), FederationError> {
     // TODO: Use the JS/programmatic approach of checkOrAdd() instead of hard-coding the adds.
-    let any_type_loc = ScalarTypeDefinitionLocation {
+    let any_type_pos = ScalarTypeDefinitionPosition {
         type_name: NodeStr::new(FEDERATION_ANY_TYPE_NAME),
     };
-    any_type_loc.pre_insert(&mut subgraph.schema)?;
-    any_type_loc.insert(
+    any_type_pos.pre_insert(&mut subgraph.schema)?;
+    any_type_pos.insert(
         &mut subgraph.schema,
         Node::new(ScalarType {
             description: None,
@@ -1704,11 +1704,11 @@ fn add_federation_operations(
             directives: Default::default(),
         }),
     );
-    let service_type_loc = ObjectTypeDefinitionLocation {
+    let service_type_pos = ObjectTypeDefinitionPosition {
         type_name: NodeStr::new(FEDERATION_SERVICE_TYPE_NAME),
     };
-    service_type_loc.pre_insert(&mut subgraph.schema)?;
-    service_type_loc.insert(
+    service_type_pos.pre_insert(&mut subgraph.schema)?;
+    service_type_pos.insert(
         &mut subgraph.schema,
         Node::new(ObjectType {
             description: None,
@@ -1739,11 +1739,11 @@ fn add_federation_operations(
         .collect::<IndexSet<_>>();
     let is_entity_type = !entity_members.is_empty();
     if is_entity_type {
-        let entity_type_loc = UnionTypeDefinitionLocation {
+        let entity_type_pos = UnionTypeDefinitionPosition {
             type_name: NodeStr::new(FEDERATION_ENTITY_TYPE_NAME),
         };
-        entity_type_loc.pre_insert(&mut subgraph.schema)?;
-        entity_type_loc.insert(
+        entity_type_pos.pre_insert(&mut subgraph.schema)?;
+        entity_type_pos.insert(
             &mut subgraph.schema,
             Node::new(UnionType {
                 description: None,
@@ -1753,15 +1753,15 @@ fn add_federation_operations(
         )?;
     }
 
-    let query_root_loc = SchemaRootDefinitionLocation {
+    let query_root_pos = SchemaRootDefinitionPosition {
         root_kind: SchemaRootDefinitionKind::Query,
     };
-    if query_root_loc.try_get(subgraph.schema.schema()).is_none() {
-        let default_query_type_loc = ObjectTypeDefinitionLocation {
+    if query_root_pos.try_get(subgraph.schema.schema()).is_none() {
+        let default_query_type_pos = ObjectTypeDefinitionPosition {
             type_name: NodeStr::new("Query"),
         };
-        default_query_type_loc.pre_insert(&mut subgraph.schema)?;
-        default_query_type_loc.insert(
+        default_query_type_pos.pre_insert(&mut subgraph.schema)?;
+        default_query_type_pos.insert(
             &mut subgraph.schema,
             Node::new(ObjectType {
                 description: None,
@@ -1770,16 +1770,16 @@ fn add_federation_operations(
                 fields: Default::default(),
             }),
         )?;
-        query_root_loc.insert(&mut subgraph.schema, ComponentStr::new("Query"))?;
+        query_root_pos.insert(&mut subgraph.schema, ComponentStr::new("Query"))?;
     }
 
-    let query_root_type_name = query_root_loc.get(subgraph.schema.schema())?.node.clone();
-    let entity_field_loc = ObjectFieldDefinitionLocation {
+    let query_root_type_name = query_root_pos.get(subgraph.schema.schema())?.node.clone();
+    let entity_field_pos = ObjectFieldDefinitionPosition {
         type_name: query_root_type_name.clone(),
         field_name: NodeStr::new(FEDERATION_ENTITIES_FIELD_NAME),
     };
     if is_entity_type {
-        entity_field_loc.insert(
+        entity_field_pos.insert(
             &mut subgraph.schema,
             Component::new(FieldDefinition {
                 description: None,
@@ -1800,10 +1800,10 @@ fn add_federation_operations(
             }),
         )?;
     } else {
-        entity_field_loc.remove(&mut subgraph.schema)?;
+        entity_field_pos.remove(&mut subgraph.schema)?;
     }
 
-    ObjectFieldDefinitionLocation {
+    ObjectFieldDefinitionPosition {
         type_name: query_root_type_name.clone(),
         field_name: NodeStr::new(FEDERATION_SERVICE_FIELD_NAME),
     }

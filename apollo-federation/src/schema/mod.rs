@@ -2,7 +2,7 @@ use crate::link::LinksMetadata;
 use apollo_compiler::Schema;
 use referencer::Referencers;
 
-pub(crate) mod location;
+pub(crate) mod position;
 pub(crate) mod referencer;
 
 pub(crate) struct FederationSchema {
