@@ -1,4 +1,4 @@
-use crate::error::FederationError;
+use crate::error::{FederationError, SingleFederationError};
 use crate::link::argument::{
     directive_optional_boolean_argument, directive_optional_enum_argument,
     directive_optional_fieldset_argument, directive_optional_string_argument,
@@ -6,79 +6,79 @@ use crate::link::argument::{
 };
 use crate::link::spec::{Identity, Url, Version};
 use crate::link::spec_definition::{SpecDefinition, SpecDefinitions};
-use crate::schema::{FederationSchemaRef, OptionLinksMetadata};
+use crate::schema::FederationSchema;
 use apollo_compiler::schema::{Directive, DirectiveDefinition, EnumType, ExtendedType};
 use apollo_compiler::{Node, NodeStr};
 use lazy_static::lazy_static;
 
-pub const JOIN_GRAPH_ENUM_NAME_IN_SPEC: &str = "Graph";
-pub const JOIN_GRAPH_DIRECTIVE_NAME_IN_SPEC: &str = "graph";
-pub const JOIN_TYPE_DIRECTIVE_NAME_IN_SPEC: &str = "type";
-pub const JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC: &str = "field";
-pub const JOIN_IMPLEMENTS_DIRECTIVE_NAME_IN_SPEC: &str = "implements";
-pub const JOIN_UNIONMEMBER_DIRECTIVE_NAME_IN_SPEC: &str = "unionMember";
-pub const JOIN_ENUMVALUE_DIRECTIVE_NAME_IN_SPEC: &str = "enumValue";
+pub(crate) const JOIN_GRAPH_ENUM_NAME_IN_SPEC: &str = "Graph";
+pub(crate) const JOIN_GRAPH_DIRECTIVE_NAME_IN_SPEC: &str = "graph";
+pub(crate) const JOIN_TYPE_DIRECTIVE_NAME_IN_SPEC: &str = "type";
+pub(crate) const JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC: &str = "field";
+pub(crate) const JOIN_IMPLEMENTS_DIRECTIVE_NAME_IN_SPEC: &str = "implements";
+pub(crate) const JOIN_UNIONMEMBER_DIRECTIVE_NAME_IN_SPEC: &str = "unionMember";
+pub(crate) const JOIN_ENUMVALUE_DIRECTIVE_NAME_IN_SPEC: &str = "enumValue";
 
-pub const JOIN_NAME_ARGUMENT_NAME: &str = "name";
-pub const JOIN_URL_ARGUMENT_NAME: &str = "url";
-pub const JOIN_GRAPH_ARGUMENT_NAME: &str = "graph";
-pub const JOIN_KEY_ARGUMENT_NAME: &str = "key";
-pub const JOIN_EXTENSION_ARGUMENT_NAME: &str = "extension";
-pub const JOIN_RESOLVABLE_ARGUMENT_NAME: &str = "resolvable";
-pub const JOIN_ISINTERFACEOBJECT_ARGUMENT_NAME: &str = "isInterfaceObject";
-pub const JOIN_REQUIRES_ARGUMENT_NAME: &str = "requires";
-pub const JOIN_PROVIDES_ARGUMENT_NAME: &str = "provides";
-pub const JOIN_TYPE_ARGUMENT_NAME: &str = "type";
-pub const JOIN_EXTERNAL_ARGUMENT_NAME: &str = "external";
-pub const JOIN_OVERRIDE_ARGUMENT_NAME: &str = "override";
-pub const JOIN_USEROVERRIDDEN_ARGUMENT_NAME: &str = "usedOverridden";
-pub const JOIN_INTERFACE_ARGUMENT_NAME: &str = "interface";
-pub const JOIN_MEMBER_ARGUMENT_NAME: &str = "interface";
+pub(crate) const JOIN_NAME_ARGUMENT_NAME: &str = "name";
+pub(crate) const JOIN_URL_ARGUMENT_NAME: &str = "url";
+pub(crate) const JOIN_GRAPH_ARGUMENT_NAME: &str = "graph";
+pub(crate) const JOIN_KEY_ARGUMENT_NAME: &str = "key";
+pub(crate) const JOIN_EXTENSION_ARGUMENT_NAME: &str = "extension";
+pub(crate) const JOIN_RESOLVABLE_ARGUMENT_NAME: &str = "resolvable";
+pub(crate) const JOIN_ISINTERFACEOBJECT_ARGUMENT_NAME: &str = "isInterfaceObject";
+pub(crate) const JOIN_REQUIRES_ARGUMENT_NAME: &str = "requires";
+pub(crate) const JOIN_PROVIDES_ARGUMENT_NAME: &str = "provides";
+pub(crate) const JOIN_TYPE_ARGUMENT_NAME: &str = "type";
+pub(crate) const JOIN_EXTERNAL_ARGUMENT_NAME: &str = "external";
+pub(crate) const JOIN_OVERRIDE_ARGUMENT_NAME: &str = "override";
+pub(crate) const JOIN_USEROVERRIDDEN_ARGUMENT_NAME: &str = "usedOverridden";
+pub(crate) const JOIN_INTERFACE_ARGUMENT_NAME: &str = "interface";
+pub(crate) const JOIN_MEMBER_ARGUMENT_NAME: &str = "interface";
 
-pub struct GraphDirectiveArguments<'a> {
-    pub name: &'a NodeStr,
-    pub url: &'a NodeStr,
+pub(crate) struct GraphDirectiveArguments {
+    pub(crate) name: NodeStr,
+    pub(crate) url: NodeStr,
 }
 
-pub struct TypeDirectiveArguments<'a> {
-    pub graph: &'a NodeStr,
-    pub key: Option<&'a NodeStr>,
-    pub extension: bool,
-    pub resolvable: bool,
-    pub is_interface_object: bool,
+pub(crate) struct TypeDirectiveArguments {
+    pub(crate) graph: NodeStr,
+    pub(crate) key: Option<NodeStr>,
+    pub(crate) extension: bool,
+    pub(crate) resolvable: bool,
+    pub(crate) is_interface_object: bool,
 }
 
-pub struct FieldDirectiveArguments<'a> {
-    pub graph: Option<&'a NodeStr>,
-    pub requires: Option<&'a NodeStr>,
-    pub provides: Option<&'a NodeStr>,
-    pub type_: Option<&'a NodeStr>,
-    pub external: Option<bool>,
-    pub override_: Option<&'a NodeStr>,
-    pub user_overridden: Option<bool>,
+pub(crate) struct FieldDirectiveArguments {
+    pub(crate) graph: Option<NodeStr>,
+    pub(crate) requires: Option<NodeStr>,
+    pub(crate) provides: Option<NodeStr>,
+    pub(crate) type_: Option<NodeStr>,
+    pub(crate) external: Option<bool>,
+    pub(crate) override_: Option<NodeStr>,
+    pub(crate) user_overridden: Option<bool>,
 }
 
-pub struct ImplementsDirectiveArguments<'a> {
-    pub graph: &'a NodeStr,
-    pub interface: &'a NodeStr,
+pub(crate) struct ImplementsDirectiveArguments {
+    pub(crate) graph: NodeStr,
+    pub(crate) interface: NodeStr,
 }
 
-pub struct UnionMemberDirectiveArguments<'a> {
-    pub graph: &'a NodeStr,
-    pub member: &'a NodeStr,
+pub(crate) struct UnionMemberDirectiveArguments {
+    pub(crate) graph: NodeStr,
+    pub(crate) member: NodeStr,
 }
 
-pub struct EnumValueDirectiveArguments<'a> {
-    pub graph: &'a NodeStr,
+pub(crate) struct EnumValueDirectiveArguments {
+    pub(crate) graph: NodeStr,
 }
 
-pub struct JoinSpecDefinition {
+pub(crate) struct JoinSpecDefinition {
     url: Url,
     minimum_federation_version: Option<Version>,
 }
 
 impl JoinSpecDefinition {
-    pub fn new(version: Version, minimum_federation_version: Option<Version>) -> Self {
+    pub(crate) fn new(version: Version, minimum_federation_version: Option<Version>) -> Self {
         Self {
             url: Url {
                 identity: Identity::join_identity(),
@@ -88,98 +88,108 @@ impl JoinSpecDefinition {
         }
     }
 
-    pub fn graph_enum_definition<'a, 'schema, T: AsRef<OptionLinksMetadata>>(
-        &'a self,
-        schema: &'a FederationSchemaRef<'schema, T>,
-    ) -> &'schema Node<EnumType> {
-        let type_ = self
-            .type_definition(schema, JOIN_GRAPH_ENUM_NAME_IN_SPEC)
-            .unwrap_or_else(|| panic!("Unexpectedly could not find join spec in schema"));
+    pub(crate) fn graph_enum_definition<'schema>(
+        &self,
+        schema: &'schema FederationSchema,
+    ) -> Result<&'schema Node<EnumType>, FederationError> {
+        let type_ = self.type_definition(schema, JOIN_GRAPH_ENUM_NAME_IN_SPEC)?
+            .ok_or_else(|| {
+                SingleFederationError::Internal {
+                    message: "Unexpectedly could not find join spec in schema".to_owned(),
+                }
+            })?;
         if let ExtendedType::Enum(ref type_) = type_ {
-            type_
+            Ok(type_)
         } else {
-            panic!(
-                "Unexpectedly found non-enum for join spec's \"{}\" enum definition",
-                JOIN_GRAPH_ENUM_NAME_IN_SPEC
-            )
-        }
-    }
-
-    pub fn graph_directive_definition<'a, 'schema, T: AsRef<OptionLinksMetadata>>(
-        &'a self,
-        schema: &'a FederationSchemaRef<'schema, T>,
-    ) -> &'schema Node<DirectiveDefinition> {
-        self.directive_definition(schema, JOIN_GRAPH_DIRECTIVE_NAME_IN_SPEC)
-            .unwrap_or_else(|| panic!("Unexpectedly could not find join spec in schema"))
-    }
-
-    pub fn graph_directive_arguments<'schema>(
-        &self,
-        application: &'schema Node<Directive>,
-    ) -> GraphDirectiveArguments<'schema> {
-        GraphDirectiveArguments {
-            name: directive_required_string_argument(application, JOIN_NAME_ARGUMENT_NAME),
-            url: directive_required_string_argument(application, JOIN_URL_ARGUMENT_NAME),
-        }
-    }
-
-    pub fn type_directive_definition<'schema, T: AsRef<OptionLinksMetadata>>(
-        &self,
-        schema: &FederationSchemaRef<'schema, T>,
-    ) -> &'schema Node<DirectiveDefinition> {
-        self.directive_definition(schema, JOIN_TYPE_DIRECTIVE_NAME_IN_SPEC)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Unexpectedly could not find join spec's \"@{}\" directive definition",
-                    JOIN_TYPE_DIRECTIVE_NAME_IN_SPEC
+            Err(SingleFederationError::Internal {
+                message: format!(
+                    "Unexpectedly found non-enum for join spec's \"{}\" enum definition",
+                    JOIN_GRAPH_ENUM_NAME_IN_SPEC,
                 )
+            }.into())
+        }
+    }
+
+    pub(crate) fn graph_directive_definition<'schema>(
+        &self,
+        schema: &'schema FederationSchema,
+    ) -> Result<&'schema Node<DirectiveDefinition>, FederationError> {
+        self.directive_definition(schema, JOIN_GRAPH_DIRECTIVE_NAME_IN_SPEC)?
+            .ok_or_else(|| {
+                SingleFederationError::Internal {
+                    message: "Unexpectedly could not find join spec in schema".to_owned(),
+                }
+                    .into()
             })
     }
 
-    pub fn type_directive_arguments<'schema>(
+    pub(crate) fn graph_directive_arguments(
         &self,
-        application: &'schema Node<Directive>,
-    ) -> Result<TypeDirectiveArguments<'schema>, FederationError> {
+        application: &Node<Directive>,
+    ) -> Result<GraphDirectiveArguments, FederationError> {
+        Ok(GraphDirectiveArguments {
+            name: directive_required_string_argument(application, JOIN_NAME_ARGUMENT_NAME)?,
+            url: directive_required_string_argument(application, JOIN_URL_ARGUMENT_NAME)?,
+        })
+    }
+
+    pub(crate) fn type_directive_definition<'schema>(
+        &self,
+        schema: &'schema FederationSchema,
+    ) -> Result<&'schema Node<DirectiveDefinition>, FederationError> {
+        self.directive_definition(schema, JOIN_TYPE_DIRECTIVE_NAME_IN_SPEC)?
+            .ok_or_else(|| {
+                SingleFederationError::Internal {
+                    message: "Unexpectedly could not find join spec in schema".to_owned(),
+                }
+                    .into()
+            })
+    }
+
+    pub(crate) fn type_directive_arguments(
+        &self,
+        application: &Node<Directive>,
+    ) -> Result<TypeDirectiveArguments, FederationError> {
         Ok(TypeDirectiveArguments {
-            graph: directive_required_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME),
+            graph: directive_required_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME)?,
             key: directive_optional_fieldset_argument(application, JOIN_KEY_ARGUMENT_NAME)?,
             extension: directive_optional_boolean_argument(
                 application,
                 JOIN_EXTENSION_ARGUMENT_NAME,
-            )
+            )?
             .unwrap_or(false),
             resolvable: directive_optional_boolean_argument(
                 application,
                 JOIN_RESOLVABLE_ARGUMENT_NAME,
-            )
+            )?
             .unwrap_or(true),
             is_interface_object: directive_optional_boolean_argument(
                 application,
                 JOIN_ISINTERFACEOBJECT_ARGUMENT_NAME,
-            )
+            )?
             .unwrap_or(false),
         })
     }
 
-    pub fn field_directive_definition<'schema, T: AsRef<OptionLinksMetadata>>(
+    pub(crate) fn field_directive_definition<'schema>(
         &self,
-        schema: &FederationSchemaRef<'schema, T>,
-    ) -> &'schema Node<DirectiveDefinition> {
-        self.directive_definition(schema, JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Unexpectedly could not find join spec's \"@{}\" directive definition",
-                    JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC
-                )
+        schema: &'schema FederationSchema,
+    ) -> Result<&'schema Node<DirectiveDefinition>, FederationError> {
+        self.directive_definition(schema, JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC)?
+            .ok_or_else(|| {
+                SingleFederationError::Internal {
+                    message: "Unexpectedly could not find join spec in schema".to_owned(),
+                }
+                    .into()
             })
     }
 
-    pub fn field_directive_arguments<'schema>(
+    pub(crate) fn field_directive_arguments<'schema>(
         &self,
         application: &'schema Node<Directive>,
-    ) -> Result<FieldDirectiveArguments<'schema>, FederationError> {
+    ) -> Result<FieldDirectiveArguments, FederationError> {
         Ok(FieldDirectiveArguments {
-            graph: directive_optional_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME),
+            graph: directive_optional_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME)?,
             requires: directive_optional_fieldset_argument(
                 application,
                 JOIN_REQUIRES_ARGUMENT_NAME,
@@ -188,100 +198,94 @@ impl JoinSpecDefinition {
                 application,
                 JOIN_PROVIDES_ARGUMENT_NAME,
             )?,
-            type_: directive_optional_string_argument(application, JOIN_TYPE_ARGUMENT_NAME),
-            external: directive_optional_boolean_argument(application, JOIN_EXTERNAL_ARGUMENT_NAME),
-            override_: directive_optional_string_argument(application, JOIN_OVERRIDE_ARGUMENT_NAME),
+            type_: directive_optional_string_argument(application, JOIN_TYPE_ARGUMENT_NAME)?,
+            external: directive_optional_boolean_argument(application, JOIN_EXTERNAL_ARGUMENT_NAME)?,
+            override_: directive_optional_string_argument(application, JOIN_OVERRIDE_ARGUMENT_NAME)?,
             user_overridden: directive_optional_boolean_argument(
                 application,
                 JOIN_USEROVERRIDDEN_ARGUMENT_NAME,
-            ),
+            )?,
         })
     }
 
-    pub fn implements_directive_definition<'schema, T: AsRef<OptionLinksMetadata>>(
+    pub(crate) fn implements_directive_definition<'schema>(
         &self,
-        schema: &FederationSchemaRef<'schema, T>,
-    ) -> Option<&'schema Node<DirectiveDefinition>> {
+        schema: &'schema FederationSchema,
+    ) -> Result<Option<&'schema Node<DirectiveDefinition>>, FederationError> {
         if *self.version() < (Version { major: 0, minor: 2 }) {
-            return None;
+            return Ok(None);
         }
-        Some(
-            self.directive_definition(schema, JOIN_IMPLEMENTS_DIRECTIVE_NAME_IN_SPEC)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Unexpectedly could not find join spec's \"@{}\" directive definition",
-                        JOIN_IMPLEMENTS_DIRECTIVE_NAME_IN_SPEC
-                    )
-                }),
-        )
+        self.directive_definition(schema, JOIN_IMPLEMENTS_DIRECTIVE_NAME_IN_SPEC)?
+            .ok_or_else(|| {
+                SingleFederationError::Internal {
+                    message: "Unexpectedly could not find join spec in schema".to_owned(),
+                }
+                    .into()
+            }).map(|d| Some(d))
     }
 
-    pub fn implements_directive_arguments<'schema>(
+    pub(crate) fn implements_directive_arguments<'schema>(
         &self,
         application: &'schema Node<Directive>,
-    ) -> ImplementsDirectiveArguments<'schema> {
-        ImplementsDirectiveArguments {
-            graph: directive_required_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME),
+    ) -> Result<ImplementsDirectiveArguments, FederationError> {
+        Ok(ImplementsDirectiveArguments {
+            graph: directive_required_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME)?,
             interface: directive_required_string_argument(
                 application,
                 JOIN_INTERFACE_ARGUMENT_NAME,
-            ),
-        }
+            )?,
+        })
     }
 
-    pub fn union_member_directive_definition<'schema, T: AsRef<OptionLinksMetadata>>(
+    pub(crate) fn union_member_directive_definition<'schema>(
         &self,
-        schema: &FederationSchemaRef<'schema, T>,
-    ) -> Option<&'schema Node<DirectiveDefinition>> {
+        schema: &'schema FederationSchema,
+    ) -> Result<Option<&'schema Node<DirectiveDefinition>>, FederationError> {
         if *self.version() < (Version { major: 0, minor: 3 }) {
-            return None;
+            return Ok(None);
         }
-        Some(
-            self.directive_definition(schema, JOIN_UNIONMEMBER_DIRECTIVE_NAME_IN_SPEC)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Unexpectedly could not find join spec's \"@{}\" directive definition",
-                        JOIN_UNIONMEMBER_DIRECTIVE_NAME_IN_SPEC
-                    )
-                }),
-        )
+        self.directive_definition(schema, JOIN_UNIONMEMBER_DIRECTIVE_NAME_IN_SPEC)?
+            .ok_or_else(|| {
+                SingleFederationError::Internal {
+                    message: "Unexpectedly could not find join spec in schema".to_owned(),
+                }
+                    .into()
+            }).map(|d| Some(d))
     }
 
-    pub fn union_member_directive_arguments<'schema>(
+    pub(crate) fn union_member_directive_arguments(
         &self,
-        application: &'schema Node<Directive>,
-    ) -> UnionMemberDirectiveArguments<'schema> {
-        UnionMemberDirectiveArguments {
-            graph: directive_required_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME),
-            member: directive_required_string_argument(application, JOIN_MEMBER_ARGUMENT_NAME),
-        }
+        application: &Node<Directive>,
+    ) -> Result<UnionMemberDirectiveArguments, FederationError> {
+        Ok(UnionMemberDirectiveArguments {
+            graph: directive_required_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME)?,
+            member: directive_required_string_argument(application, JOIN_MEMBER_ARGUMENT_NAME)?,
+        })
     }
 
-    pub fn enum_value_directive_definition<'schema, T: AsRef<OptionLinksMetadata>>(
+    pub(crate) fn enum_value_directive_definition<'schema>(
         &self,
-        schema: &FederationSchemaRef<'schema, T>,
-    ) -> Option<&'schema Node<DirectiveDefinition>> {
+        schema: &'schema FederationSchema,
+    ) -> Result<Option<&'schema Node<DirectiveDefinition>>, FederationError> {
         if *self.version() < (Version { major: 0, minor: 3 }) {
-            return None;
+            return Ok(None);
         }
-        Some(
-            self.directive_definition(schema, JOIN_ENUMVALUE_DIRECTIVE_NAME_IN_SPEC)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Unexpectedly could not find join spec's \"@{}\" directive definition",
-                        JOIN_ENUMVALUE_DIRECTIVE_NAME_IN_SPEC
-                    )
-                }),
-        )
+        self.directive_definition(schema, JOIN_ENUMVALUE_DIRECTIVE_NAME_IN_SPEC)?
+            .ok_or_else(|| {
+                SingleFederationError::Internal {
+                    message: "Unexpectedly could not find join spec in schema".to_owned(),
+                }
+                    .into()
+            }).map(|d| Some(d))
     }
 
-    pub fn enum_value_directive_arguments<'schema>(
+    pub(crate) fn enum_value_directive_arguments(
         &self,
-        application: &'schema Node<Directive>,
-    ) -> EnumValueDirectiveArguments<'schema> {
-        EnumValueDirectiveArguments {
-            graph: directive_required_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME),
-        }
+        application: &Node<Directive>,
+    ) -> Result<EnumValueDirectiveArguments, FederationError> {
+        Ok(EnumValueDirectiveArguments {
+            graph: directive_required_enum_argument(application, JOIN_GRAPH_ARGUMENT_NAME)?,
+        })
     }
 }
 
@@ -296,24 +300,24 @@ impl SpecDefinition for JoinSpecDefinition {
 }
 
 lazy_static! {
-    pub static ref JOIN_VERSIONS: SpecDefinitions<JoinSpecDefinition> = {
+    pub(crate) static ref JOIN_VERSIONS: Result<SpecDefinitions<JoinSpecDefinition>, FederationError> = {
         let mut definitions = SpecDefinitions::new(Identity::join_identity());
         definitions.add(JoinSpecDefinition::new(
             Version { major: 0, minor: 1 },
             None,
-        ));
+        ))?;
         definitions.add(JoinSpecDefinition::new(
             Version { major: 0, minor: 2 },
             None,
-        ));
+        ))?;
         definitions.add(JoinSpecDefinition::new(
             Version { major: 0, minor: 3 },
             None,
-        ));
+        ))?;
         definitions.add(JoinSpecDefinition::new(
             Version { major: 0, minor: 1 },
             Some(Version { major: 2, minor: 0 }),
-        ));
-        definitions
+        ))?;
+        Ok(definitions)
     };
 }

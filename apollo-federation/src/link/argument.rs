@@ -1,136 +1,145 @@
-use crate::error::{FederationDirectiveErrorCategory, FederationError};
+use crate::error::{FederationError, SingleFederationError};
 use apollo_compiler::ast::Value;
 use apollo_compiler::schema::{Directive, Name};
 use apollo_compiler::{Node, NodeStr};
 use std::ops::Deref;
 
-pub fn directive_optional_enum_argument<'directive>(
-    application: &'directive Node<Directive>,
+pub(crate) fn directive_optional_enum_argument(
+    application: &Node<Directive>,
     name: &str,
-) -> Option<&'directive Name> {
-    application
-        .arguments
-        .iter()
-        .find(|a| *a.name == *name)
-        .and_then(|a| match a.value.deref() {
-            Value::Enum(name) => Some(name),
-            Value::Null => None,
-            _ => {
-                panic!(
+) -> Result<Option<Name>, FederationError> {
+    match application.arguments.iter().find(|a| *a.name == *name) {
+        Some(a) => match a.value.deref() {
+            Value::Enum(name) => Ok(Some(name.clone())),
+            Value::Null => Ok(None),
+            _ => Err(SingleFederationError::Internal {
+                message: format!(
                     "Argument \"{}\" of directive \"@{}\" must be an enum value.",
                     name, application.name
-                )
+                ),
             }
-        })
+            .into()),
+        },
+        None => Ok(None),
+    }
 }
 
-pub fn directive_required_enum_argument<'directive>(
-    application: &'directive Node<Directive>,
+pub(crate) fn directive_required_enum_argument(
+    application: &Node<Directive>,
     name: &str,
-) -> &'directive Name {
-    directive_optional_enum_argument(application, name).unwrap_or_else(|| {
-        panic!(
-            "Required argument \"{}\" of directive \"@{}\" was not present.",
-            name, application.name
-        )
+) -> Result<Name, FederationError> {
+    directive_optional_enum_argument(application, name)?.ok_or_else(|| {
+        SingleFederationError::Internal {
+            message: format!(
+                "Required argument \"{}\" of directive \"@{}\" was not present.",
+                name, application.name
+            ),
+        }
+        .into()
     })
 }
 
-pub fn directive_optional_string_argument<'directive>(
-    application: &'directive Node<Directive>,
+pub(crate) fn directive_optional_string_argument(
+    application: &Node<Directive>,
     name: &str,
-) -> Option<&'directive NodeStr> {
-    application
-        .arguments
-        .iter()
-        .find(|a| *a.name == *name)
-        .and_then(|a| match a.value.deref() {
-            Value::String(name) => Some(name),
-            Value::Null => None,
-            _ => {
-                panic!(
+) -> Result<Option<NodeStr>, FederationError> {
+    match application.arguments.iter().find(|a| *a.name == *name) {
+        Some(a) => match a.value.deref() {
+            Value::String(name) => Ok(Some(name.clone())),
+            Value::Null => Ok(None),
+            _ => Err(SingleFederationError::Internal {
+                message: format!(
                     "Argument \"{}\" of directive \"@{}\" must be a string.",
                     name, application.name
-                )
+                ),
             }
-        })
+            .into()),
+        },
+        None => Ok(None),
+    }
 }
 
-pub fn directive_required_string_argument<'directive>(
-    application: &'directive Node<Directive>,
+pub(crate) fn directive_required_string_argument(
+    application: &Node<Directive>,
     name: &str,
-) -> &'directive NodeStr {
-    directive_optional_string_argument(application, name).unwrap_or_else(|| {
-        panic!(
-            "Required argument \"{}\" of directive \"@{}\" was not present.",
-            name, application.name
-        )
+) -> Result<NodeStr, FederationError> {
+    directive_optional_string_argument(application, name)?.ok_or_else(|| {
+        SingleFederationError::Internal {
+            message: format!(
+                "Required argument \"{}\" of directive \"@{}\" was not present.",
+                name, application.name
+            ),
+        }
+        .into()
     })
 }
 
-pub fn directive_optional_fieldset_argument<'directive>(
-    application: &'directive Node<Directive>,
+pub(crate) fn directive_optional_fieldset_argument(
+    application: &Node<Directive>,
     name: &str,
-) -> Result<Option<&'directive NodeStr>, FederationError> {
+) -> Result<Option<NodeStr>, FederationError> {
     let argument = application.arguments.iter().find(|a| *a.name == *name);
     match argument {
         Some(argument) => match argument.value.deref() {
-            Value::String(name) => Ok(Some(name)),
+            Value::String(name) => Ok(Some(name.clone())),
             Value::Null => Ok(None),
-            _ => Err(FederationDirectiveErrorCategory::DirectiveInvalidFields
-                .definition()
-                .get(application.name.as_str().to_owned())
-                .err(
-                    format!("Invalid value for argument \"{}\": must be a string.", name),
-                    Some(vec![application.clone().into()]),
-                )
-                .into()),
+            _ => Err(SingleFederationError::InvalidGraphQL {
+                message: format!("Invalid value for argument \"{}\": must be a string.", name),
+            }
+            .into()),
         },
         None => Ok(None),
     }
 }
 
 #[allow(dead_code)]
-pub fn directive_required_fieldset_argument<'directive>(
-    application: &'directive Node<Directive>,
-    name: &str,
-) -> Result<&'directive NodeStr, FederationError> {
-    Ok(
-        directive_optional_fieldset_argument(application, name)?.unwrap_or_else(|| {
-            panic!(
-                "Required argument \"{}\" of directive \"@{}\" was not present.",
-                name, application.name
-            )
-        }),
-    )
-}
-
-pub fn directive_optional_boolean_argument(
+pub(crate) fn directive_required_fieldset_argument(
     application: &Node<Directive>,
     name: &str,
-) -> Option<bool> {
-    application
-        .arguments
-        .iter()
-        .find(|a| *a.name == *name)
-        .and_then(|a| match a.value.deref() {
-            Value::Boolean(value) => Some(*value),
-            Value::Null => None,
-            _ => {
-                panic!(
+) -> Result<NodeStr, FederationError> {
+    directive_optional_fieldset_argument(application, name)?.ok_or_else(|| {
+        SingleFederationError::Internal {
+            message: format!(
+                "Required argument \"{}\" of directive \"@{}\" was not present.",
+                name, application.name
+            ),
+        }
+        .into()
+    })
+}
+
+pub(crate) fn directive_optional_boolean_argument(
+    application: &Node<Directive>,
+    name: &str,
+) -> Result<Option<bool>, FederationError> {
+    match application.arguments.iter().find(|a| *a.name == *name) {
+        Some(a) => match a.value.deref() {
+            Value::Boolean(value) => Ok(Some(*value)),
+            Value::Null => Ok(None),
+            _ => Err(SingleFederationError::Internal {
+                message: format!(
                     "Argument \"{}\" of directive \"@{}\" must be a boolean.",
                     name, application.name
-                )
+                ),
             }
-        })
+            .into()),
+        },
+        None => Ok(None),
+    }
 }
 
 #[allow(dead_code)]
-pub fn directive_required_boolean_argument(application: &Node<Directive>, name: &str) -> bool {
-    directive_optional_boolean_argument(application, name).unwrap_or_else(|| {
-        panic!(
-            "Required argument \"{}\" of directive \"@{}\" was not present.",
-            name, application.name
-        )
+pub(crate) fn directive_required_boolean_argument(
+    application: &Node<Directive>,
+    name: &str,
+) -> Result<bool, FederationError> {
+    directive_optional_boolean_argument(application, name)?.ok_or_else(|| {
+        SingleFederationError::Internal {
+            message: format!(
+                "Required argument \"{}\" of directive \"@{}\" was not present.",
+                name, application.name
+            ),
+        }
+        .into()
     })
 }

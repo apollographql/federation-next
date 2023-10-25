@@ -1,13 +1,14 @@
+use crate::error::{FederationError, SingleFederationError};
 use crate::link::spec::{Identity, Url, Version};
 use crate::link::Link;
-use crate::schema::{FederationSchemaRef, OptionLinksMetadata};
+use crate::schema::FederationSchema;
 use apollo_compiler::schema::{DirectiveDefinition, ExtendedType};
 use apollo_compiler::{Node, NodeStr};
 use std::collections::btree_map::Keys;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-pub trait SpecDefinition {
+pub(crate) trait SpecDefinition {
     fn url(&self) -> &Url;
     fn minimum_federation_version(&self) -> Option<&Version>;
 
@@ -19,99 +20,118 @@ pub trait SpecDefinition {
         &self.url().version
     }
 
-    fn is_spec_directive_name<T: AsRef<OptionLinksMetadata>>(
+    fn is_spec_directive_name(
         &self,
-        schema: &FederationSchemaRef<T>,
+        schema: &FederationSchema,
         name_in_schema: &str,
-    ) -> bool {
+    ) -> Result<bool, FederationError> {
         let Some(ref metadata) = schema.metadata() else {
-            panic!("Schema is not a core schema (add @link first)");
+            return Err(SingleFederationError::Internal {
+                message: "Schema is not a core schema (add @link first)".to_owned(),
+            }
+            .into());
         };
-        metadata
+        Ok(metadata
             .source_link_of_directive(name_in_schema)
             .map(|e| e.link.url.identity == *self.identity())
-            .unwrap_or(false)
+            .unwrap_or(false))
     }
 
-    fn is_spec_type_name<T: AsRef<OptionLinksMetadata>>(
+    fn is_spec_type_name(
         &self,
-        schema: &FederationSchemaRef<T>,
+        schema: &FederationSchema,
         name_in_schema: &str,
-    ) -> bool {
+    ) -> Result<bool, FederationError> {
         let Some(ref metadata) = schema.metadata() else {
-            panic!("Schema is not a core schema (add @link first)");
+            return Err(SingleFederationError::Internal {
+                message: "Schema is not a core schema (add @link first)".to_owned(),
+            }
+                .into());
         };
-        metadata
+        Ok(metadata
             .source_link_of_type(name_in_schema)
             .map(|e| e.link.url.identity == *self.identity())
-            .unwrap_or(false)
+            .unwrap_or(false))
     }
 
-    fn directive_name_in_schema<T: AsRef<OptionLinksMetadata>>(
+    fn directive_name_in_schema(
         &self,
-        schema: &FederationSchemaRef<T>,
+        schema: &FederationSchema,
         name_in_spec: &str,
-    ) -> Option<String> {
-        self.link_in_schema(schema)
-            .map(|link| link.directive_name_in_schema(name_in_spec))
+    ) -> Result<Option<String>, FederationError> {
+        Ok(self.link_in_schema(schema)?
+            .map(|link| link.directive_name_in_schema(name_in_spec)))
     }
 
-    fn type_name_in_schema<T: AsRef<OptionLinksMetadata>>(
+    fn type_name_in_schema(
         &self,
-        schema: &FederationSchemaRef<T>,
+        schema: &FederationSchema,
         name_in_spec: &str,
-    ) -> Option<String> {
-        self.link_in_schema(schema)
-            .map(|link| link.type_name_in_schema(name_in_spec))
+    ) -> Result<Option<String>, FederationError> {
+        Ok(self.link_in_schema(schema)?
+            .map(|link| link.type_name_in_schema(name_in_spec)))
     }
 
-    fn directive_definition<'a, 'schema, T: AsRef<OptionLinksMetadata>>(
-        &'a self,
-        schema: &'a FederationSchemaRef<'schema, T>,
-        name_in_spec: &'a str,
-    ) -> Option<&'schema Node<DirectiveDefinition>> {
-        self.directive_name_in_schema(schema, name_in_spec)
-            .map(|name| {
+    fn directive_definition<'schema>(
+        &self,
+        schema: &'schema FederationSchema,
+        name_in_spec: &str,
+    ) -> Result<Option<&'schema Node<DirectiveDefinition>>, FederationError> {
+        match self.directive_name_in_schema(schema, name_in_spec)? {
+            Some(name) => {
                 schema
-                    .schema
+                    .schema()
                     .directive_definitions
                     .get(&NodeStr::new(&name))
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Unexpectedly could not find spec directive \"@{}\" in schema",
-                            name
-                        )
-                    })
-            })
+                    .ok_or_else(|| {
+                        SingleFederationError::Internal {
+                            message: format!(
+                                "Unexpectedly could not find spec directive \"@{}\" in schema",
+                                name
+                            ),
+                        }.into()
+                    }).map(|d| Some(d))
+            }
+            None => Ok(None),
+        }
     }
 
-    fn type_definition<'a, 'schema, T: AsRef<OptionLinksMetadata>>(
-        &'a self,
-        schema: &'a FederationSchemaRef<'schema, T>,
-        name_in_spec: &'a str,
-    ) -> Option<&'schema ExtendedType> {
-        self.type_name_in_schema(schema, name_in_spec).map(|name| {
-            schema
-                .schema
-                .types
-                .get(&NodeStr::new(&name))
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Unexpectedly could not find spec type \"{}\" in schema",
-                        name
-                    )
-                })
-        })
-    }
-
-    fn link_in_schema<T: AsRef<OptionLinksMetadata>>(
+    fn type_definition<'schema>(
         &self,
-        schema: &FederationSchemaRef<T>,
-    ) -> Option<Arc<Link>> {
+        schema: &'schema FederationSchema,
+        name_in_spec: &str,
+    ) -> Result<Option<&'schema ExtendedType>, FederationError> {
+        match self.type_name_in_schema(schema, name_in_spec)? {
+            Some(name) => {
+                schema
+                    .schema()
+                    .types
+                    .get(&NodeStr::new(&name))
+                    .ok_or_else(|| {
+                        SingleFederationError::Internal {
+                            message: format!(
+                                "Unexpectedly could not find spec type \"{}\" in schema",
+                                name
+                            ),
+                        }.into()
+                    }).map(|t| Some(t))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn link_in_schema(
+        &self,
+        schema: &FederationSchema,
+    ) -> Result<Option<Arc<Link>>, FederationError> {
         let Some(ref metadata) = schema.metadata() else {
-            panic!("Schema is not a core schema (add @link first)");
+            return Err(
+                SingleFederationError::Internal {
+                    message: "Schema is not a core schema (add @link first)".to_owned(),
+                }.into()
+            );
         };
-        metadata.for_identity(self.identity())
+        Ok(metadata.for_identity(self.identity()))
     }
 
     fn to_string(&self) -> String {
@@ -119,39 +139,53 @@ pub trait SpecDefinition {
     }
 }
 
-pub struct SpecDefinitions<T: SpecDefinition> {
+pub(crate) struct SpecDefinitions<T: SpecDefinition> {
     identity: Identity,
     definitions: BTreeMap<Version, T>,
 }
 
 impl<T: SpecDefinition> SpecDefinitions<T> {
-    pub fn new(identity: Identity) -> Self {
+    pub(crate) fn new(identity: Identity) -> Self {
         Self {
             identity,
             definitions: BTreeMap::new(),
         }
     }
 
-    pub fn add(&mut self, definition: T) {
-        assert_eq!(
-            *definition.identity(),
-            self.identity,
-            "Cannot add definition for {} to the versions of definitions for {}",
-            definition.to_string(),
-            self.identity
-        );
+    pub(crate) fn add(&mut self, definition: T) -> Result<(), FederationError> {
+        if *definition.identity() != self.identity {
+            return Err(
+                SingleFederationError::Internal {
+                    message: format!(
+                        "Cannot add definition for {} to the versions of definitions for {}",
+                        definition.to_string(),
+                        self.identity
+                    ),
+                }.into()
+            )
+        }
         if self.definitions.contains_key(definition.version()) {
-            return;
+            return Ok(());
         }
         self.definitions
             .insert(definition.version().clone(), definition);
+        Ok(())
     }
 
-    pub fn find(&self, requested: &Version) -> Option<&T> {
+    pub(crate) fn find(&self, requested: &Version) -> Option<&T> {
         self.definitions.get(requested)
     }
 
-    pub fn versions(&self) -> Keys<Version, T> {
+    pub(crate) fn versions(&self) -> Keys<Version, T> {
         self.definitions.keys()
+    }
+}
+
+pub(crate) fn spec_definitions<T: SpecDefinition>(
+    spec_definitions: &'static Result<SpecDefinitions<T>, FederationError>
+) -> Result<&'static SpecDefinitions<T>, FederationError> {
+    match spec_definitions {
+        Ok(spec_definitions) => Ok(spec_definitions),
+        Err(error) => Err(error.clone()),
     }
 }

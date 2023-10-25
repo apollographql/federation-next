@@ -1,5 +1,5 @@
 //! Representation of Apollo `@link` specifications.
-use crate::error::{ErrorCode, FederationError};
+use crate::error::{FederationError, SingleFederationError};
 use std::fmt;
 use std::str;
 use thiserror::Error;
@@ -16,10 +16,9 @@ pub enum SpecError {
 // TODO: Replace SpecError usages with FederationError.
 impl From<SpecError> for FederationError {
     fn from(value: SpecError) -> Self {
-        ErrorCode::InvalidLinkIdentifier
-            .definition()
-            .err(value.to_string(), None)
-            .into()
+        SingleFederationError::InvalidLinkIdentifier {
+            message: value.to_string(),
+        }.into()
     }
 }
 
