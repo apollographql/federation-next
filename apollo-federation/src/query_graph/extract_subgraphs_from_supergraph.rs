@@ -1657,7 +1657,12 @@ fn remove_unused_types_from_subgraph(
             TypeDefinitionLocation::InputObject(location) => {
                 location.remove_recursive(&mut subgraph.schema)?;
             }
-            _ => panic!("Encountered type kind that shouldn't have been removed"),
+            _ => {
+                return Err(SingleFederationError::Internal {
+                    message: "Encountered type kind that shouldn't have been removed".to_owned(),
+                }
+                .into());
+            }
         }
     }
 
