@@ -28,7 +28,10 @@ use std::collections::BTreeMap;
 use std::ops::Deref;
 
 // Assumes the given schema has been validated.
-#[allow(dead_code)]
+//
+// TODO: A lot of common data gets passed around in the functions called by this one, considering
+// making an e.g. ExtractSubgraphs struct to contain the data (which should also hopefully let us
+// elide more lifetime parameters).
 fn extract_subgraphs_from_supergraph(
     supergraph_schema: Schema,
     validate_extracted_subgraphs: Option<bool>,
