@@ -7,12 +7,11 @@ use crate::link::link_spec_definition::LinkSpecDefinition;
 use crate::link::spec::{Identity, Version};
 use crate::link::spec_definition::{spec_definitions, SpecDefinition};
 use crate::schema::position::{
-    DirectiveDefinitionPosition, EnumTypeDefinitionPosition, EnumValueDefinitionPosition,
-    InputObjectFieldDefinitionPosition, InputObjectTypeDefinitionPosition,
-    InterfaceFieldDefinitionPosition, InterfaceTypeDefinitionPosition,
-    ObjectFieldDefinitionPosition, ObjectTypeDefinitionPosition, ScalarTypeDefinitionPosition,
-    SchemaRootDefinitionKind, SchemaRootDefinitionPosition, TypeDefinitionPosition,
-    UnionTypeDefinitionPosition,
+    DirectiveDefinitionPosition, EnumTypeDefinitionPosition, InputObjectFieldDefinitionPosition,
+    InputObjectTypeDefinitionPosition, InterfaceFieldDefinitionPosition,
+    InterfaceTypeDefinitionPosition, ObjectFieldDefinitionPosition, ObjectTypeDefinitionPosition,
+    ScalarTypeDefinitionPosition, SchemaRootDefinitionKind, SchemaRootDefinitionPosition,
+    TypeDefinitionPosition, UnionTypeDefinitionPosition,
 };
 use crate::schema::FederationSchema;
 use apollo_compiler::ast::FieldDefinition;
@@ -1192,6 +1191,7 @@ fn extract_enum_type_content<'schema>(
         let type_ = pos.get(supergraph_schema.schema())?;
 
         for (value_name, value) in type_.values.iter() {
+            let value_pos = pos.value(value_name.clone());
             let mut enum_value_directive_applications = Vec::new();
             if let Some(enum_value_directive_definition) = enum_value_directive_definition {
                 for directive in value.directives.iter() {
@@ -1209,11 +1209,7 @@ fn extract_enum_type_content<'schema>(
                         graph_enum_value_name_to_subgraph_name,
                         graph_enum_value,
                     )?;
-                    EnumValueDefinitionPosition {
-                        type_name: (*type_name).clone(),
-                        value_name: value_name.clone(),
-                    }
-                    .insert(
+                    value_pos.insert(
                         &mut subgraph.schema,
                         Component::new(EnumValueDefinition {
                             description: None,
@@ -1241,11 +1237,7 @@ fn extract_enum_type_content<'schema>(
                             }.into()
                         );
                     }
-                    EnumValueDefinitionPosition {
-                        type_name: (*type_name).clone(),
-                        value_name: value_name.clone(),
-                    }
-                    .insert(
+                    value_pos.insert(
                         &mut subgraph.schema,
                         Component::new(EnumValueDefinition {
                             description: None,
