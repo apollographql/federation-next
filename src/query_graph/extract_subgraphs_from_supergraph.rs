@@ -31,7 +31,7 @@ use std::ops::Deref;
 // TODO: A lot of common data gets passed around in the functions called by this one, considering
 // making an e.g. ExtractSubgraphs struct to contain the data (which should also hopefully let us
 // elide more lifetime parameters).
-fn extract_subgraphs_from_supergraph(
+pub(super) fn extract_subgraphs_from_supergraph(
     supergraph_schema: Schema,
     validate_extracted_subgraphs: Option<bool>,
 ) -> Result<FederationSubgraphs, FederationError> {
@@ -150,7 +150,8 @@ fn collect_empty_subgraphs<'schema>(
     join_spec_definition: &JoinSpecDefinition,
 ) -> Result<CollectEmptySubgraphsOk<'schema>, FederationError> {
     let mut subgraphs = FederationSubgraphs::new();
-    let graph_directive = join_spec_definition.graph_directive_definition(supergraph_schema)?;
+    let graph_directive_definition =
+        join_spec_definition.graph_directive_definition(supergraph_schema)?;
     let graph_enum = join_spec_definition.graph_enum_definition(supergraph_schema)?;
     let mut federation_spec_definitions = IndexMap::new();
     let mut graph_enum_value_name_to_subgraph_name = IndexMap::new();
@@ -158,7 +159,7 @@ fn collect_empty_subgraphs<'schema>(
         let graph_application = enum_value_definition
             .directives
             .iter()
-            .find(|d| d.name == graph_directive.name)
+            .find(|d| d.name == graph_directive_definition.name)
             .ok_or_else(|| SingleFederationError::InvalidFederationSupergraph {
                 message: format!(
                     "Value \"{}\" of join__Graph enum has no @join__graph directive",
@@ -1575,6 +1576,15 @@ impl FederationSubgraphs {
     }
 }
 
+impl IntoIterator for FederationSubgraphs {
+    type Item = <BTreeMap<String, FederationSubgraph> as IntoIterator>::Item;
+    type IntoIter = <BTreeMap<String, FederationSubgraph> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.subgraphs.into_iter()
+    }
+}
+
 lazy_static! {
     static ref EXECUTABLE_DIRECTIVE_LOCATIONS: IndexSet<DirectiveLocation> = {
         IndexSet::from([
@@ -1724,7 +1734,8 @@ fn add_federation_operations(
             fields: service_fields,
         }),
     )?;
-    let key_directive = federation_spec_definition.key_directive_definition(&subgraph.schema)?;
+    let key_directive_definition =
+        federation_spec_definition.key_directive_definition(&subgraph.schema)?;
     let entity_members = subgraph
         .schema
         .schema()
@@ -1737,7 +1748,7 @@ fn add_federation_operations(
             if !type_
                 .directives
                 .iter()
-                .any(|d| d.name == key_directive.name)
+                .any(|d| d.name == key_directive_definition.name)
             {
                 return None;
             }
