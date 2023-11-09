@@ -1,6 +1,7 @@
 use crate::error::{FederationError, SingleFederationError};
 use crate::schema::position::{
-    CompositeTypeDefinitionPosition, FieldDefinitionPosition, SchemaRootDefinitionKind,
+    CompositeTypeDefinitionPosition, FieldDefinitionPosition, OutputTypeDefinitionPosition,
+    SchemaRootDefinitionKind,
 };
 use crate::schema::FederationSchema;
 use apollo_compiler::executable::SelectionSet;
@@ -15,7 +16,7 @@ pub(crate) mod extract_subgraphs_from_supergraph;
 
 pub(crate) struct QueryGraphNode {
     // The graphQL type this node points to.
-    pub(crate) type_: NamedType,
+    pub(crate) type_: QueryGraphNodeType,
     // An identifier of the underlying schema containing the `type_` this node points to. This is
     // mainly used in federated query graphs, where the `source` is a subgraph name.
     pub(crate) source: NodeStr,
@@ -46,6 +47,23 @@ impl Display for QueryGraphNode {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum QueryGraphNodeType {
+    SubgraphType(OutputTypeDefinitionPosition),
+    FederatedRootType(SchemaRootDefinitionKind),
+}
+
+impl Display for QueryGraphNodeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QueryGraphNodeType::SubgraphType(pos) => pos.fmt(f),
+            QueryGraphNodeType::FederatedRootType(root_kind) => {
+                write!(f, "[{}]", root_kind)
+            }
+        }
+    }
+}
+
 pub(crate) struct QueryGraphEdge {
     // Indicates what kind of edge this is and what the edge does/represents. For instance, if the
     // edge represents a field, the `transition` will be a `FieldCollection` transition and will
@@ -63,6 +81,24 @@ pub(crate) struct QueryGraphEdge {
     //
     // Outside of keys, @requires edges also rely on conditions.
     pub(crate) conditions: Option<SelectionSet>,
+}
+
+impl Display for QueryGraphEdge {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if matches!(
+            self.transition,
+            QueryGraphEdgeTransition::SubgraphEnteringTransition
+        ) && self.conditions.is_none()
+        {
+            return Ok(());
+        }
+        if let Some(conditions) = &self.conditions {
+            // TODO: Use conditions.serialize.no_indent() when those changes land in apollo-rs.
+            write!(f, "{:#?} ⊢ {}", conditions, self.transition)
+        } else {
+            self.transition.fmt(f)
+        }
+    }
 }
 
 // The type of query graph edge "transition".
