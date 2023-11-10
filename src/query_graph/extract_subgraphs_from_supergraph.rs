@@ -1682,13 +1682,13 @@ fn remove_unused_types_from_subgraph(
     Ok(())
 }
 
-static FEDERATION_ANY_TYPE_NAME: Name = name!("_Any");
-static FEDERATION_SERVICE_TYPE_NAME: Name = name!("_Service");
-static FEDERATION_SDL_FIELD_NAME: Name = name!("sdl");
-static FEDERATION_ENTITY_TYPE_NAME: Name = name!("_Entity");
-static FEDERATION_SERVICE_FIELD_NAME: Name = name!("_service");
-static FEDERATION_ENTITIES_FIELD_NAME: Name = name!("_entities");
-static FEDERATION_REPRESENTATIONS_ARGUMENTS_NAME: Name = name!("representations");
+const FEDERATION_ANY_TYPE_NAME: Name = name!("_Any");
+const FEDERATION_SERVICE_TYPE_NAME: Name = name!("_Service");
+const FEDERATION_SDL_FIELD_NAME: Name = name!("sdl");
+const FEDERATION_ENTITY_TYPE_NAME: Name = name!("_Entity");
+const FEDERATION_SERVICE_FIELD_NAME: Name = name!("_service");
+const FEDERATION_ENTITIES_FIELD_NAME: Name = name!("_entities");
+const FEDERATION_REPRESENTATIONS_ARGUMENTS_NAME: Name = name!("representations");
 
 fn add_federation_operations(
     subgraph: &mut FederationSubgraph,

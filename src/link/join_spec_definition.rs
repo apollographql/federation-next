@@ -11,29 +11,29 @@ use apollo_compiler::schema::{Directive, DirectiveDefinition, EnumType, Extended
 use apollo_compiler::{name, Node, NodeStr};
 use lazy_static::lazy_static;
 
-pub(crate) static JOIN_GRAPH_ENUM_NAME_IN_SPEC: Name = name!("Graph");
-pub(crate) static JOIN_GRAPH_DIRECTIVE_NAME_IN_SPEC: Name = name!("graph");
-pub(crate) static JOIN_TYPE_DIRECTIVE_NAME_IN_SPEC: Name = name!("type");
-pub(crate) static JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC: Name = name!("field");
-pub(crate) static JOIN_IMPLEMENTS_DIRECTIVE_NAME_IN_SPEC: Name = name!("implements");
-pub(crate) static JOIN_UNIONMEMBER_DIRECTIVE_NAME_IN_SPEC: Name = name!("unionMember");
-pub(crate) static JOIN_ENUMVALUE_DIRECTIVE_NAME_IN_SPEC: Name = name!("enumValue");
+pub(crate) const JOIN_GRAPH_ENUM_NAME_IN_SPEC: Name = name!("Graph");
+pub(crate) const JOIN_GRAPH_DIRECTIVE_NAME_IN_SPEC: Name = name!("graph");
+pub(crate) const JOIN_TYPE_DIRECTIVE_NAME_IN_SPEC: Name = name!("type");
+pub(crate) const JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC: Name = name!("field");
+pub(crate) const JOIN_IMPLEMENTS_DIRECTIVE_NAME_IN_SPEC: Name = name!("implements");
+pub(crate) const JOIN_UNIONMEMBER_DIRECTIVE_NAME_IN_SPEC: Name = name!("unionMember");
+pub(crate) const JOIN_ENUMVALUE_DIRECTIVE_NAME_IN_SPEC: Name = name!("enumValue");
 
-pub(crate) static JOIN_NAME_ARGUMENT_NAME: Name = name!("name");
-pub(crate) static JOIN_URL_ARGUMENT_NAME: Name = name!("url");
-pub(crate) static JOIN_GRAPH_ARGUMENT_NAME: Name = name!("graph");
-pub(crate) static JOIN_KEY_ARGUMENT_NAME: Name = name!("key");
-pub(crate) static JOIN_EXTENSION_ARGUMENT_NAME: Name = name!("extension");
-pub(crate) static JOIN_RESOLVABLE_ARGUMENT_NAME: Name = name!("resolvable");
-pub(crate) static JOIN_ISINTERFACEOBJECT_ARGUMENT_NAME: Name = name!("isInterfaceObject");
-pub(crate) static JOIN_REQUIRES_ARGUMENT_NAME: Name = name!("requires");
-pub(crate) static JOIN_PROVIDES_ARGUMENT_NAME: Name = name!("provides");
-pub(crate) static JOIN_TYPE_ARGUMENT_NAME: Name = name!("type");
-pub(crate) static JOIN_EXTERNAL_ARGUMENT_NAME: Name = name!("external");
-pub(crate) static JOIN_OVERRIDE_ARGUMENT_NAME: Name = name!("override");
-pub(crate) static JOIN_USEROVERRIDDEN_ARGUMENT_NAME: Name = name!("usedOverridden");
-pub(crate) static JOIN_INTERFACE_ARGUMENT_NAME: Name = name!("interface");
-pub(crate) static JOIN_MEMBER_ARGUMENT_NAME: Name = name!("member");
+pub(crate) const JOIN_NAME_ARGUMENT_NAME: Name = name!("name");
+pub(crate) const JOIN_URL_ARGUMENT_NAME: Name = name!("url");
+pub(crate) const JOIN_GRAPH_ARGUMENT_NAME: Name = name!("graph");
+pub(crate) const JOIN_KEY_ARGUMENT_NAME: Name = name!("key");
+pub(crate) const JOIN_EXTENSION_ARGUMENT_NAME: Name = name!("extension");
+pub(crate) const JOIN_RESOLVABLE_ARGUMENT_NAME: Name = name!("resolvable");
+pub(crate) const JOIN_ISINTERFACEOBJECT_ARGUMENT_NAME: Name = name!("isInterfaceObject");
+pub(crate) const JOIN_REQUIRES_ARGUMENT_NAME: Name = name!("requires");
+pub(crate) const JOIN_PROVIDES_ARGUMENT_NAME: Name = name!("provides");
+pub(crate) const JOIN_TYPE_ARGUMENT_NAME: Name = name!("type");
+pub(crate) const JOIN_EXTERNAL_ARGUMENT_NAME: Name = name!("external");
+pub(crate) const JOIN_OVERRIDE_ARGUMENT_NAME: Name = name!("override");
+pub(crate) const JOIN_USEROVERRIDDEN_ARGUMENT_NAME: Name = name!("usedOverridden");
+pub(crate) const JOIN_INTERFACE_ARGUMENT_NAME: Name = name!("interface");
+pub(crate) const JOIN_MEMBER_ARGUMENT_NAME: Name = name!("member");
 
 pub(crate) struct GraphDirectiveArguments {
     pub(crate) name: NodeStr,

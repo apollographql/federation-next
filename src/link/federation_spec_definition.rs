@@ -7,19 +7,18 @@ use apollo_compiler::schema::{Directive, DirectiveDefinition, Name, Value};
 use apollo_compiler::{name, Node, NodeStr};
 use lazy_static::lazy_static;
 
-pub(crate) static FEDERATION_KEY_DIRECTIVE_NAME_IN_SPEC: Name = name!("key");
-pub(crate) static FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC: Name =
-    name!("interfaceObject");
-pub(crate) static FEDERATION_EXTERNAL_DIRECTIVE_NAME_IN_SPEC: Name = name!("external");
-pub(crate) static FEDERATION_REQUIRES_DIRECTIVE_NAME_IN_SPEC: Name = name!("requires");
-pub(crate) static FEDERATION_PROVIDES_DIRECTIVE_NAME_IN_SPEC: Name = name!("provides");
-pub(crate) static FEDERATION_SHAREABLE_DIRECTIVE_NAME_IN_SPEC: Name = name!("shareable");
-pub(crate) static FEDERATION_OVERRIDE_DIRECTIVE_NAME_IN_SPEC: Name = name!("override");
+pub(crate) const FEDERATION_KEY_DIRECTIVE_NAME_IN_SPEC: Name = name!("key");
+pub(crate) const FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC: Name = name!("interfaceObject");
+pub(crate) const FEDERATION_EXTERNAL_DIRECTIVE_NAME_IN_SPEC: Name = name!("external");
+pub(crate) const FEDERATION_REQUIRES_DIRECTIVE_NAME_IN_SPEC: Name = name!("requires");
+pub(crate) const FEDERATION_PROVIDES_DIRECTIVE_NAME_IN_SPEC: Name = name!("provides");
+pub(crate) const FEDERATION_SHAREABLE_DIRECTIVE_NAME_IN_SPEC: Name = name!("shareable");
+pub(crate) const FEDERATION_OVERRIDE_DIRECTIVE_NAME_IN_SPEC: Name = name!("override");
 
-pub(crate) static FEDERATION_FIELDS_ARGUMENT_NAME: Name = name!("fields");
-pub(crate) static FEDERATION_RESOLVABLE_ARGUMENT_NAME: Name = name!("resolvable");
-pub(crate) static FEDERATION_REASON_ARGUMENT_NAME: Name = name!("reason");
-pub(crate) static FEDERATION_FROM_ARGUMENT_NAME: Name = name!("from");
+pub(crate) const FEDERATION_FIELDS_ARGUMENT_NAME: Name = name!("fields");
+pub(crate) const FEDERATION_RESOLVABLE_ARGUMENT_NAME: Name = name!("resolvable");
+pub(crate) const FEDERATION_REASON_ARGUMENT_NAME: Name = name!("reason");
+pub(crate) const FEDERATION_FROM_ARGUMENT_NAME: Name = name!("from");
 
 pub(crate) struct FederationSpecDefinition {
     url: Url,
