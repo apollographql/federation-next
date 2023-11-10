@@ -1,3 +1,4 @@
+mod query_plan;
 mod subgraph;
 
 #[cfg(test)]
