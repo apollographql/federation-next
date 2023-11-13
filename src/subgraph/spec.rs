@@ -122,6 +122,8 @@ pub enum FederationSpecError {
     InvalidGraphQLName(String),
 }
 
+// TODO: Once InvalidNameError includes the invalid name in the error, we can replace this with an
+// implementation for From<InvalidNameError>.
 pub(crate) fn graphql_name_or_federation_spec_error(
     name: &str,
 ) -> Result<Name, FederationSpecError> {
