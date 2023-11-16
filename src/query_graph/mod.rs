@@ -6,16 +6,19 @@ use crate::schema::position::{
 use crate::schema::FederationSchema;
 use apollo_compiler::executable::SelectionSet;
 use apollo_compiler::schema::{Name, NamedType};
-use apollo_compiler::NodeStr;
-use indexmap::{IndexMap, IndexSet};
+use apollo_compiler::{Node, NodeStr};
+use indexmap::{Equivalent, IndexMap, IndexSet};
 use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
 use std::fmt::{Display, Formatter};
+use std::hash::Hash;
 
 pub(crate) mod build_query_graph;
 pub(crate) mod extract_subgraphs_from_supergraph;
+mod field_set;
 
+#[derive(Debug, Clone)]
 pub(crate) struct QueryGraphNode {
-    // The graphQL type this node points to.
+    // The GraphQL type this node points to.
     pub(crate) type_: QueryGraphNodeType,
     // An identifier of the underlying schema containing the `type_` this node points to. This is
     // mainly used in federated query graphs, where the `source` is a subgraph name.
@@ -53,6 +56,18 @@ pub(crate) enum QueryGraphNodeType {
     FederatedRootType(SchemaRootDefinitionKind),
 }
 
+impl From<OutputTypeDefinitionPosition> for QueryGraphNodeType {
+    fn from(value: OutputTypeDefinitionPosition) -> Self {
+        QueryGraphNodeType::SubgraphType(value)
+    }
+}
+
+impl From<SchemaRootDefinitionKind> for QueryGraphNodeType {
+    fn from(value: SchemaRootDefinitionKind) -> Self {
+        QueryGraphNodeType::FederatedRootType(value)
+    }
+}
+
 impl Display for QueryGraphNodeType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -64,6 +79,7 @@ impl Display for QueryGraphNodeType {
     }
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct QueryGraphEdge {
     // Indicates what kind of edge this is and what the edge does/represents. For instance, if the
     // edge represents a field, the `transition` will be a `FieldCollection` transition and will
@@ -80,7 +96,7 @@ pub(crate) struct QueryGraphEdge {
     // represent the fact that you need the key to be able to use an @key edge.
     //
     // Outside of keys, @requires edges also rely on conditions.
-    pub(crate) conditions: Option<SelectionSet>,
+    pub(crate) conditions: Option<Node<SelectionSet>>,
 }
 
 impl Display for QueryGraphEdge {
@@ -93,8 +109,12 @@ impl Display for QueryGraphEdge {
             return Ok(());
         }
         if let Some(conditions) = &self.conditions {
-            // TODO: Use conditions.serialize.no_indent() when those changes land in apollo-rs.
-            write!(f, "{:#?} ⊢ {}", conditions, self.transition)
+            write!(
+                f,
+                "{} ⊢ {}",
+                conditions.serialize().no_indent(),
+                self.transition
+            )
         } else {
             self.transition.fmt(f)
         }
@@ -104,6 +124,7 @@ impl Display for QueryGraphEdge {
 // The type of query graph edge "transition".
 //
 // An edge transition encodes what the edge corresponds to, in the underlying GraphQL schema.
+#[derive(Debug, Clone)]
 pub(crate) enum QueryGraphEdgeTransition {
     // A field edge, going from (a node for) the field parent type to the field's (base) type.
     FieldCollection {
@@ -112,7 +133,7 @@ pub(crate) enum QueryGraphEdgeTransition {
         // The object/interface field being collected.
         field_definition_position: FieldDefinitionPosition,
         // Whether this field is part of an @provides.
-        is_part_of_provide: bool,
+        is_part_of_provides: bool,
     },
     // A downcast edge, going from a composite type (object, interface, or union) to another
     // composite type that intersects that type (i.e. has at least one possible runtime object type
@@ -208,7 +229,7 @@ pub struct QueryGraph {
     // this will only ever be one value, but it will change for "federated" query graphs while
     // they're being built (and after construction, will become FEDERATED_GRAPH_ROOT_SOURCE, which
     // is a reserved placeholder value).
-    name: NodeStr,
+    current_source: NodeStr,
     // The nodes/edges of the query graph. Note that nodes/edges should never be removed, so indexes
     // are immutable when a node/edge is created.
     graph: DiGraph<QueryGraphNode, QueryGraphEdge>,
@@ -225,10 +246,10 @@ pub struct QueryGraph {
     // Maps an edge to the possible edges that can follow it "productively", that is without
     // creating a trivially inefficient path.
     //
-    // More precisely, this map is equivalent calling to looking at the out edges of a given edge's
-    // tail node and filtering those edges that "never make sense" after the given edge, which
-    // mainly amounts to avoiding chaining @key edges when we know there is guaranteed to be a
-    // better option. As an example, suppose we have 3 subgraphs A, B and C which all defined an
+    // More precisely, this map is equivalent to looking at the out edges of a given edge's tail
+    // node and filtering those edges that "never make sense" after the given edge, which mainly
+    // amounts to avoiding chaining @key edges when we know there is guaranteed to be a better
+    // option. As an example, suppose we have 3 subgraphs A, B and C which all defined an
     // `@key(fields: "id")` on some entity type `T`. Then it is never interesting to take that @key
     // edge from B -> C after A -> B because if we're in A and want to get to C, we can always do
     // A -> C (of course, this is only true because it's the "same" key).
@@ -249,7 +270,7 @@ pub struct QueryGraph {
 
 impl QueryGraph {
     pub(crate) fn name(&self) -> &str {
-        &self.name
+        &self.current_source
     }
 
     pub(crate) fn graph(&self) -> &DiGraph<QueryGraphNode, QueryGraphEdge> {
@@ -292,14 +313,26 @@ impl QueryGraph {
         })
     }
 
-    pub(crate) fn sources(&self) -> &IndexMap<NodeStr, FederationSchema> {
-        &self.sources
+    fn edge_endpoints(&self, edge: EdgeIndex) -> Result<(NodeIndex, NodeIndex), FederationError> {
+        self.graph.edge_endpoints(edge).ok_or_else(|| {
+            SingleFederationError::Internal {
+                message: "Edge unexpectedly missing".to_owned(),
+            }
+            .into()
+        })
     }
 
     pub(crate) fn schema(&self) -> Result<&FederationSchema, FederationError> {
-        self.sources.get(&self.name).ok_or_else(|| {
+        self.schema_by_source(&self.current_source)
+    }
+
+    fn schema_by_source<Q: ?Sized>(&self, source: &Q) -> Result<&FederationSchema, FederationError>
+    where
+        Q: Hash + Equivalent<NodeStr>,
+    {
+        self.sources.get(source).ok_or_else(|| {
             SingleFederationError::Internal {
-                message: "schema unexpectedly missing".to_owned(),
+                message: "Schema unexpectedly missing".to_owned(),
             }
             .into()
         })
@@ -308,24 +341,32 @@ impl QueryGraph {
     pub(crate) fn types_to_nodes(
         &self,
     ) -> Result<&IndexMap<NamedType, IndexSet<NodeIndex>>, FederationError> {
-        self.types_to_nodes_by_source
-            .get(&self.name)
-            .ok_or_else(|| {
-                SingleFederationError::Internal {
-                    message: "Type-to-nodes map unexpectedly missing".to_owned(),
-                }
-                .into()
-            })
+        self.types_to_nodes_by_source(&self.current_source)
+    }
+
+    fn types_to_nodes_by_source<Q: ?Sized>(
+        &self,
+        source: &Q,
+    ) -> Result<&IndexMap<NamedType, IndexSet<NodeIndex>>, FederationError>
+    where
+        Q: Hash + Equivalent<NodeStr>,
+    {
+        self.types_to_nodes_by_source.get(source).ok_or_else(|| {
+            SingleFederationError::Internal {
+                message: "Types-to-nodes map unexpectedly missing".to_owned(),
+            }
+            .into()
+        })
     }
 
     fn types_to_nodes_mut(
         &mut self,
     ) -> Result<&mut IndexMap<NamedType, IndexSet<NodeIndex>>, FederationError> {
         self.types_to_nodes_by_source
-            .get_mut(&self.name)
+            .get_mut(&self.current_source)
             .ok_or_else(|| {
                 SingleFederationError::Internal {
-                    message: "Type-to-nodes map unexpectedly missing".to_owned(),
+                    message: "Types-to-nodes map unexpectedly missing".to_owned(),
                 }
                 .into()
             })
@@ -335,10 +376,10 @@ impl QueryGraph {
         &self,
     ) -> Result<&IndexMap<SchemaRootDefinitionKind, NodeIndex>, FederationError> {
         self.root_kinds_to_nodes_by_source
-            .get(&self.name)
+            .get(&self.current_source)
             .ok_or_else(|| {
                 SingleFederationError::Internal {
-                    message: "root-kinds-to-nodes map unexpectedly missing".to_owned(),
+                    message: "Root-kinds-to-nodes map unexpectedly missing".to_owned(),
                 }
                 .into()
             })
@@ -348,10 +389,10 @@ impl QueryGraph {
         &mut self,
     ) -> Result<&mut IndexMap<SchemaRootDefinitionKind, NodeIndex>, FederationError> {
         self.root_kinds_to_nodes_by_source
-            .get_mut(&self.name)
+            .get_mut(&self.current_source)
             .ok_or_else(|| {
                 SingleFederationError::Internal {
-                    message: "root-kinds-to-nodes map unexpectedly missing".to_owned(),
+                    message: "Root-kinds-to-nodes map unexpectedly missing".to_owned(),
                 }
                 .into()
             })

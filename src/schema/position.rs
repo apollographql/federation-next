@@ -191,6 +191,30 @@ impl From<EnumTypeDefinitionPosition> for OutputTypeDefinitionPosition {
     }
 }
 
+impl TryFrom<TypeDefinitionPosition> for OutputTypeDefinitionPosition {
+    type Error = FederationError;
+
+    fn try_from(value: TypeDefinitionPosition) -> Result<Self, Self::Error> {
+        match value {
+            TypeDefinitionPosition::Scalar(value) => {
+                Ok(OutputTypeDefinitionPosition::Scalar(value))
+            }
+            TypeDefinitionPosition::Object(value) => {
+                Ok(OutputTypeDefinitionPosition::Object(value))
+            }
+            TypeDefinitionPosition::Interface(value) => {
+                Ok(OutputTypeDefinitionPosition::Interface(value))
+            }
+            TypeDefinitionPosition::Union(value) => Ok(OutputTypeDefinitionPosition::Union(value)),
+            TypeDefinitionPosition::Enum(value) => Ok(OutputTypeDefinitionPosition::Enum(value)),
+            _ => Err(SingleFederationError::Internal {
+                message: format!("Type \"{}\" was unexpectedly not an output type", value,),
+            }
+            .into()),
+        }
+    }
+}
+
 impl From<AbstractTypeDefinitionPosition> for OutputTypeDefinitionPosition {
     fn from(value: AbstractTypeDefinitionPosition) -> Self {
         match value {
@@ -219,6 +243,31 @@ impl CompositeTypeDefinitionPosition {
             CompositeTypeDefinitionPosition::Union(type_) => &type_.type_name,
         }
     }
+
+    pub(crate) fn field(
+        &self,
+        field_name: Name,
+    ) -> Result<FieldDefinitionPosition, FederationError> {
+        match self {
+            CompositeTypeDefinitionPosition::Object(type_) => Ok(type_.field(field_name).into()),
+            CompositeTypeDefinitionPosition::Interface(type_) => Ok(type_.field(field_name).into()),
+            CompositeTypeDefinitionPosition::Union(type_) => {
+                let field = type_.introspection_typename_field();
+                if *field.field_name() == field_name {
+                    Ok(field.into())
+                } else {
+                    Err(SingleFederationError::Internal {
+                        message: format!(
+                            "Union types don't have field \"{}\", only \"{}\"",
+                            field_name,
+                            field.field_name(),
+                        ),
+                    }
+                    .into())
+                }
+            }
+        }
+    }
 }
 
 impl From<ObjectTypeDefinitionPosition> for CompositeTypeDefinitionPosition {
@@ -239,11 +288,64 @@ impl From<UnionTypeDefinitionPosition> for CompositeTypeDefinitionPosition {
     }
 }
 
+impl TryFrom<TypeDefinitionPosition> for CompositeTypeDefinitionPosition {
+    type Error = FederationError;
+
+    fn try_from(value: TypeDefinitionPosition) -> Result<Self, Self::Error> {
+        match value {
+            TypeDefinitionPosition::Object(value) => {
+                Ok(CompositeTypeDefinitionPosition::Object(value))
+            }
+            TypeDefinitionPosition::Interface(value) => {
+                Ok(CompositeTypeDefinitionPosition::Interface(value))
+            }
+            TypeDefinitionPosition::Union(value) => {
+                Ok(CompositeTypeDefinitionPosition::Union(value))
+            }
+            _ => Err(SingleFederationError::Internal {
+                message: format!("Type \"{}\" was unexpectedly not a composite type", value,),
+            }
+            .into()),
+        }
+    }
+}
+
+impl TryFrom<OutputTypeDefinitionPosition> for CompositeTypeDefinitionPosition {
+    type Error = FederationError;
+
+    fn try_from(value: OutputTypeDefinitionPosition) -> Result<Self, Self::Error> {
+        match value {
+            OutputTypeDefinitionPosition::Object(value) => {
+                Ok(CompositeTypeDefinitionPosition::Object(value))
+            }
+            OutputTypeDefinitionPosition::Interface(value) => {
+                Ok(CompositeTypeDefinitionPosition::Interface(value))
+            }
+            OutputTypeDefinitionPosition::Union(value) => {
+                Ok(CompositeTypeDefinitionPosition::Union(value))
+            }
+            _ => Err(SingleFederationError::Internal {
+                message: format!("Type \"{}\" was unexpectedly not a composite type", value,),
+            }
+            .into()),
+        }
+    }
+}
+
 impl From<AbstractTypeDefinitionPosition> for CompositeTypeDefinitionPosition {
     fn from(value: AbstractTypeDefinitionPosition) -> Self {
         match value {
             AbstractTypeDefinitionPosition::Interface(value) => value.into(),
             AbstractTypeDefinitionPosition::Union(value) => value.into(),
+        }
+    }
+}
+
+impl From<ObjectOrInterfaceTypeDefinitionPosition> for CompositeTypeDefinitionPosition {
+    fn from(value: ObjectOrInterfaceTypeDefinitionPosition) -> Self {
+        match value {
+            ObjectOrInterfaceTypeDefinitionPosition::Object(value) => value.into(),
+            ObjectOrInterfaceTypeDefinitionPosition::Interface(value) => value.into(),
         }
     }
 }
@@ -301,6 +403,15 @@ impl ObjectOrInterfaceTypeDefinitionPosition {
     }
 }
 
+impl Display for ObjectOrInterfaceTypeDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectOrInterfaceTypeDefinitionPosition::Object(type_) => type_.fmt(f),
+            ObjectOrInterfaceTypeDefinitionPosition::Interface(type_) => type_.fmt(f),
+        }
+    }
+}
+
 impl From<ObjectTypeDefinitionPosition> for ObjectOrInterfaceTypeDefinitionPosition {
     fn from(value: ObjectTypeDefinitionPosition) -> Self {
         ObjectOrInterfaceTypeDefinitionPosition::Object(value)
@@ -313,6 +424,50 @@ impl From<InterfaceTypeDefinitionPosition> for ObjectOrInterfaceTypeDefinitionPo
     }
 }
 
+impl TryFrom<TypeDefinitionPosition> for ObjectOrInterfaceTypeDefinitionPosition {
+    type Error = FederationError;
+
+    fn try_from(value: TypeDefinitionPosition) -> Result<Self, Self::Error> {
+        match value {
+            TypeDefinitionPosition::Object(value) => {
+                Ok(ObjectOrInterfaceTypeDefinitionPosition::Object(value))
+            }
+            TypeDefinitionPosition::Interface(value) => {
+                Ok(ObjectOrInterfaceTypeDefinitionPosition::Interface(value))
+            }
+            _ => Err(SingleFederationError::Internal {
+                message: format!(
+                    "Type \"{}\" was unexpectedly not an object/interface type",
+                    value,
+                ),
+            }
+            .into()),
+        }
+    }
+}
+
+impl TryFrom<OutputTypeDefinitionPosition> for ObjectOrInterfaceTypeDefinitionPosition {
+    type Error = FederationError;
+
+    fn try_from(value: OutputTypeDefinitionPosition) -> Result<Self, Self::Error> {
+        match value {
+            OutputTypeDefinitionPosition::Object(value) => {
+                Ok(ObjectOrInterfaceTypeDefinitionPosition::Object(value))
+            }
+            OutputTypeDefinitionPosition::Interface(value) => {
+                Ok(ObjectOrInterfaceTypeDefinitionPosition::Interface(value))
+            }
+            _ => Err(SingleFederationError::Internal {
+                message: format!(
+                    "Output type \"{}\" was unexpectedly not an object/interface type",
+                    value,
+                ),
+            }
+            .into()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum FieldDefinitionPosition {
     Object(ObjectFieldDefinitionPosition),
@@ -321,11 +476,27 @@ pub(crate) enum FieldDefinitionPosition {
 }
 
 impl FieldDefinitionPosition {
+    pub(crate) fn type_name(&self) -> &Name {
+        match self {
+            FieldDefinitionPosition::Object(field) => &field.type_name,
+            FieldDefinitionPosition::Interface(field) => &field.type_name,
+            FieldDefinitionPosition::Union(field) => &field.type_name,
+        }
+    }
+
     pub(crate) fn field_name(&self) -> &Name {
         match self {
             FieldDefinitionPosition::Object(field) => &field.field_name,
             FieldDefinitionPosition::Interface(field) => &field.field_name,
             FieldDefinitionPosition::Union(field) => field.field_name(),
+        }
+    }
+
+    pub(crate) fn parent(&self) -> CompositeTypeDefinitionPosition {
+        match self {
+            FieldDefinitionPosition::Object(field) => field.parent().into(),
+            FieldDefinitionPosition::Interface(field) => field.parent().into(),
+            FieldDefinitionPosition::Union(field) => field.parent().into(),
         }
     }
 
@@ -376,10 +547,24 @@ pub(crate) enum ObjectOrInterfaceFieldDefinitionPosition {
 }
 
 impl ObjectOrInterfaceFieldDefinitionPosition {
+    pub(crate) fn type_name(&self) -> &Name {
+        match self {
+            ObjectOrInterfaceFieldDefinitionPosition::Object(field) => &field.type_name,
+            ObjectOrInterfaceFieldDefinitionPosition::Interface(field) => &field.type_name,
+        }
+    }
+
     pub(crate) fn field_name(&self) -> &Name {
         match self {
             ObjectOrInterfaceFieldDefinitionPosition::Object(field) => &field.field_name,
             ObjectOrInterfaceFieldDefinitionPosition::Interface(field) => &field.field_name,
+        }
+    }
+
+    pub(crate) fn parent(&self) -> ObjectOrInterfaceTypeDefinitionPosition {
+        match self {
+            ObjectOrInterfaceFieldDefinitionPosition::Object(field) => field.parent().into(),
+            ObjectOrInterfaceFieldDefinitionPosition::Interface(field) => field.parent().into(),
         }
     }
 
@@ -390,6 +575,36 @@ impl ObjectOrInterfaceFieldDefinitionPosition {
         match self {
             ObjectOrInterfaceFieldDefinitionPosition::Object(field) => field.get(schema),
             ObjectOrInterfaceFieldDefinitionPosition::Interface(field) => field.get(schema),
+        }
+    }
+
+    pub(crate) fn insert_directive(
+        &self,
+        schema: &mut FederationSchema,
+        directive: Node<Directive>,
+    ) -> Result<(), FederationError> {
+        match self {
+            ObjectOrInterfaceFieldDefinitionPosition::Object(field) => {
+                field.insert_directive(schema, directive)
+            }
+            ObjectOrInterfaceFieldDefinitionPosition::Interface(field) => {
+                field.insert_directive(schema, directive)
+            }
+        }
+    }
+
+    pub(crate) fn remove_directive(
+        &self,
+        schema: &mut FederationSchema,
+        directive: &Node<Directive>,
+    ) {
+        match self {
+            ObjectOrInterfaceFieldDefinitionPosition::Object(field) => {
+                field.remove_directive(schema, directive)
+            }
+            ObjectOrInterfaceFieldDefinitionPosition::Interface(field) => {
+                field.remove_directive(schema, directive)
+            }
         }
     }
 }
@@ -6040,7 +6255,7 @@ impl Display for DirectiveArgumentDefinitionPosition {
     }
 }
 
-fn is_graphql_reserved_name(name: &str) -> bool {
+pub(crate) fn is_graphql_reserved_name(name: &str) -> bool {
     name.starts_with("__")
 }
 

@@ -371,6 +371,22 @@ pub struct MultipleFederationErrors {
     pub errors: Vec<SingleFederationError>,
 }
 
+impl MultipleFederationErrors {
+    pub fn push(&mut self, error: FederationError) {
+        match error {
+            FederationError::SingleFederationError(error) => {
+                self.errors.push(error);
+            }
+            FederationError::MultipleFederationErrors(errors) => {
+                self.errors.extend(errors.errors);
+            }
+            FederationError::AggregateFederationError(errors) => {
+                self.errors.extend(errors.causes);
+            }
+        }
+    }
+}
+
 impl Display for MultipleFederationErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "The following errors occurred:")?;
