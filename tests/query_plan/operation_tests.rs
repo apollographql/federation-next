@@ -101,8 +101,10 @@ type T {
   v2: String
 }
 "#;
-    let (schema, mut executable_document) =
-        apollo_compiler::parse_mixed(operation_with_directives_different_arg_order, "document.graphql");
+    let (schema, mut executable_document) = apollo_compiler::parse_mixed(
+        operation_with_directives_different_arg_order,
+        "document.graphql",
+    );
     if let Some((_, operation)) = executable_document.named_operations.first_mut() {
         let operation = operation.make_mut();
         normalize_operation(operation, &schema, &executable_document.fragments);
@@ -343,8 +345,10 @@ type T {
   v2: String
 }
 "#;
-    let (schema, mut executable_document) =
-        apollo_compiler::parse_mixed(operation_fragments_with_directives_args_order, "document.graphql");
+    let (schema, mut executable_document) = apollo_compiler::parse_mixed(
+        operation_fragments_with_directives_args_order,
+        "document.graphql",
+    );
     if let Some((_, operation)) = executable_document.named_operations.first_mut() {
         let operation = operation.make_mut();
         normalize_operation(operation, &schema, &executable_document.fragments);
