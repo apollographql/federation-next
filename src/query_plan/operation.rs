@@ -1,7 +1,5 @@
 use apollo_compiler::ast::{Argument, DirectiveList, FieldDefinition, Name, NamedType};
-use apollo_compiler::executable::{
-    Field, Fragment, InlineFragment, Operation, Selection, SelectionSet,
-};
+use apollo_compiler::executable::{Field, Fragment, InlineFragment, Operation, Selection, SelectionSet};
 use apollo_compiler::{Node, Schema};
 use indexmap::IndexMap;
 
@@ -211,7 +209,7 @@ fn selection_field_key(field: &Field) -> String {
     // TODO args
     let mut result = format!("{}", field.name);
     if !field.directives.is_empty() {
-        result.push_str(format!(" {}", field.directives).as_str())
+        result.push_str(selection_directive_key(&field.directives).as_str());
     }
     result
 }
@@ -225,9 +223,17 @@ fn selection_inline_fragment_key(fragment: &InlineFragment) -> String {
             .map_or("".to_owned(), |t| format!(" on {}", t))
     );
     if !fragment.directives.is_empty() {
-        result.push_str(format!(" {}", fragment.directives).as_str())
+        result.push_str(selection_directive_key(&fragment.directives).as_str());
     }
     result
+}
+
+fn selection_directive_key(directives: &DirectiveList) -> String {
+    directives.iter().map(|d| {
+        let mut d = d.clone();
+        d.make_mut().arguments.sort_by(|a1, a2| a1.name.cmp(&a2.name));
+        format!("{}", d)
+    }).collect::<Vec<String>>().join(", ")
 }
 
 fn flatten_selections(selections: &IndexMap<String, NormalizedSelection>) -> Vec<Selection> {
