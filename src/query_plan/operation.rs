@@ -50,16 +50,6 @@ impl NormalizedSelectionSet {
     }
 }
 
-// impl From<SelectionSet> for NormalizedSelectionSet {
-//     fn from(value: SelectionSet) -> Self {
-//         let mut normalized = NormalizedSelectionSet {
-//             ty: value.ty.clone(),
-//             selections: IndexMap::new()
-//         };
-//         normalized
-//     }
-// }
-
 impl From<NormalizedSelectionSet> for SelectionSet {
     fn from(val: NormalizedSelectionSet) -> Self {
         SelectionSet {
