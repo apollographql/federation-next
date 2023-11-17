@@ -1184,6 +1184,7 @@ fn join_graph_enum_type(subgraphs_and_enum_values: &Vec<(&Subgraph, Name)>) -> (
     (join_graph_enum_name, join_graph_enum_type)
 }
 
+// TODO use apollo_compiler::executable::FieldSet
 fn parse_keys<'a>(
     directives: impl Iterator<Item = &'a Component<Directive>> + Sized,
 ) -> HashSet<&'a str> {
