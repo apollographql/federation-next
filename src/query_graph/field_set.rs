@@ -1,22 +1,20 @@
 use crate::error::{FederationError, MultipleFederationErrors, SingleFederationError};
-use crate::schema::position::CompositeTypeDefinitionPosition;
 use apollo_compiler::executable::{FieldSet, SelectionSet};
+use apollo_compiler::schema::NamedType;
 use apollo_compiler::{NodeStr, Schema};
 
 // TODO: In the JS codebase, this optionally runs an additional validation to forbid aliases, and
 // has some error-rewriting to help give the user better hints around non-existent fields.
 pub(super) fn parse_field_set(
     schema: &Schema,
-    parent_composite_type_definition_position: CompositeTypeDefinitionPosition,
+    parent_type_name: NamedType,
     value: NodeStr,
 ) -> Result<SelectionSet, FederationError> {
     // Note this parsing takes care of adding curly braces ("{" and "}") if they aren't in the
     // string.
     let field_set = FieldSet::parse(
         schema,
-        parent_composite_type_definition_position
-            .type_name()
-            .clone(),
+        parent_type_name,
         value.as_str(),
         "field_set.graphql",
     );

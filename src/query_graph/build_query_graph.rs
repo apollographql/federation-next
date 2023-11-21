@@ -1104,7 +1104,7 @@ impl FederatedQueryGraphBuilder {
                 };
                 let conditions = Node::new(parse_field_set(
                     schema.schema(),
-                    type_pos.clone().into(),
+                    type_pos.type_name().clone(),
                     application.fields.clone(),
                 )?);
 
@@ -1227,7 +1227,9 @@ impl FederatedQueryGraphBuilder {
                                 other_schema.get_type(implementation_type_in_supergraph_pos.type_name.clone())?.try_into()?;
                             let Ok(implementation_conditions) = parse_field_set(
                                 other_schema.schema(),
-                                implementation_type_in_other_subgraph_pos.clone(),
+                                implementation_type_in_other_subgraph_pos
+                                    .type_name()
+                                    .clone(),
                                 application.fields.clone(),
                             ) else {
                                 // Ignored on purpose: it just means the key is not usable on this
@@ -1292,7 +1294,7 @@ impl FederatedQueryGraphBuilder {
                     .requires_directive_arguments(directive)?;
                 let conditions = parse_field_set(
                     schema.schema(),
-                    field_definition_position.parent().clone(),
+                    field_definition_position.parent().type_name().clone(),
                     application.fields,
                 )?;
                 all_conditions.push(conditions);
@@ -1351,8 +1353,11 @@ impl FederatedQueryGraphBuilder {
                     .provides_directive_arguments(directive)?;
                 let field_type_pos: CompositeTypeDefinitionPosition =
                     field_type_pos.clone().try_into()?;
-                let conditions =
-                    parse_field_set(schema.schema(), field_type_pos, application.fields)?;
+                let conditions = parse_field_set(
+                    schema.schema(),
+                    field_type_pos.type_name().clone(),
+                    application.fields,
+                )?;
                 all_conditions.push(conditions);
             }
             if all_conditions.is_empty() {
@@ -1774,7 +1779,7 @@ impl FederatedQueryGraphBuilder {
                 };
                 let conditions = Node::new(parse_field_set(
                     schema.schema(),
-                    type_in_supergraph_pos.clone().into(),
+                    type_in_supergraph_pos.type_name.clone(),
                     NodeStr::from_static(&"__typename"),
                 )?);
                 for implementation_type_in_supergraph_pos in self

@@ -1803,7 +1803,7 @@ fn remove_inactive_applications(
                 let fields = federation_spec_definition
                     .provides_directive_arguments(directive)?
                     .fields;
-                let parent_type_pos = schema
+                let parent_type_pos: CompositeTypeDefinitionPosition = schema
                     .get_type(field.ty.inner_named_type().clone())?
                     .try_into()?;
                 (fields, parent_type_pos)
@@ -1812,10 +1812,11 @@ fn remove_inactive_applications(
                 let fields = federation_spec_definition
                     .requires_directive_arguments(directive)?
                     .fields;
-                let parent_type_pos = object_or_interface_field_definition_position
-                    .parent()
-                    .clone()
-                    .into();
+                let parent_type_pos: CompositeTypeDefinitionPosition =
+                    object_or_interface_field_definition_position
+                        .parent()
+                        .clone()
+                        .into();
                 (fields, parent_type_pos)
             }
         };
@@ -1824,7 +1825,8 @@ fn remove_inactive_applications(
         // directives instead of returning error here, as it pollutes the list of error messages
         // during composition (another site in composition will properly check for field set
         // validity and give better error messaging).
-        let mut fields = parse_field_set(schema.schema(), parent_type_pos, fields)?;
+        let mut fields =
+            parse_field_set(schema.schema(), parent_type_pos.type_name().clone(), fields)?;
         let is_modified = remove_non_external_leaf_fields(schema, &mut fields)?;
         if is_modified {
             let replacement_directive = if fields.selections.is_empty() {
