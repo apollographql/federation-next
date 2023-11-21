@@ -350,7 +350,7 @@ type Foo {
     baz
   }
 }"#;
-            let actual = format!("{}", operation);
+            let actual = operation.to_string();
             assert_eq!(expected, actual);
         }
     }
