@@ -9,7 +9,21 @@ use indexmap::IndexMap;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedSelectionSet {
     pub ty: NamedType,
-    pub selections: IndexMap<String, NormalizedSelection>,
+    pub selections: NormalizedSelectionMap,
+}
+
+pub type NormalizedSelectionMap = IndexMap<NormalizedSelectionKey, NormalizedSelection>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum NormalizedSelectionKey {
+    Field {
+        name: Name,
+        directives: DirectiveList,
+    },
+    InlineFragment {
+        type_condition: Option<Name>,
+        directives: DirectiveList,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,18 +79,18 @@ impl From<NormalizedSelectionSet> for SelectionSet {
 fn normalize_selections(
     selections: &Vec<Selection>,
     fragments: &IndexMap<Name, Node<Fragment>>,
-) -> IndexMap<String, NormalizedSelection> {
-    let mut normalized: IndexMap<String, NormalizedSelection> = IndexMap::new();
+) -> NormalizedSelectionMap {
+    let mut normalized = NormalizedSelectionMap::new();
     for selection in selections {
         match selection {
             Selection::Field(field) => {
                 let expanded_selection_set =
                     normalize_selections(&field.selection_set.selections.to_owned(), fragments);
-                let key = selection_field_key(field);
 
-                if let NormalizedSelection::NormalizedField(field_entry) =
-                    normalized.entry(key.to_owned()).or_insert(
-                        NormalizedSelection::NormalizedField(Node::new(NormalizedField {
+                if let NormalizedSelection::NormalizedField(field_entry) = normalized
+                    .entry(field.into())
+                    .or_insert(NormalizedSelection::NormalizedField(Node::new(
+                        NormalizedField {
                             definition: field.definition.clone(),
                             alias: field.alias.clone(),
                             name: field.name.clone(),
@@ -86,8 +100,8 @@ fn normalize_selections(
                                 ty: field.selection_set.ty.clone(),
                                 selections: IndexMap::new(),
                             },
-                        })),
-                    )
+                        },
+                    )))
                 {
                     let merged_selections = merge_selections(
                         &field_entry.selection_set.selections,
@@ -115,10 +129,9 @@ fn normalize_selections(
                     &inline_fragment.selection_set.selections.to_owned(),
                     fragments,
                 );
-                let key = selection_inline_fragment_key(inline_fragment);
 
                 if let NormalizedSelection::NormalizedInlineFragment(fragment_entry) = normalized
-                    .entry(key.to_owned())
+                    .entry(inline_fragment.into())
                     .or_insert(NormalizedSelection::NormalizedInlineFragment(Node::new(
                         NormalizedInlineFragment {
                             type_condition: inline_fragment.type_condition.clone(),
@@ -145,9 +158,9 @@ fn normalize_selections(
 }
 
 fn merge_selections(
-    source: &IndexMap<String, NormalizedSelection>,
-    to_merge: &IndexMap<String, NormalizedSelection>,
-) -> IndexMap<String, NormalizedSelection> {
+    source: &NormalizedSelectionMap,
+    to_merge: &NormalizedSelectionMap,
+) -> NormalizedSelectionMap {
     let mut merged_selections = source.clone();
     for (key, selection) in to_merge {
         if source.contains_key(key) {
@@ -197,44 +210,37 @@ fn merge_selections(
     }
     merged_selections
 }
-fn selection_field_key(field: &Field) -> String {
-    // TODO args
-    let mut result = format!("{}", field.name);
-    if !field.directives.is_empty() {
-        result.push_str(selection_directive_key(&field.directives).as_str());
+
+impl From<&'_ Node<Field>> for NormalizedSelectionKey {
+    fn from(field: &'_ Node<Field>) -> Self {
+        Self::Field {
+            name: field.name.clone(),
+            directives: directives_with_sorted_arguments(&field.directives),
+        }
     }
-    result
 }
 
-fn selection_inline_fragment_key(fragment: &InlineFragment) -> String {
-    let mut result = format!(
-        "...{}",
-        fragment
-            .type_condition
-            .clone()
-            .map_or("".to_owned(), |t| format!(" on {}", t))
-    );
-    if !fragment.directives.is_empty() {
-        result.push_str(selection_directive_key(&fragment.directives).as_str());
+impl From<&'_ Node<InlineFragment>> for NormalizedSelectionKey {
+    fn from(inline_fragment: &'_ Node<InlineFragment>) -> Self {
+        Self::InlineFragment {
+            type_condition: inline_fragment.type_condition.clone(),
+            directives: directives_with_sorted_arguments(&inline_fragment.directives),
+        }
     }
-    result
 }
 
-fn selection_directive_key(directives: &DirectiveList) -> String {
+fn directives_with_sorted_arguments(directives: &DirectiveList) -> DirectiveList {
+    let mut directives = directives.clone();
+    for directive in &mut directives {
+        directive
+            .make_mut()
+            .arguments
+            .sort_by(|a1, a2| a1.name.cmp(&a2.name))
+    }
     directives
-        .iter()
-        .map(|d| {
-            let mut d = d.clone();
-            d.make_mut()
-                .arguments
-                .sort_by(|a1, a2| a1.name.cmp(&a2.name));
-            format!("{}", d)
-        })
-        .collect::<Vec<String>>()
-        .join(", ")
 }
 
-fn flatten_selections(selections: &IndexMap<String, NormalizedSelection>) -> Vec<Selection> {
+fn flatten_selections(selections: &NormalizedSelectionMap) -> Vec<Selection> {
     let mut flattened = vec![];
     for selection in selections.values() {
         match selection {
@@ -287,7 +293,10 @@ pub fn normalize_operation(
     // removes top level introspection
     normalized_selection_set
         .selections
-        .retain(|key, _| !key.starts_with("__"));
+        .retain(|key, _| match key {
+            NormalizedSelectionKey::Field { name, .. } => !name.starts_with("__"),
+            NormalizedSelectionKey::InlineFragment { .. } => true,
+        });
 
     // flatten back to vec
     operation.selection_set = SelectionSet::from(normalized_selection_set);
