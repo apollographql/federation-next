@@ -424,7 +424,7 @@ type Query {
             apollo_compiler::parse_mixed(operation_with_introspection, "document.graphql");
         if let Some(operation) = executable_document
             .named_operations
-            .get_mut(&Name::new_unchecked(NodeStr::new("TestIntrospectionQuery")))
+            .get_mut("TestIntrospectionQuery")
         {
             let operation = operation.make_mut();
             normalize_operation(operation, &schema, &executable_document.fragments);
