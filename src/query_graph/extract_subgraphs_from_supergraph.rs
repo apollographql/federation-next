@@ -32,10 +32,10 @@ use lazy_static::lazy_static;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 
-// Assumes the given schema has been validated.
-//
-// TODO: A lot of common data gets passed around in the functions called by this one, considering
-// making an e.g. ExtractSubgraphs struct to contain the data.
+/// Assumes the given schema has been validated.
+///
+/// TODO: A lot of common data gets passed around in the functions called by this one, considering
+/// making an e.g. ExtractSubgraphs struct to contain the data.
 pub(super) fn extract_subgraphs_from_supergraph(
     supergraph_schema: &FederationSchema,
     validate_extracted_subgraphs: Option<bool>,
@@ -196,7 +196,7 @@ fn collect_empty_subgraphs(
     ))
 }
 
-// TODO: Use the JS/programmatic approach instead of hard-coding definitions.
+/// TODO: Use the JS/programmatic approach instead of hard-coding definitions.
 pub(crate) fn new_empty_fed_2_subgraph_schema() -> Result<FederationSchema, FederationError> {
     FederationSchema::new(Schema::parse(
         r#"
@@ -1711,15 +1711,15 @@ fn add_federation_operations(
     Ok(())
 }
 
-// It makes no sense to have a @requires/@provides on a non-external leaf field, and we usually
-// reject it during schema validation. But this function remove such fields for when:
-//  1. We extract subgraphs from a Fed 1 supergraph, where such validations haven't been run.
-//  2. Fed 1 subgraphs are upgraded to Fed 2 subgraphs.
-//
-// The reason we do this (and generally reject it) is that such @requires/@provides have a negative
-// impact on later query planning, because it sometimes make us try type-exploding some interfaces
-// unnecessarily. Besides, if a usage adds something useless, there is a chance it hasn't fully
-// understood something, and warning about that fact through an error is more helpful.
+/// It makes no sense to have a @requires/@provides on a non-external leaf field, and we usually
+/// reject it during schema validation. But this function remove such fields for when:
+///  1. We extract subgraphs from a Fed 1 supergraph, where such validations haven't been run.
+///  2. Fed 1 subgraphs are upgraded to Fed 2 subgraphs.
+///
+/// The reason we do this (and generally reject it) is that such @requires/@provides have a negative
+/// impact on later query planning, because it sometimes make us try type-exploding some interfaces
+/// unnecessarily. Besides, if a usage adds something useless, there is a chance it hasn't fully
+/// understood something, and warning about that fact through an error is more helpful.
 fn remove_inactive_requires_and_provides_from_subgraph(
     schema: &mut FederationSchema,
 ) -> Result<(), FederationError> {
@@ -1856,8 +1856,8 @@ fn remove_inactive_applications(
     Ok(())
 }
 
-// Removes any non-external leaf fields from the selection set, returning true if the selection
-// set was modified.
+/// Removes any non-external leaf fields from the selection set, returning true if the selection
+/// set was modified.
 fn remove_non_external_leaf_fields(
     schema: &FederationSchema,
     selection_set: &mut SelectionSet,

@@ -26,12 +26,12 @@ use std::hash::Hash;
 use std::sync::Arc;
 use strum::IntoEnumIterator;
 
-// Builds a "federated" query graph based on the provided supergraph and API schema.
-//
-// A federated query graph is one that is used to reason about queries made by a router against a
-// set of federated subgraph services.
-//
-// Assumes the given schemas have been validated.
+/// Builds a "federated" query graph based on the provided supergraph and API schema.
+///
+/// A federated query graph is one that is used to reason about queries made by a router against a
+/// set of federated subgraph services.
+///
+/// Assumes the given schemas have been validated.
 pub fn build_federated_query_graph(
     supergraph_schema: Arc<FederationSchema>,
     api_schema: Arc<FederationSchema>,
@@ -195,8 +195,8 @@ struct SchemaQueryGraphBuilderSubgraphData {
 }
 
 impl SchemaQueryGraphBuilder {
-    // If api_schema is given, then this builder assumes the schema is a subgraph schema, and that
-    // a subgraph query graph is being built.
+    /// If api_schema is given, then this builder assumes the schema is a subgraph schema, and that
+    /// a subgraph query graph is being built.
     fn new(
         query_graph: QueryGraph,
         source: NodeStr,
@@ -264,12 +264,12 @@ impl SchemaQueryGraphBuilder {
         })
     }
 
-    // Adds a node for the provided root object type (marking that node as a root node for the
-    // provided `kind`) and recursively descends into the type definition to add the related nodes
-    // and edges.
-    //
-    // In other words, calling this method on, say, the root query type of a schema will add nodes
-    // and edges for all the types reachable from that root query type.
+    /// Adds a node for the provided root object type (marking that node as a root node for the
+    /// provided `kind`) and recursively descends into the type definition to add the related nodes
+    /// and edges.
+    ///
+    /// In other words, calling this method on, say, the root query type of a schema will add nodes
+    /// and edges for all the types reachable from that root query type.
     fn add_recursively_from_root(
         &mut self,
         root: SchemaRootDefinitionPosition,
@@ -296,9 +296,9 @@ impl SchemaQueryGraphBuilder {
         self.base.set_as_root(node, root.root_kind.clone())
     }
 
-    // Adds in a node for the provided type in the in-building query graph, and recursively adds
-    // edges and nodes corresponding to the type definition (so for object types, it will add edges
-    // for each field and recursively add nodes for each field's type, etc...).
+    /// Adds in a node for the provided type in the in-building query graph, and recursively adds
+    /// edges and nodes corresponding to the type definition (so for object types, it will add edges
+    /// for each field and recursively add nodes for each field's type, etc...).
     fn add_type_recursively(
         &mut self,
         output_type_definition_position: OutputTypeDefinitionPosition,
@@ -579,72 +579,72 @@ impl SchemaQueryGraphBuilder {
         Ok(())
     }
 
-    // We've added edges that avoid type-explosion _directly_ from an interface, but it means that
-    // so far we always type-explode unions to all their implementation types, and always
-    // type-explode when we go through 2 unrelated interfaces. For instance, say we have
-    // ```
-    // type Query {
-    //   i1: I1
-    //   i2: I2
-    //   u: U
-    // }
-    //
-    // interface I1 {
-    //   x: Int
-    // }
-    //
-    // interface I2 {
-    //   y: Int
-    // }
-    //
-    // type A implements I1 & I2 {
-    //   x: Int
-    //   y: Int
-    // }
-    //
-    // type B implements I1 & I2 {
-    //   x: Int
-    //   y: Int
-    // }
-    //
-    // union U = A | B
-    // ```
-    // If we query:
-    // ```
-    // {
-    //   u {
-    //     ... on I1 {
-    //       x
-    //     }
-    //   }
-    // }
-    // ```
-    // then we currently have no edge between `U` and `I1` whatsoever, so query planning would have
-    // to type-explode `U` even though that's not necessary (assuming everything is in the same
-    // subgraph, we'd want to send the query "as-is").
-    // Same thing for:
-    // ```
-    // {
-    //   i1 {
-    //     x
-    //     ... on I2 {
-    //       y
-    //     }
-    //   }
-    // }
-    // ```
-    // due to not having edges from `I1` to `I2` (granted, in that example, type-exploding is not
-    // all that worse, but it gets worse with more implementations/fields).
-    //
-    // And so this method is about adding such edges. Essentially, every time 2 abstract types have
-    // an intersection of runtime types > 1, we add an edge.
-    //
-    // Do note that in practice we only add those edges when we build a query graph for query
-    // planning purposes, because not type-exploding is only an optimization but type-exploding will
-    // always "work" and for composition validation, we don't care about being optimal, while
-    // limiting edges make validation faster by limiting the choices to explore. Also, query
-    // planning is careful, as it walks those edges, to compute the actual possible runtime types we
-    // could have to avoid later type-exploding in impossible runtime types.
+    /// We've added edges that avoid type-explosion _directly_ from an interface, but it means that
+    /// so far we always type-explode unions to all their implementation types, and always
+    /// type-explode when we go through 2 unrelated interfaces. For instance, say we have
+    /// ```graphql
+    /// type Query {
+    ///   i1: I1
+    ///   i2: I2
+    ///   u: U
+    /// }
+    ///
+    /// interface I1 {
+    ///   x: Int
+    /// }
+    ///
+    /// interface I2 {
+    ///   y: Int
+    /// }
+    ///
+    /// type A implements I1 & I2 {
+    ///   x: Int
+    ///   y: Int
+    /// }
+    ///
+    /// type B implements I1 & I2 {
+    ///   x: Int
+    ///   y: Int
+    /// }
+    ///
+    /// union U = A | B
+    /// ```
+    /// If we query:
+    /// ```graphql
+    /// {
+    ///   u {
+    ///     ... on I1 {
+    ///       x
+    ///     }
+    ///   }
+    /// }
+    /// ```
+    /// then we currently have no edge between `U` and `I1` whatsoever, so query planning would have
+    /// to type-explode `U` even though that's not necessary (assuming everything is in the same
+    /// subgraph, we'd want to send the query "as-is").
+    /// Same thing for:
+    /// ```graphql
+    /// {
+    ///   i1 {
+    ///     x
+    ///     ... on I2 {
+    ///       y
+    ///     }
+    ///   }
+    /// }
+    /// ```
+    /// due to not having edges from `I1` to `I2` (granted, in that example, type-exploding is not
+    /// all that worse, but it gets worse with more implementations/fields).
+    ///
+    /// And so this method is about adding such edges. Essentially, every time 2 abstract types have
+    /// an intersection of runtime types > 1, we add an edge.
+    ///
+    /// Do note that in practice we only add those edges when we build a query graph for query
+    /// planning purposes, because not type-exploding is only an optimization but type-exploding
+    /// will always "work" and for composition validation, we don't care about being optimal, while
+    /// limiting edges make validation faster by limiting the choices to explore. Also, query
+    /// planning is careful, as it walks those edges, to compute the actual possible runtime types
+    /// we could have to avoid later type-exploding in impossible runtime types.
     fn add_additional_abstract_type_edges(&mut self) -> Result<(), FederationError> {
         // As mentioned above, we only care about this on subgraph query graphs during query
         // planning. But if this ever gets called in some other code path, ignore this.
@@ -831,24 +831,24 @@ impl SchemaQueryGraphBuilder {
         Ok(())
     }
 
-    // In a subgraph, all entity object types will be "automatically" reachable (from the root query
-    // type) because of the `_entities` field (it returns `_Entity`, which is a union of all entity
-    // object types, making those reachable.
-    //
-    // However, we also want entity interface types (interfaces with an @key) to be reachable in a
-    // similar way, because the `_entities` field is also technically the one resolving them, and
-    // not having them reachable would break plenty of code that assume that by traversing a query
-    // graph from root, we get to everything that can be queried.
-    //
-    // But because GraphQL unions cannot have interface types, they are not part of the `_Entity`
-    // union (and cannot be). This is ok as far as the typing of the schema goes, because even when
-    // `_entities` is called to resolve an interface type, it technically returns a concrete object,
-    // and so, since every implementation of an entity interface is also an entity, this is captured
-    // by the `_Entity` union.
-    //
-    // But it does mean we want to manually add the corresponding edges now for interfaces, or
-    // @key on interfaces wouldn't work properly (at least, when the interface is not otherwise
-    // reachable by an operation on the subgraph).
+    /// In a subgraph, all entity object types will be "automatically" reachable (from the root
+    /// query type) because of the `_entities` field (it returns `_Entity`, which is a union of all
+    /// entity object types, making those reachable.
+    ///
+    /// However, we also want entity interface types (interfaces with an @key) to be reachable in a
+    /// similar way, because the `_entities` field is also technically the one resolving them, and
+    /// not having them reachable would break plenty of code that assume that by traversing a query
+    /// graph from root, we get to everything that can be queried.
+    ///
+    /// But because GraphQL unions cannot have interface types, they are not part of the `_Entity`
+    /// union (and cannot be). This is ok as far as the typing of the schema goes, because even when
+    /// `_entities` is called to resolve an interface type, it technically returns a concrete
+    /// object, and so, since every implementation of an entity interface is also an entity, this is
+    /// captured by the `_Entity` union.
+    ///
+    /// But it does mean we want to manually add the corresponding edges now for interfaces, or @key
+    /// on interfaces wouldn't work properly (at least, when the interface is not otherwise
+    /// reachable by an operation on the subgraph).
     fn add_interface_entity_edges(&mut self) -> Result<(), FederationError> {
         let Some(subgraph) = &self.subgraph else {
             return Err(SingleFederationError::Internal {
@@ -994,10 +994,10 @@ impl FederatedQueryGraphBuilder {
         Ok(())
     }
 
-    // Add the edges from supergraph roots to the subgraph ones. Also, for each root kind, we also
-    // add edges from the corresponding root type of each subgraph to the root type of other
-    // subgraphs (and for @defer, like for @key, we also add self-node loops). This encodes the fact
-    // that if a field returns a root type, we can always query any subgraph from that point.
+    /// Add the edges from supergraph roots to the subgraph ones. Also, for each root kind, we also
+    /// add edges from the corresponding root type of each subgraph to the root type of other
+    /// subgraphs (and for @defer, like for @key, we also add self-node loops). This encodes the
+    /// fact that if a field returns a root type, we can always query any subgraph from that point.
     fn add_root_edges(&mut self) -> Result<(), FederationError> {
         let mut new_edges = Vec::new();
         for (source, root_kinds_to_nodes) in &self.base.query_graph.root_kinds_to_nodes_by_source {
@@ -1044,7 +1044,7 @@ impl FederatedQueryGraphBuilder {
         Ok(())
     }
 
-    // Handle @key by adding the appropriate key-resolution edges.
+    /// Handle @key by adding the appropriate key-resolution edges.
     fn handle_key(&mut self) -> Result<(), FederationError> {
         // We'll look at adding edges from "other subgraphs" to the current type. So the tail of
         // all the edges we'll build here is always going to be the same.
@@ -1253,7 +1253,7 @@ impl FederatedQueryGraphBuilder {
         Ok(())
     }
 
-    // Handle @requires by updating the appropriate field-collecting edges.
+    /// Handle @requires by updating the appropriate field-collecting edges.
     fn handle_requires(&mut self) -> Result<(), FederationError> {
         // We'll look at any field-collecting edges with @requires and adding their conditions to
         // those edges.
@@ -1322,7 +1322,7 @@ impl FederatedQueryGraphBuilder {
         Ok(())
     }
 
-    // Handle @provides by copying the appropriate nodes/edges.
+    /// Handle @provides by copying the appropriate nodes/edges.
     fn handle_provides(&mut self) -> Result<(), FederationError> {
         let mut provide_id = 0;
         for edge in self.base.query_graph.graph.edge_indices() {
@@ -1609,7 +1609,7 @@ impl FederatedQueryGraphBuilder {
         Ok(())
     }
 
-    // Copies the given node and its outgoing edges, returning the new node's index.
+    /// Copies the given node and its outgoing edges, returning the new node's index.
     fn copy_for_provides(
         base: &mut BaseQueryGraphBuilder,
         node: NodeIndex,
@@ -1673,7 +1673,7 @@ impl FederatedQueryGraphBuilder {
         Ok((new_node, type_pos))
     }
 
-    // Handle @interfaceObject by adding the appropriate fake-downcast self-edges.
+    /// Handle @interfaceObject by adding the appropriate fake-downcast self-edges.
     fn handle_interface_object(&mut self) -> Result<(), FederationError> {
         // There are cases where only an/some implementation(s) of an interface are queried, and
         // that could apply to an interface that is an @interfaceObject in some subgraph. Consider
@@ -1806,7 +1806,7 @@ impl FederatedQueryGraphBuilder {
         Ok(())
     }
 
-    // Precompute which followup edges for a given edge are non-trivial.
+    /// Precompute which followup edges for a given edge are non-trivial.
     fn precompute_non_trivial_followup_edges(&mut self) -> Result<(), FederationError> {
         for edge in self.base.query_graph.graph.edge_indices() {
             let edge_weight = self.base.query_graph.edge_weight(edge)?;
