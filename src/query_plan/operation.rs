@@ -338,7 +338,7 @@ type Foo {
 
         if let Some(operation) = executable_document
             .named_operations
-            .get_mut(&Name::new_unchecked(NodeStr::new("NamedFragmentQuery")))
+            .get_mut("NamedFragmentQuery")
         {
             let operation = operation.make_mut();
             normalize_operation(operation, &schema, &executable_document.fragments);
