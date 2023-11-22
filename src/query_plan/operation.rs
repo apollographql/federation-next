@@ -85,7 +85,7 @@ fn normalize_selections(
         match selection {
             Selection::Field(field) => {
                 let expanded_selection_set =
-                    normalize_selections(&field.selection_set.selections.to_owned(), fragments);
+                    normalize_selections(&field.selection_set.selections, fragments);
 
                 if let NormalizedSelection::NormalizedField(field_entry) = normalized
                     .entry(field.into())
@@ -107,16 +107,14 @@ fn normalize_selections(
                         &field_entry.selection_set.selections,
                         &expanded_selection_set,
                     );
-                    let mut selection_set = field_entry.selection_set.clone();
-                    selection_set.selections = merged_selections;
-                    field_entry.make_mut().selection_set = selection_set;
+                    field_entry.make_mut().selection_set.selections = merged_selections;
                     // field_entry.selection_set.selections = merged_selections;
                 }
             }
             Selection::FragmentSpread(named_fragment) => {
                 if let Some(fragment) = fragments.get(&named_fragment.fragment_name) {
                     let expanded_selection_set = normalize_selections(
-                        &fragment.selection_set.selections.to_owned(),
+                        &fragment.selection_set.selections,
                         fragments,
                     );
                     normalized = merge_selections(&normalized, &expanded_selection_set);
@@ -126,7 +124,7 @@ fn normalize_selections(
             }
             Selection::InlineFragment(inline_fragment) => {
                 let expanded_selection_set = normalize_selections(
-                    &inline_fragment.selection_set.selections.to_owned(),
+                    &inline_fragment.selection_set.selections,
                     fragments,
                 );
 
@@ -147,9 +145,7 @@ fn normalize_selections(
                         &fragment_entry.selection_set.selections,
                         &expanded_selection_set,
                     );
-                    let mut selection_set = fragment_entry.selection_set.clone();
-                    selection_set.selections = merged_selections;
-                    fragment_entry.make_mut().selection_set = selection_set;
+                    fragment_entry.make_mut().selection_set.selections = merged_selections;
                 }
             }
         }
@@ -214,7 +210,7 @@ fn merge_selections(
 impl From<&'_ Node<Field>> for NormalizedSelectionKey {
     fn from(field: &'_ Node<Field>) -> Self {
         Self::Field {
-            name: field.name.clone(),
+            name: field.alias.clone().unwrap_or_else(|| { field.name.clone() }),
             directives: directives_with_sorted_arguments(&field.directives),
         }
     }
