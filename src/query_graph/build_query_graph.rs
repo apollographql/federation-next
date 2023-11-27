@@ -150,7 +150,7 @@ impl BaseQueryGraphBuilder {
             provide_id: None,
             root_kind: None,
         });
-        if let QueryGraphNodeType::SubgraphType(pos) = type_ {
+        if let QueryGraphNodeType::SchemaType(pos) = type_ {
             self.query_graph
                 .types_to_nodes_mut()?
                 .entry(pos.type_name().clone())
@@ -1056,7 +1056,7 @@ impl FederatedQueryGraphBuilder {
                 continue;
             }
             // Ignore federated root nodes.
-            let QueryGraphNodeType::SubgraphType(type_pos) = &tail_weight.type_ else {
+            let QueryGraphNodeType::SchemaType(type_pos) = &tail_weight.type_ else {
                 continue;
             };
             let schema = self.base.query_graph.schema_by_source(source)?;
@@ -1494,7 +1494,7 @@ impl FederatedQueryGraphBuilder {
                             // done. Otherwise, we should copy the node, add the edge, and continue
                             // propagating.
                             let node_weight = base.query_graph.node_weight(node)?;
-                            let QueryGraphNodeType::SubgraphType(node_type_pos) =
+                            let QueryGraphNodeType::SchemaType(node_type_pos) =
                                 node_weight.type_.clone()
                             else {
                                 return Err(SingleFederationError::Internal {
@@ -1639,7 +1639,7 @@ impl FederatedQueryGraphBuilder {
         provide_id: u32,
     ) -> Result<(NodeIndex, OutputTypeDefinitionPosition), FederationError> {
         let node_weight = base.query_graph.node_weight(node)?;
-        let QueryGraphNodeType::SubgraphType(type_pos) = node_weight.type_.clone() else {
+        let QueryGraphNodeType::SchemaType(type_pos) = node_weight.type_.clone() else {
             return Err(SingleFederationError::Internal {
                 message: "Unexpectedly found @provides for federated root node".to_owned(),
             }

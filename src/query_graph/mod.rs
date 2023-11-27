@@ -52,13 +52,13 @@ impl Display for QueryGraphNode {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum QueryGraphNodeType {
-    SubgraphType(OutputTypeDefinitionPosition),
+    SchemaType(OutputTypeDefinitionPosition),
     FederatedRootType(SchemaRootDefinitionKind),
 }
 
 impl From<OutputTypeDefinitionPosition> for QueryGraphNodeType {
     fn from(value: OutputTypeDefinitionPosition) -> Self {
-        QueryGraphNodeType::SubgraphType(value)
+        QueryGraphNodeType::SchemaType(value)
     }
 }
 
@@ -71,7 +71,7 @@ impl From<SchemaRootDefinitionKind> for QueryGraphNodeType {
 impl Display for QueryGraphNodeType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            QueryGraphNodeType::SubgraphType(pos) => pos.fmt(f),
+            QueryGraphNodeType::SchemaType(pos) => pos.fmt(f),
             QueryGraphNodeType::FederatedRootType(root_kind) => {
                 write!(f, "[{}]", root_kind)
             }
