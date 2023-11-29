@@ -1301,11 +1301,15 @@ impl FederatedQueryGraphBuilder {
             if all_conditions.is_empty() {
                 continue;
             }
-            // PORT_NOTE: This is an optimization to avoid unnecessary inter-conversion between
+            // PORT_NOTE: I'm not sure when this list will ever not be a singleton list, but it's
+            // like this way in the JS codebase, so we'll mimic the behavior for now.
+            //
+            // TODO: This is an optimization to avoid unnecessary inter-conversion between
             // the apollo-rs operation representation and the federation-next one. This wasn't a
             // problem in the JS codebase, as it would use its own operation representation from
-            // the start. As an aside, I'm not sure when this list will ever not be a singleton
-            // list, but it's like this way in the JS codebase, so we'll mimic the behavior for now.
+            // the start. Eventually when operation processing code is ready and we make the switch
+            // to using the federation-next representation everywhere, we can probably simplify
+            // this.
             let new_conditions = if all_conditions.len() == 1 {
                 all_conditions
                     .pop()
@@ -1363,16 +1367,20 @@ impl FederatedQueryGraphBuilder {
                 continue;
             }
             provide_id += 1;
-            // PORT_NOTE: This is an optimization to avoid unnecessary inter-conversion between
-            // the apollo-rs operation representation and the federation-next one. This wasn't a
-            // problem in the JS codebase, as it would use its own operation representation from
-            // the start. As an aside, I'm not sure when this list will ever not be a singleton
-            // list, but it's like this way in the JS codebase, so we'll mimic the behavior for now.
+            // PORT_NOTE: I'm not sure when this list will ever not be a singleton list, but it's
+            // like this way in the JS codebase, so we'll mimic the behavior for now.
             //
             // Note that the JS codebase had a bug here when there was more than one selection set,
             // where it would copy per @provides application, but only point the field-collecting
             // edge toward the last copy. We do something similar to @requires instead, where we
             // merge the selection sets before into one.
+            //
+            // TODO: This is an optimization to avoid unnecessary inter-conversion between
+            // the apollo-rs operation representation and the federation-next one. This wasn't a
+            // problem in the JS codebase, as it would use its own operation representation from
+            // the start. Eventually when operation processing code is ready and we make the switch
+            // to using the federation-next representation everywhere, we can probably simplify
+            // this.
             let new_conditions = if all_conditions.len() == 1 {
                 all_conditions
                     .pop()
