@@ -1,4 +1,4 @@
-use crate::error::{FederationError, MultipleFederationErrors, SingleFederationError};
+use crate::error::FederationError;
 use apollo_compiler::executable::{FieldSet, SelectionSet};
 use apollo_compiler::schema::NamedType;
 use apollo_compiler::{NodeStr, Schema};
@@ -18,16 +18,7 @@ pub(super) fn parse_field_set(
         value.as_str(),
         "field_set.graphql",
     );
-    field_set
-        .validate(schema)
-        .map_err(|d| MultipleFederationErrors {
-            errors: d
-                .iter()
-                .map(|e| SingleFederationError::InvalidGraphQL {
-                    message: e.message().to_string(),
-                })
-                .collect(),
-        })?;
+    field_set.validate(schema)?;
     merge_selection_sets(&[&field_set.selection_set])
 }
 
