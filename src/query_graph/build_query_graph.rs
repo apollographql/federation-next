@@ -18,11 +18,10 @@ use crate::schema::FederationSchema;
 use apollo_compiler::executable::{Selection, SelectionSet};
 use apollo_compiler::schema::{DirectiveList as ComponentDirectiveList, ExtendedType, Name};
 use apollo_compiler::{Node, NodeStr, Schema};
-use indexmap::{Equivalent, IndexMap, IndexSet};
+use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
-use std::hash::Hash;
 use std::sync::Arc;
 use strum::IntoEnumIterator;
 
@@ -1943,13 +1942,10 @@ impl FederatedQueryGraphBuilderSubgraphs {
         Ok(subgraphs)
     }
 
-    fn get<Q: ?Sized>(
+    fn get(
         &self,
-        source: &Q,
-    ) -> Result<&FederatedQueryGraphBuilderSubgraphData, FederationError>
-    where
-        Q: Hash + Equivalent<NodeStr>,
-    {
+        source: &str,
+    ) -> Result<&FederatedQueryGraphBuilderSubgraphData, FederationError> {
         self.map.get(source).ok_or_else(|| {
             SingleFederationError::Internal {
                 message: "Subgraph data unexpectedly missing".to_owned(),

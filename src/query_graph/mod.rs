@@ -7,7 +7,7 @@ use crate::schema::FederationSchema;
 use apollo_compiler::executable::SelectionSet;
 use apollo_compiler::schema::{Name, NamedType};
 use apollo_compiler::{Node, NodeStr};
-use indexmap::{Equivalent, IndexMap, IndexSet};
+use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
@@ -314,10 +314,7 @@ impl QueryGraph {
         self.schema_by_source(&self.current_source)
     }
 
-    fn schema_by_source<Q: ?Sized>(&self, source: &Q) -> Result<&FederationSchema, FederationError>
-    where
-        Q: Hash + Equivalent<NodeStr>,
-    {
+    fn schema_by_source(&self, source: &str) -> Result<&FederationSchema, FederationError> {
         self.sources.get(source).ok_or_else(|| {
             SingleFederationError::Internal {
                 message: "Schema unexpectedly missing".to_owned(),
@@ -332,13 +329,10 @@ impl QueryGraph {
         self.types_to_nodes_by_source(&self.current_source)
     }
 
-    fn types_to_nodes_by_source<Q: ?Sized>(
+    fn types_to_nodes_by_source(
         &self,
-        source: &Q,
-    ) -> Result<&IndexMap<NamedType, IndexSet<NodeIndex>>, FederationError>
-    where
-        Q: Hash + Equivalent<NodeStr>,
-    {
+        source: &str,
+    ) -> Result<&IndexMap<NamedType, IndexSet<NodeIndex>>, FederationError> {
         self.types_to_nodes_by_source.get(source).ok_or_else(|| {
             SingleFederationError::Internal {
                 message: "Types-to-nodes map unexpectedly missing".to_owned(),
