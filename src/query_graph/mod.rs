@@ -50,22 +50,10 @@ impl Display for QueryGraphNode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From)]
 pub(crate) enum QueryGraphNodeType {
     SchemaType(OutputTypeDefinitionPosition),
     FederatedRootType(SchemaRootDefinitionKind),
-}
-
-impl From<OutputTypeDefinitionPosition> for QueryGraphNodeType {
-    fn from(value: OutputTypeDefinitionPosition) -> Self {
-        QueryGraphNodeType::SchemaType(value)
-    }
-}
-
-impl From<SchemaRootDefinitionKind> for QueryGraphNodeType {
-    fn from(value: SchemaRootDefinitionKind) -> Self {
-        QueryGraphNodeType::FederatedRootType(value)
-    }
 }
 
 impl Display for QueryGraphNodeType {
