@@ -1,5 +1,9 @@
 use apollo_federation::query_plan::operation::normalize_operation;
 
+//
+// fields
+//
+
 #[test]
 fn merge_same_fields_without_directives() {
     let operation_string = r#"
@@ -205,35 +209,107 @@ type T {
 
 #[test]
 fn do_not_merge_fields_with_defer_directive() {
-    // TODO
-    //test('do not merge @defer directive, even if applied the same way', () => {
-    //       const operation = operationFromDocument(schema, gql`
-    //         query Test {
-    //           t @defer {
-    //             v1
-    //           }
-    //           t @defer {
-    //             v2
-    //           }
-    //         }
-    //       `);
-    //
-    //       expect(operation.toString()).toMatchString(`
-    //         query Test {
-    //           t @defer {
-    //             v1
-    //           }
-    //           t @defer {
-    //             v2
-    //           }
-    //         }
-    //       `);
-    //     });
+    let operation_defer_fields = r#"
+query Test {
+  t @defer {
+    v1
+  }
+  t @defer {
+    v2
+  }
 }
 
-///
-/// fragments
-///
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+    let (schema, mut executable_document) =
+        apollo_compiler::parse_mixed(operation_defer_fields, "document.graphql");
+    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+        let operation = operation.make_mut();
+        normalize_operation(operation, &schema, &executable_document.fragments);
+        let expected = r#"query Test {
+  t @defer {
+    v1
+  }
+  t @defer {
+    v2
+  }
+}"#;
+        let actual = format!("{}", operation);
+        assert_eq!(expected, actual);
+    } else {
+        panic!("unable to parse document")
+    }
+}
+
+#[test]
+fn merge_nested_field_selections() {
+    let nested_operation = r#"
+query Test {
+  t {
+    t1
+    v @defer {
+      v1
+    }
+  }
+  t {
+    t1
+    t2
+    v @defer {
+      v2
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  t1: Int
+  t2: String
+  v: V
+}
+
+type V {
+  v1: Int
+  v2: String
+}
+"#;
+    let (schema, mut executable_document) =
+        apollo_compiler::parse_mixed(nested_operation, "document.graphql");
+    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+        let operation = operation.make_mut();
+        normalize_operation(operation, &schema, &executable_document.fragments);
+        let expected = r#"query Test {
+  t {
+    t1
+    v @defer {
+      v1
+    }
+    t2
+    v @defer {
+      v2
+    }
+  }
+}"#;
+        let actual = format!("{}", operation);
+        assert_eq!(expected, actual);
+    } else {
+        panic!("unable to parse document")
+    }
+}
+
+//
+// inline fragments
+//
+
 #[test]
 fn merge_same_fragment_without_directives() {
     let operation_with_fragments = r#"
@@ -264,10 +340,8 @@ type T {
         normalize_operation(operation, &schema, &executable_document.fragments);
         let expected = r#"query Test {
   t {
-    ... on T {
-      v1
-      v2
-    }
+    v1
+    v2
   }
 }"#;
         let actual = format!("{}", operation);
@@ -397,9 +471,7 @@ type T {
         normalize_operation(operation, &schema, &executable_document.fragments);
         let expected = r#"query Test($skipIf: Boolean!) {
   t {
-    ... on T {
-      v1
-    }
+    v1
     ... on T @skip(if: $skipIf) {
       v2
     }
@@ -461,32 +533,111 @@ type T {
 
 #[test]
 fn do_not_merge_fragments_with_defer_directive() {
-    // TODO
-    //test('do not merge @defer directive, even if applied the same way', () => {
-    //       const operation = operationFromDocument(schema, gql`
-    //         query Test {
-    //           t {
-    //             ... on T @defer {
-    //               v1
-    //             }
-    //             ... on T @defer {
-    //               v2
-    //             }
-    //           }
-    //         }
-    //       `);
-    //
-    //       expect(operation.toString()).toMatchString(`
-    //         query Test {
-    //           t {
-    //             ... on T @defer {
-    //               v1
-    //             }
-    //             ... on T @defer {
-    //               v2
-    //             }
-    //           }
-    //         }
-    //       `);
-    //     });
+    let operation_fragments_with_defer = r#"
+query Test {
+  t {
+    ... on T @defer {
+      v1
+    }
+    ... on T @defer {
+      v2
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+    let (schema, mut executable_document) =
+        apollo_compiler::parse_mixed(operation_fragments_with_defer, "document.graphql");
+    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+        let operation = operation.make_mut();
+        normalize_operation(operation, &schema, &executable_document.fragments);
+        let expected = r#"query Test {
+  t {
+    ... on T @defer {
+      v1
+    }
+    ... on T @defer {
+      v2
+    }
+  }
+}"#;
+        let actual = format!("{}", operation);
+        assert_eq!(expected, actual);
+    } else {
+        panic!("unable to parse document")
+    }
+}
+
+#[test]
+fn merge_nested_fragments() {
+    let operation_nested_fragments = r#"
+query Test {
+  t {
+    ... on T {
+      t1
+    }
+    ... on T {
+      v @defer {
+        v1
+      }
+    }
+  }
+  t {
+    ... on T {
+      t1
+      t2
+    }
+    ... on T {
+      v @defer {
+        v2
+      }
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  t1: Int
+  t2: String
+  v: V
+}
+
+type V {
+  v1: Int
+  v2: String
+}
+"#;
+    let (schema, mut executable_document) =
+        apollo_compiler::parse_mixed(operation_nested_fragments, "document.graphql");
+    if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+        let operation = operation.make_mut();
+        normalize_operation(operation, &schema, &executable_document.fragments);
+        let expected = r#"query Test {
+  t {
+    t1
+    v @defer {
+      v1
+    }
+    t2
+    v @defer {
+      v2
+    }
+  }
+}"#;
+        let actual = format!("{}", operation);
+        assert_eq!(expected, actual);
+    } else {
+        panic!("unable to parse document")
+    }
 }

@@ -51,28 +51,6 @@ fn reject_stream_on_subscription() {
     //// see reject_defer_on_mutation
 }
 
-#[test]
-fn allows_nullable_variable_for_non_nullable_input_field_with_default() {
-    //test('allows nullable variable for non-nullable input field with default', () => {
-    //     const schema = parseSchema(`
-    //       input I {
-    //         x: Int! = 42
-    //       }
-    //
-    //       type Query {
-    //         f(i: I): Int
-    //       }
-    //     `);
-    //
-    //     // Just testing that this parse correctly and does not throw an exception.
-    //     parseOperation(schema, `
-    //       query test($x: Int) {
-    //         f(i: { x: $x })
-    //       }
-    //     `);
-    //   });
-}
-
 ///
 /// conflicts
 ///
