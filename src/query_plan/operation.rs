@@ -174,6 +174,17 @@ impl From<&mut Node<NormalizedInlineFragment>> for NormalizedSelectionKey {
     }
 }
 
+fn directives_with_sorted_arguments(directives: &DirectiveList) -> DirectiveList {
+    let mut directives = directives.clone();
+    for directive in &mut directives {
+        directive
+            .make_mut()
+            .arguments
+            .sort_by(|a1, a2| a1.name.cmp(&a2.name))
+    }
+    directives
+}
+
 /// Converts vec of Selections to a map of NormalizedSelections.
 ///
 /// Performs following normalizations
@@ -198,7 +209,7 @@ fn normalize_selections(
 
                 let mut fragment_key: NormalizedSelectionKey = field.into();
                 // deferred fields should nto be merged
-                let is_deferred = field.directives.iter().any(|d| d.name == "defer");
+                let is_deferred = is_deferred_selection(&field.directives);
                 if is_deferred {
                     while normalized.contains_key(&fragment_key) {
                         fragment_key = fragment_key.next_key();
@@ -246,7 +257,7 @@ fn normalize_selections(
                         // otherwise we convert to inline fragment
                         let mut fragment_key: NormalizedSelectionKey = fragment.into();
                         // deferred fragments should not be merged
-                        let is_deferred = fragment.directives.iter().any(|d| d.name == "defer");
+                        let is_deferred = is_deferred_selection(&fragment.directives);
                         if is_deferred {
                             while normalized.contains_key(&fragment_key) {
                                 fragment_key = fragment_key.next_key();
@@ -291,7 +302,7 @@ fn normalize_selections(
                 } else {
                     let mut fragment_key: NormalizedSelectionKey = inline_fragment.into();
                     // deferred fragments should not be merged
-                    let is_deferred = inline_fragment.directives.iter().any(|d| d.name == "defer");
+                    let is_deferred = is_deferred_selection(&inline_fragment.directives);
                     if is_deferred {
                         while normalized.contains_key(&fragment_key) {
                             fragment_key = fragment_key.next_key();
@@ -336,8 +347,7 @@ fn merge_selections(
                     NormalizedSelection::NormalizedField(ref mut source_field) => {
                         if let NormalizedSelection::NormalizedField(field_to_merge) = selection {
                             let mut field_key: NormalizedSelectionKey = field_to_merge.into();
-                            let is_deferred =
-                                field_to_merge.directives.iter().any(|d| d.name == "defer");
+                            let is_deferred = is_deferred_selection(&field_to_merge.directives);
                             if field_to_merge.name != source_field.name
                                 || field_to_merge.definition.ty != source_field.definition.ty
                             {
@@ -373,10 +383,7 @@ fn merge_selections(
                         {
                             let mut fragment_key: NormalizedSelectionKey = source_fragment.into();
                             // deferred fragments should not be merged
-                            let is_deferred = fragment_to_merge
-                                .directives
-                                .iter()
-                                .any(|d| d.name == "defer");
+                            let is_deferred = is_deferred_selection(&fragment_to_merge.directives);
                             if is_deferred {
                                 while merged_selections.contains_key(&fragment_key) {
                                     fragment_key = fragment_key.next_key();
@@ -412,15 +419,8 @@ fn merge_selections(
     merged_selections
 }
 
-fn directives_with_sorted_arguments(directives: &DirectiveList) -> DirectiveList {
-    let mut directives = directives.clone();
-    for directive in &mut directives {
-        directive
-            .make_mut()
-            .arguments
-            .sort_by(|a1, a2| a1.name.cmp(&a2.name))
-    }
-    directives
+fn is_deferred_selection(directives: &DirectiveList) -> bool {
+    directives.iter().any(|d| d.name == "defer")
 }
 
 /// Converts NormalizedSelectionMap back to Vec of Selections.
