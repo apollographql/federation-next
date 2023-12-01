@@ -26,6 +26,7 @@ use apollo_compiler::schema::{
     DirectiveLocation, EnumType, EnumValueDefinition, ExtendedType, ExtensionId, InputObjectType,
     InputValueDefinition, InterfaceType, Name, NamedType, ObjectType, ScalarType, Type, UnionType,
 };
+use apollo_compiler::validation::{Valid, WithErrors};
 use apollo_compiler::{name, Node, NodeStr, Schema};
 use indexmap::{IndexMap, IndexSet};
 use lazy_static::lazy_static;
@@ -83,7 +84,7 @@ pub(super) fn extract_subgraphs_from_supergraph(
             })?;
         add_federation_operations(subgraph, federation_spec_definition)?;
         if validate_extracted_subgraphs {
-            let Some(diagnostics) = subgraph.schema.schema().validate().err() else {
+            let Err(WithErrors { errors, .. }) = subgraph.schema.schema().validate() else {
                 continue;
             };
             // TODO: Implement maybeDumpSubgraphSchema() for better error messaging
@@ -96,7 +97,7 @@ pub(super) fn extract_subgraphs_from_supergraph(
                         message: format!(
                             "Unexpected error extracting {} from the supergraph: this is either a bug, or the supergraph has been corrupted.\n\nDetails:\n{}",
                             subgraph.name,
-                            diagnostics.to_string_no_color()
+                            errors.to_string_no_color()
                         ),
                     }.into()
                 );
@@ -198,7 +199,7 @@ fn collect_empty_subgraphs(
 
 /// TODO: Use the JS/programmatic approach instead of hard-coding definitions.
 pub(crate) fn new_empty_fed_2_subgraph_schema() -> Result<FederationSchema, FederationError> {
-    FederationSchema::new(Schema::parse(
+    FederationSchema::new(Schema::parse_and_validate(
         r#"
     extend schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
@@ -251,7 +252,7 @@ pub(crate) fn new_empty_fed_2_subgraph_schema() -> Result<FederationSchema, Fede
     scalar federation__Scope
     "#,
         "subgraph.graphql",
-    ))
+    )?)
 }
 
 struct TypeInfo {
@@ -1825,8 +1826,11 @@ fn remove_inactive_applications(
         // directives instead of returning error here, as it pollutes the list of error messages
         // during composition (another site in composition will properly check for field set
         // validity and give better error messaging).
+
+        // TODO: is this correct?
+        let valid_schema = Valid::assume_valid_ref(schema.schema());
         let mut fields =
-            parse_field_set(schema.schema(), parent_type_pos.type_name().clone(), fields)?;
+            parse_field_set(valid_schema, parent_type_pos.type_name().clone(), fields)?;
         let is_modified = remove_non_external_leaf_fields(schema, &mut fields)?;
         if is_modified {
             let replacement_directive = if fields.selections.is_empty() {

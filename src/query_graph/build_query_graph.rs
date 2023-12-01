@@ -951,7 +951,7 @@ impl FederatedQueryGraphBuilder {
         let base = BaseQueryGraphBuilder::new(
             query_graph,
             NodeStr::new(FEDERATED_GRAPH_ROOT_SOURCE),
-            FederationSchema::new(Schema::new())?,
+            FederationSchema::new(Schema::new().validate().unwrap())?,
         );
         let subgraphs = FederatedQueryGraphBuilderSubgraphs::new(&base)?;
         Ok(FederatedQueryGraphBuilder {
@@ -1124,7 +1124,7 @@ impl FederatedQueryGraphBuilder {
                         }.into());
                 };
                 let conditions = Node::new(parse_field_set(
-                    schema.schema(),
+                    FederationSchema::valid_schema(schema),
                     type_pos.type_name().clone(),
                     application.fields.clone(),
                 )?);
@@ -1247,7 +1247,7 @@ impl FederatedQueryGraphBuilder {
                             let implementation_type_in_other_subgraph_pos: CompositeTypeDefinitionPosition =
                                 other_schema.get_type(implementation_type_in_supergraph_pos.type_name.clone())?.try_into()?;
                             let Ok(implementation_conditions) = parse_field_set(
-                                other_schema.schema(),
+                                FederationSchema::valid_schema(schema),
                                 implementation_type_in_other_subgraph_pos
                                     .type_name()
                                     .clone(),
@@ -1314,7 +1314,7 @@ impl FederatedQueryGraphBuilder {
                     .federation_spec_definition
                     .requires_directive_arguments(directive)?;
                 let conditions = parse_field_set(
-                    schema.schema(),
+                    FederationSchema::valid_schema(schema),
                     field_definition_position.parent().type_name().clone(),
                     application.fields,
                 )?;
@@ -1379,7 +1379,7 @@ impl FederatedQueryGraphBuilder {
                 let field_type_pos: CompositeTypeDefinitionPosition =
                     field_type_pos.clone().try_into()?;
                 let conditions = parse_field_set(
-                    schema.schema(),
+                    FederationSchema::valid_schema(schema),
                     field_type_pos.type_name().clone(),
                     application.fields,
                 )?;
@@ -1807,7 +1807,7 @@ impl FederatedQueryGraphBuilder {
                         }.into());
                 };
                 let conditions = Node::new(parse_field_set(
-                    schema.schema(),
+                    FederationSchema::valid_schema(schema),
                     type_in_supergraph_pos.type_name.clone(),
                     NodeStr::from_static(&"__typename"),
                 )?);
@@ -2045,7 +2045,7 @@ mod tests {
     const SCHEMA_NAME: NodeStr = NodeStr::from_static(&"test");
 
     fn test_query_graph_from_schema_sdl(sdl: &str) -> Result<QueryGraph, FederationError> {
-        let schema = FederationSchema::new(Schema::parse(sdl, "schema.graphql"))?;
+        let schema = FederationSchema::new(Schema::parse_and_validate(sdl, "schema.graphql")?)?;
         build_query_graph(SCHEMA_NAME, schema)
     }
 

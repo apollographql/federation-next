@@ -6,6 +6,7 @@ use crate::schema::position::{
     TypeDefinitionPosition, UnionTypeDefinitionPosition,
 };
 use apollo_compiler::schema::{ExtendedType, Name};
+use apollo_compiler::validation::Valid;
 use apollo_compiler::Schema;
 use indexmap::IndexSet;
 use referencer::Referencers;
@@ -22,6 +23,10 @@ pub struct FederationSchema {
 impl FederationSchema {
     pub(crate) fn schema(&self) -> &Schema {
         &self.schema
+    }
+
+    pub(crate) fn valid_schema(federation_schema: &Valid<Self>) -> &Valid<Schema> {
+        Valid::assume_valid_ref(&federation_schema.schema)
     }
 
     pub(crate) fn metadata(&self) -> &Option<LinksMetadata> {

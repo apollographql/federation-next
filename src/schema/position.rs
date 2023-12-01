@@ -12,6 +12,7 @@ use apollo_compiler::schema::{
     ExtendedType, FieldDefinition, InputObjectType, InputValueDefinition, InterfaceType, Name,
     ObjectType, ScalarType, SchemaDefinition, UnionType,
 };
+use apollo_compiler::validation::Valid;
 use apollo_compiler::{name, Node, Schema};
 use indexmap::{Equivalent, IndexSet};
 use lazy_static::lazy_static;
@@ -6173,7 +6174,7 @@ fn validate_arguments(arguments: &[Node<InputValueDefinition>]) -> Result<(), Fe
 }
 
 impl FederationSchema {
-    pub fn new(schema: Schema) -> Result<FederationSchema, FederationError> {
+    pub fn new(schema: Valid<Schema>) -> Result<FederationSchema, FederationError> {
         let metadata = links_metadata(&schema)?;
         let mut referencers: Referencers = Default::default();
 
@@ -6271,6 +6272,7 @@ impl FederationSchema {
             .insert_references(directive, &schema, &mut referencers)?;
         }
 
+        let schema = schema.into_inner();
         Ok(FederationSchema {
             schema,
             metadata,

@@ -7,10 +7,10 @@ description = "Apollo Federation"
 documentation = "https://docs.rs/apollo-federation"
 repository = "https://github.com/apollographql/federation-next"
 license = "Elastic-2.0"
-autotests = false # Integration tests are modules of tests/main.rs
+autotests = false                                               # Integration tests are modules of tests/main.rs
 
 [dependencies]
-apollo-compiler = "=1.0.0-beta.7"
+apollo-compiler = { git = "https://github.com/apollographql/apollo-rs", branch = "valid-ref" }
 derive_more = "0.99.17"
 salsa = "0.16.1"
 indexmap = "2.0.2"

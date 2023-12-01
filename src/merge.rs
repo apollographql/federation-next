@@ -11,6 +11,7 @@ use apollo_compiler::schema::{
     ObjectType, ScalarType, UnionType,
 };
 use apollo_compiler::ty;
+use apollo_compiler::validation::Valid;
 use apollo_compiler::{name, Node, NodeStr, Schema};
 use indexmap::map::Entry::{Occupied, Vacant};
 use indexmap::map::Iter;
@@ -27,7 +28,7 @@ struct Merger {
 }
 
 pub struct MergeSuccess {
-    pub schema: Schema,
+    pub schema: Valid<Schema>,
     pub composition_hints: Vec<MergeWarning>,
 }
 
@@ -136,6 +137,8 @@ impl Merger {
         }
 
         if self.errors.is_empty() {
+            // TODO: validate here and extend `MergeFailure` to propagate validation errors
+            let supergraph = Valid::assume_valid(supergraph);
             Ok(MergeSuccess {
                 schema: supergraph,
                 composition_hints: self.composition_hints.to_owned(),
