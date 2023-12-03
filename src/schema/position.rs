@@ -12,7 +12,6 @@ use apollo_compiler::schema::{
     ExtendedType, FieldDefinition, InputObjectType, InputValueDefinition, InterfaceType, Name,
     ObjectType, ScalarType, SchemaDefinition, UnionType,
 };
-use apollo_compiler::validation::Valid;
 use apollo_compiler::{name, Node, Schema};
 use indexmap::{Equivalent, IndexSet};
 use lazy_static::lazy_static;
@@ -6174,7 +6173,14 @@ fn validate_arguments(arguments: &[Node<InputValueDefinition>]) -> Result<(), Fe
 }
 
 impl FederationSchema {
-    pub fn new(schema: Valid<Schema>) -> Result<FederationSchema, FederationError> {
+    /// Note that the input schema must be partially valid, in that:
+    /// 1. All schema element references must point to an existing schema element of the appropriate
+    ///    kind (e.g. object type fields must return an existing output type).
+    /// 2. If the schema uses the core/link spec, then usages of the @core/@link directive must be
+    ///    valid.
+    /// The input schema may be otherwise invalid GraphQL (e.g. it may not contain a Query type). If
+    /// you want a ValidFederationSchema, use ValidFederationSchema::new() instead.
+    pub(crate) fn new(schema: Schema) -> Result<FederationSchema, FederationError> {
         let metadata = links_metadata(&schema)?;
         let mut referencers: Referencers = Default::default();
 
@@ -6272,7 +6278,6 @@ impl FederationSchema {
             .insert_references(directive, &schema, &mut referencers)?;
         }
 
-        let schema = schema.into_inner();
         Ok(FederationSchema {
             schema,
             metadata,

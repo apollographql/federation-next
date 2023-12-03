@@ -369,7 +369,9 @@ impl From<InvalidNameError> for FederationError {
 }
 
 impl From<FederationSpecError> for FederationError {
-    fn from(err: FederationSpecError) -> Self {
+    fn from(_err: FederationSpecError) -> Self {
+        // TODO: When we get around to finishing the composition port, we should really switch it to
+        // using FederationError instead of FederationSpecError.
         todo!()
     }
 }

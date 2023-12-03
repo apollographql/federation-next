@@ -3,10 +3,9 @@ use crate::schema::position::{
     CompositeTypeDefinitionPosition, FieldDefinitionPosition, OutputTypeDefinitionPosition,
     SchemaRootDefinitionKind,
 };
-use crate::schema::FederationSchema;
+use crate::schema::ValidFederationSchema;
 use apollo_compiler::executable::SelectionSet;
 use apollo_compiler::schema::{Name, NamedType};
-use apollo_compiler::validation::Valid;
 use apollo_compiler::{Node, NodeStr};
 use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{DiGraph, EdgeIndex, NodeIndex};
@@ -225,7 +224,7 @@ pub struct QueryGraph {
     /// The sources on which the query graph was built, which is a set (potentially of size 1) of
     /// GraphQL schema keyed by the name identifying them. Note that the `source` strings in the
     /// nodes/edges of a query graph are guaranteed to be valid key in this map.
-    sources: IndexMap<NodeStr, Valid<FederationSchema>>,
+    sources: IndexMap<NodeStr, ValidFederationSchema>,
     /// A map (keyed by source) that associates type names of the underlying schema on which this
     /// query graph was built to each of the nodes that points to a type of that name. Note that for
     /// a "federated" query graph source, each type name will only map to a single node.
@@ -311,11 +310,11 @@ impl QueryGraph {
         })
     }
 
-    pub(crate) fn schema(&self) -> Result<&Valid<FederationSchema>, FederationError> {
+    pub(crate) fn schema(&self) -> Result<&ValidFederationSchema, FederationError> {
         self.schema_by_source(&self.current_source)
     }
 
-    fn schema_by_source(&self, source: &str) -> Result<&Valid<FederationSchema>, FederationError> {
+    fn schema_by_source(&self, source: &str) -> Result<&ValidFederationSchema, FederationError> {
         self.sources.get(source).ok_or_else(|| {
             SingleFederationError::Internal {
                 message: "Schema unexpectedly missing".to_owned(),
