@@ -41,18 +41,11 @@ pub struct MergeFailure {
 
 impl Debug for MergeFailure {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        MergeFailureDebug {
-            errors: &self.errors,
-            composition_hints: &self.composition_hints,
-        }
-        .fmt(f)
+        f.debug_struct("MergeFailure")
+            .field("errors", &self.errors)
+            .field("composition_hints", &self.composition_hints)
+            .finish()
     }
-}
-
-#[derive(Debug)]
-pub struct MergeFailureDebug<'source> {
-    pub errors: &'source Vec<MergeError>,
-    pub composition_hints: &'source Vec<MergeWarning>,
 }
 
 pub fn merge_subgraphs(subgraphs: Vec<&ValidSubgraph>) -> Result<MergeSuccess, MergeFailure> {
