@@ -6,7 +6,7 @@ use apollo_compiler::Schema;
 use crate::error::FederationError;
 use crate::merge::merge_subgraphs;
 use crate::merge::MergeFailure;
-use crate::subgraph::Subgraph;
+use crate::subgraph::ValidSubgraph;
 use apollo_compiler::validation::Valid;
 
 pub mod database;
@@ -28,7 +28,7 @@ impl Supergraph {
         Ok(Self { schema })
     }
 
-    pub fn compose(subgraphs: Vec<&Subgraph>) -> Result<Self, MergeFailure> {
+    pub fn compose(subgraphs: Vec<&ValidSubgraph>) -> Result<Self, MergeFailure> {
         let schema = merge_subgraphs(subgraphs)?.schema;
         Ok(Self { schema })
     }

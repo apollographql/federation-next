@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt::{Debug, Formatter};
 use std::iter;
 
 use apollo_compiler::ast::DirectiveList;
@@ -17,7 +18,7 @@ use indexmap::map::Entry::{Occupied, Vacant};
 use indexmap::map::Iter;
 use indexmap::{IndexMap, IndexSet};
 
-use crate::subgraph::Subgraph;
+use crate::subgraph::ValidSubgraph;
 
 type MergeWarning = &'static str;
 type MergeError = &'static str;
@@ -38,7 +39,23 @@ pub struct MergeFailure {
     pub composition_hints: Vec<MergeWarning>,
 }
 
-pub fn merge_subgraphs(subgraphs: Vec<&Subgraph>) -> Result<MergeSuccess, MergeFailure> {
+impl Debug for MergeFailure {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        MergeFailureDebug {
+            errors: &self.errors,
+            composition_hints: &self.composition_hints,
+        }
+        .fmt(f)
+    }
+}
+
+#[derive(Debug)]
+pub struct MergeFailureDebug<'source> {
+    pub errors: &'source Vec<MergeError>,
+    pub composition_hints: &'source Vec<MergeWarning>,
+}
+
+pub fn merge_subgraphs(subgraphs: Vec<&ValidSubgraph>) -> Result<MergeSuccess, MergeFailure> {
     let mut merger = Merger::new();
     merger.merge(subgraphs)
 }
@@ -50,10 +67,10 @@ impl Merger {
             errors: Vec::new(),
         }
     }
-    fn merge(&mut self, subgraphs: Vec<&Subgraph>) -> Result<MergeSuccess, MergeFailure> {
+    fn merge(&mut self, subgraphs: Vec<&ValidSubgraph>) -> Result<MergeSuccess, MergeFailure> {
         let mut subgraphs = subgraphs.clone();
         subgraphs.sort_by(|s1, s2| s1.name.cmp(&s2.name));
-        let mut subgraphs_and_enum_values: Vec<(&Subgraph, Name)> = Vec::new();
+        let mut subgraphs_and_enum_values: Vec<(&ValidSubgraph, Name)> = Vec::new();
         for subgraph in &subgraphs {
             // TODO: Implement JS codebase's name transform (which always generates a valid GraphQL
             // name and avoids collisions).
@@ -165,7 +182,7 @@ impl Merger {
         }
     }
 
-    fn merge_schema(&mut self, supergraph_schema: &mut Schema, subgraph: &Subgraph) {
+    fn merge_schema(&mut self, supergraph_schema: &mut Schema, subgraph: &ValidSubgraph) {
         let supergraph_def = &mut supergraph_schema.schema_definition.make_mut();
         let subgraph_def = &subgraph.schema.schema_definition;
         self.merge_descriptions(&mut supergraph_def.description, &subgraph_def.description);
@@ -815,7 +832,7 @@ fn link_purpose_enum_type() -> (Name, EnumType) {
 // TODO join spec
 fn add_core_feature_join(
     supergraph: &mut Schema,
-    subgraphs_and_enum_values: &Vec<(&Subgraph, Name)>,
+    subgraphs_and_enum_values: &Vec<(&ValidSubgraph, Name)>,
 ) {
     // @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
     supergraph
@@ -1154,7 +1171,9 @@ fn join_union_member_directive_definition() -> DirectiveDefinition {
 }
 
 /// enum Graph
-fn join_graph_enum_type(subgraphs_and_enum_values: &Vec<(&Subgraph, Name)>) -> (Name, EnumType) {
+fn join_graph_enum_type(
+    subgraphs_and_enum_values: &Vec<(&ValidSubgraph, Name)>,
+) -> (Name, EnumType) {
     let join_graph_enum_name = name!("join__Graph");
     let mut join_graph_enum_type = EnumType {
         description: None,

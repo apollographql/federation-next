@@ -25,12 +25,12 @@ pub mod spec;
 pub struct Subgraph {
     pub name: String,
     pub url: String,
-    pub schema: Valid<Schema>,
+    pub schema: Schema,
 }
 
 impl Subgraph {
     pub fn new(name: &str, url: &str, schema_str: &str) -> Result<Self, FederationError> {
-        let schema = Schema::parse_and_validate(schema_str, name)?;
+        let schema = Schema::parse(schema_str, name)?;
         // TODO: federation-specific validation
         Ok(Self {
             name: name.to_string(),
@@ -43,7 +43,7 @@ impl Subgraph {
         name: &str,
         url: &str,
         schema_str: &str,
-    ) -> Result<Self, FederationError> {
+    ) -> Result<ValidSubgraph, FederationError> {
         let mut schema = Schema::builder()
             .adopt_orphan_extensions()
             .parse(schema_str, name)
@@ -85,7 +85,7 @@ impl Subgraph {
             imported_link_definitions,
         )?;
         let schema = schema.validate()?;
-        Ok(Self {
+        Ok(ValidSubgraph {
             name: name.to_owned(),
             url: url.to_owned(),
             schema,
@@ -302,6 +302,18 @@ impl Subgraphs {
 
     pub fn get(&self, name: &str) -> Option<Arc<Subgraph>> {
         self.subgraphs.get(name).cloned()
+    }
+}
+
+pub struct ValidSubgraph {
+    pub name: String,
+    pub url: String,
+    pub schema: Valid<Schema>,
+}
+
+impl std::fmt::Debug for ValidSubgraph {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, r#"name: {}, urL: {}"#, self.name, self.url)
     }
 }
 
