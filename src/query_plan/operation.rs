@@ -360,9 +360,7 @@ fn merge_selections(
                                 // insert new
                                 merged_selections.insert(
                                     field_key,
-                                    NormalizedSelection::NormalizedField(Node::new(
-                                        field_to_merge.deref().clone(),
-                                    )),
+                                    NormalizedSelection::NormalizedField(field_to_merge.clone()),
                                 );
                             } else {
                                 let merged_field_selections = merge_selections(
