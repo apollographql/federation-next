@@ -208,7 +208,7 @@ fn normalize_selections(
                 }
 
                 let mut fragment_key: NormalizedSelectionKey = field.into();
-                // deferred fields should nto be merged
+                // deferred fields should not be merged
                 let is_deferred = is_deferred_selection(&field.directives);
                 if is_deferred {
                     while normalized.contains_key(&fragment_key) {
@@ -389,9 +389,9 @@ fn merge_selections(
                                 // insert new
                                 merged_selections.insert(
                                     fragment_key,
-                                    NormalizedSelection::NormalizedInlineFragment(Node::new(
-                                        fragment_to_merge.deref().clone(),
-                                    )),
+                                    NormalizedSelection::NormalizedInlineFragment(
+                                        fragment_to_merge.clone(),
+                                    ),
                                 );
                             } else {
                                 // can merge
