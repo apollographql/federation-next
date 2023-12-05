@@ -5,7 +5,6 @@ use apollo_compiler::executable::{
 use apollo_compiler::{Node, Schema};
 use indexmap::map::Entry;
 use indexmap::IndexMap;
-use std::ops::Deref;
 
 // copy of apollo compiler types that store selections in a map so we can normalize it efficiently
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -506,9 +505,12 @@ type Foo {
   baz: Int
 }
 "#;
-        let (schema, mut executable_document) =
-            apollo_compiler::parse_mixed(operation_with_named_fragment, "document.graphql");
-
+        let (schema, executable_document) = apollo_compiler::parse_mixed_validate(
+            operation_with_named_fragment,
+            "document.graphql",
+        )
+        .unwrap();
+        let mut executable_document = executable_document.into_inner();
         if let Some(operation) = executable_document
             .named_operations
             .get_mut("NamedFragmentQuery")
@@ -559,9 +561,12 @@ type Foo {
   baz: String
 }
 "#;
-        let (schema, mut executable_document) =
-            apollo_compiler::parse_mixed(operation_with_named_fragment, "document.graphql");
-
+        let (schema, executable_document) = apollo_compiler::parse_mixed_validate(
+            operation_with_named_fragment,
+            "document.graphql",
+        )
+        .unwrap();
+        let mut executable_document = executable_document.into_inner();
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
             normalize_operation(operation, &schema, &executable_document.fragments);
@@ -593,8 +598,10 @@ type Query {
   foo: String
 }
 "#;
-        let (schema, mut executable_document) =
-            apollo_compiler::parse_mixed(operation_with_introspection, "document.graphql");
+        let (schema, executable_document) =
+            apollo_compiler::parse_mixed_validate(operation_with_introspection, "document.graphql")
+                .unwrap();
+        let mut executable_document = executable_document.into_inner();
         if let Some(operation) = executable_document
             .named_operations
             .get_mut("TestIntrospectionQuery")
