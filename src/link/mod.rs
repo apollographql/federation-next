@@ -382,7 +382,7 @@ impl LinksMetadata {
     pub fn source_link_of_type(&self, type_name: &Name) -> Option<LinkedElement> {
         // For types, it's either an imported name or it must be fully qualified
 
-        if let Some((link, import)) = self.types_by_imported_name.get(type_name.as_str()) {
+        if let Some((link, import)) = self.types_by_imported_name.get(type_name) {
             Some(LinkedElement {
                 link: Arc::clone(link),
                 import: Some(Arc::clone(import)),
@@ -405,17 +405,14 @@ impl LinksMetadata {
         //   2. be the "imported" name of a linked spec (special case of a directive named like the
         //      spec),
         //   3. or it must be fully qualified.
-        if let Some((link, import)) = self
-            .directives_by_imported_name
-            .get(directive_name.as_str())
-        {
+        if let Some((link, import)) = self.directives_by_imported_name.get(directive_name) {
             return Some(LinkedElement {
                 link: Arc::clone(link),
                 import: Some(Arc::clone(import)),
             });
         }
 
-        if let Some(link) = self.by_name_in_schema.get(directive_name.as_str()) {
+        if let Some(link) = self.by_name_in_schema.get(directive_name) {
             return Some(LinkedElement {
                 link: Arc::clone(link),
                 import: None,
