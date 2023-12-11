@@ -357,7 +357,14 @@ fn merge_selections(
                             if field_to_merge.name != source_field.name
                                 || field_to_merge.definition.ty != source_field.definition.ty
                             {
-                                panic!("TODO invalid operation");
+                                return Err(FederationError::SingleFederationError(Internal {
+                                    message: format!(
+                                        "Error during operation normalization, duplicate field {} selection that references different types, expected {} but was {}",
+                                        source_field.alias.clone().unwrap_or_else(|| source_field.name.clone()),
+                                        source_field.definition.ty.clone(),
+                                        field_to_merge.definition.ty.clone()
+                                    ),
+                                }));
                             }
                             if is_deferred {
                                 while merged_selections.contains_key(&field_key) {
