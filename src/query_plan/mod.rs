@@ -1,5 +1,6 @@
 use apollo_compiler::executable::{Field, InlineFragment, OperationType, Selection, SelectionSet};
-use apollo_compiler::{ExecutableDocument, Node, NodeStr};
+use apollo_compiler::{ExecutableDocument, NodeStr};
+use std::sync::Arc;
 
 pub mod operation;
 pub mod query_planner;
@@ -9,13 +10,13 @@ pub struct QueryPlan {
 }
 
 pub enum TopLevelPlanNode {
-    Subscription(Node<SubscriptionNode>),
-    Fetch(Node<FetchNode>),
-    Sequence(Node<SequenceNode>),
-    Parallel(Node<ParallelNode>),
-    Flatten(Node<FlattenNode>),
-    Defer(Node<DeferNode>),
-    Condition(Node<ConditionNode>),
+    Subscription(SubscriptionNode),
+    Fetch(FetchNode),
+    Sequence(SequenceNode),
+    Parallel(ParallelNode),
+    Flatten(FlattenNode),
+    Defer(DeferNode),
+    Condition(ConditionNode),
 }
 
 pub struct SubscriptionNode {
@@ -24,12 +25,12 @@ pub struct SubscriptionNode {
 }
 
 pub enum PlanNode {
-    Fetch(Node<FetchNode>),
-    Sequence(Node<SequenceNode>),
-    Parallel(Node<ParallelNode>),
-    Flatten(Node<FlattenNode>),
-    Defer(Node<DeferNode>),
-    Condition(Node<ConditionNode>),
+    Fetch(Arc<FetchNode>),
+    Sequence(Arc<SequenceNode>),
+    Parallel(Arc<ParallelNode>),
+    Flatten(Arc<FlattenNode>),
+    Defer(Arc<DeferNode>),
+    Condition(Arc<ConditionNode>),
 }
 
 pub struct FetchNode {
