@@ -64,7 +64,15 @@ pub enum NormalizedSelection {
     NormalizedInlineFragment(Node<NormalizedInlineFragment>),
 }
 
-// copy of apollo compiler type store selections in a map so we can normalize it efficiently
+// copy of apollo compiler type that store selections in a map so we can normalize it efficiently
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NormalizedFragment {
+    pub name: Name,
+    pub directives: DirectiveList,
+    pub selection_set: NormalizedSelectionSet,
+}
+
+// copy of apollo compiler type that store selections in a map so we can normalize it efficiently
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedField {
     pub definition: Node<FieldDefinition>,
