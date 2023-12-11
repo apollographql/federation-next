@@ -52,6 +52,7 @@ impl Default for QueryPlannerConfig {
     }
 }
 
+#[derive(Default)]
 pub struct QueryPlanIncrementalDeliveryConfig {
     /// Enables @defer support by the query planner.
     ///
@@ -60,14 +61,6 @@ pub struct QueryPlanIncrementalDeliveryConfig {
     ///
     /// Defaults to false (meaning that the @defer are ignored).
     enable_defer: bool,
-}
-
-impl Default for QueryPlanIncrementalDeliveryConfig {
-    fn default() -> Self {
-        Self {
-            enable_defer: false,
-        }
-    }
 }
 
 pub struct QueryPlannerDebugConfig {
