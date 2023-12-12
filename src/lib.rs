@@ -39,17 +39,31 @@ impl Supergraph {
     /// Generates API schema from the supergraph schema.
     pub fn to_api_schema(&self) -> Valid<Schema> {
         let mut api_schema = self.schema.clone().into_inner();
+        let linked_specs = api_schema
+            .schema_definition
+            .directives
+            .get_all("link")
+            .map(|directive| link::Link::from_directive_application(directive))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
 
-        fn is_fed_directive_name(name: &Name) -> bool {
-            name.contains("__") || name == "core" || name == "link"
-        }
+        let is_fed_directive_name = |name: &Name| -> bool {
+            name == "core"
+                || linked_specs
+                    .iter()
+                    .any(|link| link.is_feature_directive_definition(name))
+        };
 
-        /// Return whether a directive application should be kept in the schema.
-        ///
-        /// Federation directives should be removed.
-        fn keep_directive(directive: &Directive) -> bool {
-            !is_fed_directive_name(&directive.name)
-        }
+        let is_fed_type_name = |name: &Name| -> bool {
+            linked_specs
+                .iter()
+                .any(|link| link.is_feature_type_definition(name))
+        };
+
+        // Return whether a directive application should be kept in the schema.
+        // Federation directives should be removed.
+        let keep_directive =
+            |directive: &Directive| -> bool { !is_fed_directive_name(&directive.name) };
 
         // remove schema directives
         api_schema
@@ -60,7 +74,7 @@ impl Supergraph {
 
         // remove known internal types
         api_schema.types.retain(|type_name, graphql_type| {
-            !is_join_type(type_name.as_str()) && !graphql_type.directives().has("inaccessible")
+            !graphql_type.directives().has("inaccessible") && !is_fed_type_name(type_name)
         });
 
         // remove directive applications
@@ -150,16 +164,6 @@ impl From<Valid<Schema>> for Supergraph {
     fn from(schema: Valid<Schema>) -> Self {
         Self { schema }
     }
-}
-
-const JOIN_TYPES: [&str; 4] = [
-    "join__Graph",
-    "link__Purpose",
-    "join__FieldSet",
-    "link__Import",
-];
-fn is_join_type(type_name: &str) -> bool {
-    JOIN_TYPES.contains(&type_name)
 }
 
 fn is_inaccessible_applied(directives: &DirectiveList) -> bool {

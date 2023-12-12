@@ -261,6 +261,31 @@ impl Link {
         }
     }
 
+    pub fn is_feature_directive_definition(&self, name: &Name) -> bool {
+        let spec_name = self.spec_name_in_schema();
+        // Starts with "{spec_name}__"
+        let is_fully_qualified_name =
+            name.starts_with(spec_name.as_str()) && name[spec_name.len()..].starts_with("__");
+        is_fully_qualified_name
+            || name == spec_name
+            || self
+                .imports
+                .iter()
+                .any(|import| import.is_directive && name == import.imported_name())
+    }
+
+    pub fn is_feature_type_definition(&self, name: &Name) -> bool {
+        let spec_name = self.spec_name_in_schema();
+        // Starts with "{spec_name}__"
+        let is_fully_qualified_name =
+            name.starts_with(spec_name.as_str()) && name[spec_name.len()..].starts_with("__");
+        is_fully_qualified_name
+            || self
+                .imports
+                .iter()
+                .any(|import| !import.is_directive && name == import.imported_name())
+    }
+
     pub fn from_directive_application(directive: &Node<Directive>) -> Result<Link, LinkError> {
         let url = directive
             .argument_by_name("url")
