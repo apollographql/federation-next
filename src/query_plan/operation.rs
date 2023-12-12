@@ -453,6 +453,11 @@ fn merge_selections(
                     }
                     NormalizedSelection::NormalizedFragmentSpread(_) => {
                         // nothing to do fragment spread is already part of the selection set
+                        //
+                        // Fragment spreads are uniquely identified by fragment name and applied directives.
+                        // Since there is already an entry for the same fragment spread, there is no point
+                        // in attempting to merge its subselections as the underlying entry should be exactly the
+                        // same as the currently processed one.
                     }
                 }
             }
