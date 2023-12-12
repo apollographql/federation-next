@@ -1,6 +1,8 @@
 #![allow(dead_code)] // TODO: This is fine while we're iterating, but should be removed later.
+use apollo_compiler::ast::Directive;
 use apollo_compiler::ast::DirectiveList;
 use apollo_compiler::schema::ExtendedType;
+use apollo_compiler::schema::Name;
 use apollo_compiler::Schema;
 
 use crate::error::FederationError;
@@ -35,81 +37,112 @@ impl Supergraph {
     }
 
     /// Generates API schema from the supergraph schema.
-    pub fn to_api_schema(&self) -> Schema {
+    pub fn to_api_schema(&self) -> Valid<Schema> {
         let mut api_schema = self.schema.clone().into_inner();
 
+        fn is_fed_directive_name(name: &Name) -> bool {
+            name.contains("__") || name == "core" || name == "link"
+        }
+
+        /// Return whether a directive application should be kept in the schema.
+        ///
+        /// Federation directives should be removed.
+        fn keep_directive(directive: &Directive) -> bool {
+            !is_fed_directive_name(&directive.name)
+        }
+
         // remove schema directives
-        api_schema.schema_definition.make_mut().directives.clear();
+        api_schema
+            .schema_definition
+            .make_mut()
+            .directives
+            .retain(|dir| keep_directive(dir));
 
         // remove known internal types
         api_schema.types.retain(|type_name, graphql_type| {
             !is_join_type(type_name.as_str()) && !graphql_type.directives().has("inaccessible")
         });
+
         // remove directive applications
         for graphql_type in api_schema.types.values_mut() {
             match graphql_type {
                 ExtendedType::Scalar(scalar) => {
-                    scalar.make_mut().directives.clear();
+                    scalar
+                        .make_mut()
+                        .directives
+                        .retain(|dir| keep_directive(dir));
                 }
                 ExtendedType::Object(object) => {
                     let object = object.make_mut();
-                    object.directives.clear();
+                    object.directives.retain(|dir| keep_directive(dir));
                     object
                         .fields
                         .retain(|_, field| !is_inaccessible_applied(&field.directives));
                     for (_, field) in object.fields.iter_mut() {
                         let field = field.make_mut();
-                        field.directives.clear();
+                        field.directives.retain(|dir| keep_directive(dir));
                         field
                             .arguments
                             .retain(|arg| !is_inaccessible_applied(&arg.directives));
                         for arg in field.arguments.iter_mut() {
-                            arg.make_mut().directives.clear();
+                            arg.make_mut().directives.retain(|dir| keep_directive(dir));
                         }
                     }
                 }
                 ExtendedType::Interface(intf) => {
                     let intf = intf.make_mut();
-                    intf.directives.clear();
+                    intf.directives.retain(|dir| keep_directive(dir));
                     intf.fields
                         .retain(|_, field| !is_inaccessible_applied(&field.directives));
                     for (_, field) in intf.fields.iter_mut() {
                         let field = field.make_mut();
-                        field.directives.clear();
+                        field.directives.retain(|dir| keep_directive(dir));
                         for arg in field.arguments.iter_mut() {
-                            arg.make_mut().directives.clear();
+                            arg.make_mut().directives.retain(|dir| keep_directive(dir));
                         }
                     }
                 }
                 ExtendedType::Union(union) => {
-                    union.make_mut().directives.clear();
+                    union
+                        .make_mut()
+                        .directives
+                        .retain(|dir| keep_directive(dir));
                 }
                 ExtendedType::Enum(enum_type) => {
                     let enum_type = enum_type.make_mut();
-                    enum_type.directives.clear();
+                    enum_type.directives.retain(|dir| keep_directive(dir));
                     enum_type
                         .values
                         .retain(|_, enum_value| !is_inaccessible_applied(&enum_value.directives));
                     for (_, enum_value) in enum_type.values.iter_mut() {
-                        enum_value.make_mut().directives.clear();
+                        enum_value
+                            .make_mut()
+                            .directives
+                            .retain(|dir| keep_directive(dir));
                     }
                 }
                 ExtendedType::InputObject(input_object) => {
                     let input_object = input_object.make_mut();
-                    input_object.directives.clear();
+                    input_object.directives.retain(|dir| keep_directive(dir));
                     input_object
                         .fields
                         .retain(|_, input_field| !is_inaccessible_applied(&input_field.directives));
                     for (_, input_field) in input_object.fields.iter_mut() {
-                        input_field.make_mut().directives.clear();
+                        input_field
+                            .make_mut()
+                            .directives
+                            .retain(|dir| keep_directive(dir));
                     }
                 }
             }
         }
-        // remove directives
-        api_schema.directive_definitions.clear();
 
+        // remove directive definitions
         api_schema
+            .directive_definitions
+            .retain(|name, _dir| !is_fed_directive_name(name));
+
+        api_schema.validate().unwrap()
     }
 }
 
