@@ -1,4 +1,7 @@
-use apollo_compiler::executable::{Field, InlineFragment, OperationType, Selection, SelectionSet};
+use apollo_compiler::executable::{
+    Field, InlineFragment, Name, OperationType, Selection, SelectionSet,
+};
+use apollo_compiler::validation::Valid;
 use apollo_compiler::{ExecutableDocument, NodeStr};
 use std::sync::Arc;
 
@@ -41,7 +44,7 @@ pub struct FetchNode {
     /// If query planner defer support is enabled _and_ the subgrpah named `service_name` supports
     /// defer, then this boolean says whether `operation` contains some @defer. Unset otherwise.
     has_defers: Option<bool>,
-    variable_usages: Vec<NodeStr>,
+    variable_usages: Vec<Name>,
     /// `Selection`s in apollo-rs _can_ have a `FragmentSpread`, but this `Selection` is
     /// specifically typing the `requires` key in a built query plan, where there can't be
     /// `FragmentSpread`.
@@ -51,7 +54,7 @@ pub struct FetchNode {
     // PORT_NOTE: We don't serialize the "operation" string in this struct, as these query plan
     // nodes are meant for direct consumption by router (without any serdes), so we leave the
     // question of whether it needs to be serialized to router.
-    operation_document: ExecutableDocument,
+    operation_document: Valid<ExecutableDocument>,
     operation_name: Option<NodeStr>,
     operation_kind: OperationType,
     /// Optionally describe a number of "rewrites" that query plan executors should apply to the
@@ -151,7 +154,7 @@ pub struct DeferredDependency {
 }
 
 pub struct ConditionNode {
-    condition: NodeStr,
+    condition_variable: Name,
     if_clause: Option<PlanNode>,
     else_clause: Option<PlanNode>,
 }
@@ -171,7 +174,7 @@ pub struct FetchDataValueSetter {
     path: Vec<FetchDataPathElement>,
     /// The value to set at `path`. Note that the query planner currently only uses string values,
     /// but that may change in the future.
-    set_value_to: serde_json::value::Value,
+    set_value_to: serde_json::Value,
 }
 
 /// A rewrite that renames the key at the provided path of the data it is applied to.
