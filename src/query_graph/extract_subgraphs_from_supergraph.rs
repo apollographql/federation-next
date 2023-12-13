@@ -1790,6 +1790,9 @@ fn remove_inactive_requires_and_provides_from_subgraph(
         .name
         .clone();
 
+    let mut object_or_interface_field_definition_positions: Vec<
+        ObjectOrInterfaceFieldDefinitionPosition,
+    > = vec![];
     for type_pos in schema.get_types() {
         // Ignore introspection types.
         if is_graphql_reserved_name(type_pos.type_name()) {
@@ -1802,39 +1805,43 @@ fn remove_inactive_requires_and_provides_from_subgraph(
             continue;
         };
 
-        let object_or_interface_field_definition_positions: Vec<
-            ObjectOrInterfaceFieldDefinitionPosition,
-        > = match type_pos {
-            ObjectOrInterfaceTypeDefinitionPosition::Object(type_pos) => type_pos
-                .get(schema.schema())?
-                .fields
-                .keys()
-                .map(|field_name| type_pos.field(field_name.clone()).into())
-                .collect(),
-            ObjectOrInterfaceTypeDefinitionPosition::Interface(type_pos) => type_pos
-                .get(schema.schema())?
-                .fields
-                .keys()
-                .map(|field_name| type_pos.field(field_name.clone()).into())
-                .collect(),
+        match type_pos {
+            ObjectOrInterfaceTypeDefinitionPosition::Object(type_pos) => {
+                object_or_interface_field_definition_positions.extend(
+                    type_pos
+                        .get(schema.schema())?
+                        .fields
+                        .keys()
+                        .map(|field_name| type_pos.field(field_name.clone()).into()),
+                )
+            }
+            ObjectOrInterfaceTypeDefinitionPosition::Interface(type_pos) => {
+                object_or_interface_field_definition_positions.extend(
+                    type_pos
+                        .get(schema.schema())?
+                        .fields
+                        .keys()
+                        .map(|field_name| type_pos.field(field_name.clone()).into()),
+                )
+            }
         };
+    }
 
-        for pos in object_or_interface_field_definition_positions {
-            remove_inactive_applications(
-                schema,
-                federation_spec_definition,
-                FieldSetDirectiveKind::Requires,
-                &requires_directive_definition_name,
-                pos.clone(),
-            )?;
-            remove_inactive_applications(
-                schema,
-                federation_spec_definition,
-                FieldSetDirectiveKind::Provides,
-                &provides_directive_definition_name,
-                pos,
-            )?;
-        }
+    for pos in object_or_interface_field_definition_positions {
+        remove_inactive_applications(
+            schema,
+            federation_spec_definition,
+            FieldSetDirectiveKind::Requires,
+            &requires_directive_definition_name,
+            pos.clone(),
+        )?;
+        remove_inactive_applications(
+            schema,
+            federation_spec_definition,
+            FieldSetDirectiveKind::Provides,
+            &provides_directive_definition_name,
+            pos,
+        )?;
     }
 
     Ok(())
