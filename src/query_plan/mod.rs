@@ -5,8 +5,12 @@ use apollo_compiler::validation::Valid;
 use apollo_compiler::{ExecutableDocument, NodeStr};
 use std::sync::Arc;
 
+pub(crate) mod conditions;
+pub(crate) mod fetch_dependency_graph;
 pub mod operation;
 pub mod query_planner;
+
+pub type QueryPlanCost = i64;
 
 pub struct QueryPlan {
     node: Option<TopLevelPlanNode>,
@@ -37,7 +41,7 @@ pub enum PlanNode {
 }
 
 pub struct FetchNode {
-    service_name: NodeStr,
+    subgraph_name: NodeStr,
     /// Optional identifier for the fetch for defer support. All fetches of a given plan will be
     /// guaranteed to have a unique `id`.
     id: Option<NodeStr>,
@@ -163,12 +167,14 @@ pub struct ConditionNode {
 ///
 /// A rewrite usually identifies some sub-part of the data and some action to perform on that
 /// sub-part.
+#[derive(Debug, Clone)]
 pub enum FetchDataRewrite {
     ValueSetter(FetchDataValueSetter),
     KeyRenamer(FetchDataKeyRenamer),
 }
 
 /// A rewrite that sets a value at the provided path of the data it is applied to.
+#[derive(Debug, Clone)]
 pub struct FetchDataValueSetter {
     /// Path to the value that is set by this "rewrite".
     path: Vec<FetchDataPathElement>,
@@ -178,6 +184,7 @@ pub struct FetchDataValueSetter {
 }
 
 /// A rewrite that renames the key at the provided path of the data it is applied to.
+#[derive(Debug, Clone)]
 pub struct FetchDataKeyRenamer {
     /// Path to the key that is renamed by this "rewrite".
     path: Vec<FetchDataPathElement>,
@@ -200,6 +207,7 @@ pub struct FetchDataKeyRenamer {
 /// Note that the `@` is currently optional in some contexts, as query plan execution may assume
 /// upon encountering array data in a path that it should match the remaining path to the array's
 /// elements.
+#[derive(Debug, Clone)]
 pub enum FetchDataPathElement {
     Key(NodeStr),
     AnyIndex,
@@ -208,6 +216,7 @@ pub enum FetchDataPathElement {
 
 /// Vectors of this element match a path in a query. Each element is (1) a field in a query, or (2)
 /// an inline fragment in a query.
+#[derive(Debug, Clone)]
 pub enum QueryPathElement {
     Field(Field),
     InlineFragment(InlineFragment),
