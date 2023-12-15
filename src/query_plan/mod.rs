@@ -5,6 +5,7 @@ use apollo_compiler::validation::Valid;
 use apollo_compiler::{ExecutableDocument, NodeStr};
 use std::sync::Arc;
 
+pub mod generate;
 pub mod operation;
 pub mod query_planner;
 
