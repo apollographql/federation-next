@@ -86,7 +86,7 @@ pub fn generate_all_plans_and_find_best<Plan, Element>(
     to_add: Vec<Choices<Element>>,
     mut add_function: impl FnMut(&Plan, Element) -> Plan,
     mut cost_function: impl FnMut(&Plan) -> f64,
-    mut on_plan: Option<&mut dyn FnMut(&Plan, Cost, Option<Cost>)>,
+    mut on_plan: impl FnMut(&Plan, Cost, Option<Cost>),
 ) -> (Plan, Cost)
 where
     Element: Clone,
@@ -165,9 +165,7 @@ where
         let previous_min_is_better = previous_min_cost.is_some_and(|min| min <= cost);
         if remaining.as_slice().is_empty() {
             // We have a complete plan. If it is best, save it, otherwise, we're done with it.
-            if let Some(on_plan) = &mut on_plan {
-                on_plan(&new_partial_plan, cost, previous_min_cost)
-            }
+            on_plan(&new_partial_plan, cost, previous_min_cost);
             if !previous_min_is_better {
                 min = Some((new_partial_plan, cost))
             }
@@ -182,7 +180,7 @@ where
                     partial_cost: Some(cost),
                     remaining,
                     is_root: false,
-                    index: index,
+                    index,
                 },
             )
         }
@@ -247,7 +245,7 @@ mod tests {
                 new_plan
             },
             |plan| plan.iter().map(|element| element.len() as Cost).sum(),
-            None,
+            |_, _, _| {},
         );
         (best, generated)
     }
