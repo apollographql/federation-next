@@ -560,10 +560,6 @@ impl NormalizedSelectionSet {
                     if let Some(field_selection_set) =
                         mutable_field_selection.selection_set.as_mut()
                     {
-                        println!(
-                            "recursive call for {}",
-                            mutable_field_selection.field.response_name()
-                        );
                         field_selection_set
                             .optimize_sibling_typenames(interface_types_with_interface_objects)?;
                     } else {
