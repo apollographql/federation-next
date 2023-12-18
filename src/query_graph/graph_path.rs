@@ -1,3 +1,4 @@
+use crate::error::FederationError;
 use crate::link::graphql_definition::{DeferDirectiveArguments, OperationConditional};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
@@ -195,20 +196,20 @@ impl OpGraphPath {
             .any(|overriding_id| other.own_path_ids.contains(overriding_id))
     }
 
-    pub(crate) fn subgraph_jumps(&self) -> u32 {
+    pub(crate) fn subgraph_jumps(&self) -> Result<u32, FederationError> {
         self.subgraph_jumps_at_idx(0)
     }
 
-    pub(crate) fn subgraph_jumps_at_idx(&self, start_index: usize) -> u32 {
+    pub(crate) fn subgraph_jumps_at_idx(&self, start_index: usize) -> Result<u32, FederationError> {
         self.edges[start_index..]
             .iter()
-            .filter_map(|&edge_index| {
-                let (start, end) = self.graph.graph.edge_endpoints(edge_index?)?;
-                let start = self.graph.graph.node_weight(start)?;
-                let end = self.graph.graph.node_weight(end)?;
+            .flatten()
+            .try_fold(0, |sum, &edge_index| {
+                let (start, end) = self.graph.edge_endpoints(edge_index)?;
+                let start = self.graph.node_weight(start)?;
+                let end = self.graph.node_weight(end)?;
                 let changes_subgraph = start.source != end.source;
-                Some(if changes_subgraph { 1 } else { 0 })
+                Ok(sum + if changes_subgraph { 1 } else { 0 })
             })
-            .sum()
     }
 }

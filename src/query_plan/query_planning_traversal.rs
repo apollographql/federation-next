@@ -1,3 +1,4 @@
+use crate::error::FederationError;
 use crate::query_graph::graph_path::{ClosedBranch, OpenBranch, SimultaneousPaths};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
@@ -88,12 +89,12 @@ struct BestQueryPlanInfo {
 }
 
 impl QueryPlanningTraversal {
-    fn compute_best_plan_from_closed_branches(&mut self) {
+    fn compute_best_plan_from_closed_branches(&mut self) -> Result<(), FederationError> {
         if self.closed_branches.is_empty() {
-            return;
+            return Ok(());
         }
         self.prune_closed_branches();
-        self.sort_options_in_closed_branches();
+        self.sort_options_in_closed_branches()?;
         self.reduce_options_if_needed();
 
         todo!() // the rest of the owl
@@ -160,17 +161,25 @@ impl QueryPlanningTraversal {
     ///    (see `generate_all_plans_and_find_best`),
     ///    so there is a premium in generating good plans early (it cuts more computation),
     ///    and putting those more-likely-to-be-good options first helps this.
-    fn sort_options_in_closed_branches(&mut self) {
+    fn sort_options_in_closed_branches(&mut self) -> Result<(), FederationError> {
         for branch in &mut self.closed_branches {
+            let mut result = Ok(());
             branch.0.sort_by_key(|closed_path| {
                 closed_path
                     .paths
                     .0
                     .iter()
-                    .map(|path| path.subgraph_jumps())
-                    .sum::<u32>()
-            })
+                    .try_fold(0, |sum, path| Ok(sum + path.subgraph_jumps()?))
+                    .unwrap_or_else(|err: FederationError| {
+                        // There’s no way to abort `sort_by_key` from this callback.
+                        // Store the error to be returned later and return an dummy values
+                        result = Err(err);
+                        0
+                    })
+            });
+            result?
         }
+        Ok(())
     }
 
     /// Look at how many plans we'd have to generate and if it's "too much"
