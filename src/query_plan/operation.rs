@@ -144,8 +144,6 @@ pub(crate) struct NormalizedFieldSelection {
     pub(crate) sibling_typename: Option<Name>,
 }
 
-pub(crate) type FieldAttachmentMap = IndexMap<String, String>;
-
 /// The non-selection-set data of `NormalizedFieldSelection`, used with operation paths and graph
 /// paths.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
