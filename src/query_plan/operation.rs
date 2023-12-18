@@ -573,7 +573,7 @@ impl NormalizedSelectionSet {
                         .optimize_sibling_typenames(interface_types_with_interface_objects)?;
                 }
                 NormalizedSelection::FragmentSpread(fragment_spread) => {
-                    // at this point of time all fragment spreads should have been converted into inline fragments
+                    // at this point in time all fragment spreads should have been converted into inline fragments
                     return Err(FederationError::SingleFederationError(Internal {
                         message: format!(
                             "Error while optimizing sibling typename information, selection set contains {} named fragment",
