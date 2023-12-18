@@ -7,8 +7,10 @@ use std::sync::Arc;
 
 pub(crate) mod conditions;
 pub(crate) mod fetch_dependency_graph;
+pub(crate) mod fetch_dependency_graph_processor;
 pub mod operation;
 pub mod query_planner;
+pub(crate) mod query_planning_traversal;
 
 pub type QueryPlanCost = i64;
 
@@ -45,8 +47,9 @@ pub struct FetchNode {
     /// Optional identifier for the fetch for defer support. All fetches of a given plan will be
     /// guaranteed to have a unique `id`.
     id: Option<NodeStr>,
-    /// If query planner defer support is enabled _and_ the subgrpah named `service_name` supports
-    /// defer, then this boolean says whether `operation` contains some @defer. Unset otherwise.
+    /// If query planner `@defer` support is enabled _and_ the subgraph named `subgraph_name`
+    /// supports `@defer`, then this boolean says whether `operation` contains some `@defer`. `None`
+    /// otherwise.
     has_defers: Option<bool>,
     variable_usages: Vec<Name>,
     /// `Selection`s in apollo-rs _can_ have a `FragmentSpread`, but this `Selection` is

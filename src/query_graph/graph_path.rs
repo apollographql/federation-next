@@ -56,13 +56,15 @@ use std::sync::Arc;
 pub(crate) struct GraphPath<TTrigger: Eq + Hash, TEdge: Into<Option<EdgeIndex>>> {
     /// The query graph of which this is a path.
     graph: Arc<QueryGraph>,
-    /// The node at which the path starts (the head node of the first edge in path, aliased here for
-    /// convenience).
+    /// The node at which the path starts. This should be the head of the first non-`None` edge in
+    /// the path if such edge exists, but if there are only `None` edges (or if there are zero
+    /// edges), this will still exist (and the head and tail of the path will be the same).
     head: NodeIndex,
     /// Whether the head must be a root node for this path.
     head_must_be_root: bool,
-    /// The node at which the path stops (the tail node of the last edge in path, aliased here for
-    /// convenience).
+    /// The node at which the path stops. This should be the tail of the last non-`None` edge in the
+    /// path if such edge exists, but if there are only `None` edges (or if there are zero edges),
+    /// this will still exist (and the head and tail of the path will be the same).
     tail: NodeIndex,
     /// The edges composing the path.
     edges: Vec<TEdge>,
@@ -89,9 +91,6 @@ pub(crate) struct GraphPath<TTrigger: Eq + Hash, TEdge: Into<Option<EdgeIndex>>>
     /// This array stores the IDs of paths that override this one. (See docs for `own_path_ids` for
     /// more info).
     overriding_path_ids: Arc<IndexSet<u64>>,
-    /// The last edge within the `edges` array, i.e. the one getting to the tail (aliased here for
-    /// convenience).
-    edge_to_tail: EdgeIndex,
     /// Names of all the possible runtime types the tail of the path can be.
     runtime_types_of_tail: Vec<ObjectTypeDefinitionPosition>,
     /// If the last edge in the `edges` array was a `DownCast` transition, then the runtime types
@@ -106,8 +105,6 @@ pub(crate) struct GraphPath<TTrigger: Eq + Hash, TEdge: Into<Option<EdgeIndex>>>
 pub(crate) struct SubgraphEnteringEdgeInfo {
     /// The index within the `edges` array.
     index: usize,
-    /// The edge within the `edges` array (aliased here for convenience).
-    edge: EdgeIndex,
     /// The cost of resolving the conditions for this edge.
     conditions_cost: QueryPlanCost,
 }
@@ -166,8 +163,10 @@ impl Hash for OpGraphPathContext {
 /// type (e.g. during type explosion).
 pub(crate) struct SimultaneousPaths(Vec<Arc<OpGraphPath>>);
 
-/// An option for a full/closed path in a GraphQL operation, i.e. one that ends in a leaf field.
-/// Note there is an optimization here, in that if some ending section of the path in the GraphQL
+pub(crate) struct SimultaneousPathsWithLazyIndirectPaths;
+
+/// One of the options for a `ClosedBranch` (see the documentation of that struct for details). Note
+/// there is an optimization here, in that if some ending section of the path within the GraphQL
 /// operation can be satisfied by a query to a single subgraph, then we just record that selection
 /// set, and the `SimultaneousPaths` ends at the node at which that query is made instead of a node
 /// for the leaf field. The selection set gets copied "as-is" into the `FetchNode`, and also avoids
@@ -176,3 +175,11 @@ pub(crate) struct ClosedPath {
     paths: SimultaneousPaths,
     selection_set: Option<Arc<NormalizedSelectionSet>>,
 }
+
+/// A list of the options generated during query planning for a specific "closed branch", which is a
+/// full/closed path in a GraphQL operation (i.e. one that ends in a leaf field).
+pub(crate) struct ClosedBranch(Vec<Arc<ClosedPath>>);
+
+/// A list of the options generated during query planning for a specific "open branch", which is a
+/// partial/open path in a GraphQL operation (i.e. one that does not end in a leaf field).
+pub(crate) struct OpenBranch(Vec<SimultaneousPathsWithLazyIndirectPaths>);
