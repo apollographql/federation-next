@@ -70,7 +70,7 @@ pub(crate) struct FetchInputs {
     selection_sets_per_parent_type:
         IndexMap<CompositeTypeDefinitionPosition, Arc<NormalizedSelectionSet>>,
     /// The supergraph schema (primarily used for validation of added selection sets).
-    supergraph_schema: Arc<ValidFederationSchema>,
+    supergraph_schema: ValidFederationSchema,
 }
 
 /// Represents a dependency between two subgraph fetches, namely that the tail/child depends on the
@@ -97,7 +97,7 @@ pub(crate) struct FetchDependencyGraphEdge {
 #[derive(Debug, Clone)]
 pub(crate) struct FetchDependencyGraph {
     /// The supergraph schema that generated the federated query graph.
-    supergraph_schema: Arc<ValidFederationSchema>,
+    supergraph_schema: ValidFederationSchema,
     /// The federated query graph that generated the fetches. (This also contains the subgraph
     /// schemas.)
     federated_query_graph: Arc<QueryGraph>,

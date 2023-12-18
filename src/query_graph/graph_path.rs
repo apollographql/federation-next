@@ -1,14 +1,11 @@
 use crate::link::graphql_definition::{DeferDirectiveArguments, OperationConditional};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
-use crate::query_plan::operation::NormalizedSelectionSet;
-use crate::query_plan::QueryPlanCost;
-use crate::schema::position::{
-    CompositeTypeDefinitionPosition, FieldDefinitionPosition, ObjectTypeDefinitionPosition,
+use crate::query_plan::operation::{
+    NormalizedField, NormalizedInlineFragment, NormalizedSelectionSet,
 };
-use crate::schema::ValidFederationSchema;
-use apollo_compiler::executable::{Argument, DirectiveList, Name};
-use apollo_compiler::Node;
+use crate::query_plan::QueryPlanCost;
+use crate::schema::position::ObjectTypeDefinitionPosition;
 use indexmap::IndexSet;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use std::hash::{Hash, Hasher};
@@ -124,8 +121,8 @@ pub(crate) type OpGraphPath = GraphPath<OpGraphPathTrigger, Option<EdgeIndex>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum OpGraphPathTrigger {
-    Field(OpPathField),
-    InlineFragment(OpPathInlineFragment),
+    Field(NormalizedField),
+    InlineFragment(NormalizedInlineFragment),
     Context(OpGraphPathContext),
 }
 
@@ -135,55 +132,8 @@ pub(crate) struct OpPath(Vec<Arc<OpPathElement>>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum OpPathElement {
-    Field(OpPathField),
-    InlineFragment(OpPathInlineFragment),
-}
-
-/// A field within a GraphQL operation, minus the selection set.
-#[derive(Debug, Clone)]
-pub(crate) struct OpPathField {
-    schema: Arc<ValidFederationSchema>,
-    position: FieldDefinitionPosition,
-    alias: Option<Name>,
-    arguments: Vec<Node<Argument>>,
-    directives: DirectiveList,
-}
-
-impl Eq for OpPathField {}
-
-impl PartialEq for OpPathField {
-    fn eq(&self, _other: &Self) -> bool {
-        todo!()
-    }
-}
-
-impl Hash for OpPathField {
-    fn hash<H: Hasher>(&self, _state: &mut H) {
-        todo!()
-    }
-}
-
-/// An inline fragment within a GraphQL operation, minus the selection set.
-#[derive(Debug, Clone)]
-pub(crate) struct OpPathInlineFragment {
-    schema: Arc<ValidFederationSchema>,
-    parent_type_position: CompositeTypeDefinitionPosition,
-    type_condition: Option<CompositeTypeDefinitionPosition>,
-    directives: DirectiveList,
-}
-
-impl Eq for OpPathInlineFragment {}
-
-impl PartialEq for OpPathInlineFragment {
-    fn eq(&self, _other: &Self) -> bool {
-        todo!()
-    }
-}
-
-impl Hash for OpPathInlineFragment {
-    fn hash<H: Hasher>(&self, _state: &mut H) {
-        todo!()
-    }
+    Field(NormalizedField),
+    InlineFragment(NormalizedInlineFragment),
 }
 
 /// Records, as we walk a path within a GraphQL operation, important directives encountered
