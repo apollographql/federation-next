@@ -986,7 +986,7 @@ impl ScalarTypeDefinitionPosition {
         schema: &mut FederationSchema,
     ) -> Result<Option<ScalarTypeReferencers>, FederationError> {
         log::debug!("remove scalar {self}");
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(None);
         };
         for field in &referencers.object_fields {
@@ -1007,6 +1007,7 @@ impl ScalarTypeDefinitionPosition {
         for argument in &referencers.directive_arguments {
             argument.remove(schema)?;
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(Some(referencers))
     }
 
@@ -1014,7 +1015,7 @@ impl ScalarTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<(), FederationError> {
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(());
         };
         for field in referencers.object_fields {
@@ -1035,18 +1036,25 @@ impl ScalarTypeDefinitionPosition {
         for argument in referencers.directive_arguments {
             argument.remove(schema)?;
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(())
     }
 
-    fn remove_internal(
+    /// Removes outgoing referencers from this type, and returns the referencers to this type, if
+    /// any.
+    fn take_referencers(
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<ScalarTypeReferencers>, FederationError> {
         let Some(type_) = self.try_get(&schema.schema) else {
             return Ok(None);
         };
-        self.remove_references(type_, &mut schema.referencers);
-        schema.schema.types.remove(&self.type_name);
+        for directive_reference in type_.directives.iter() {
+            self.remove_directive_name_references(
+                &mut schema.referencers,
+                &directive_reference.name,
+            );
+        }
         Ok(Some(
             schema
                 .referencers
@@ -1126,12 +1134,6 @@ impl ScalarTypeDefinitionPosition {
             self.insert_directive_name_references(referencers, &directive_reference.name)?;
         }
         Ok(())
-    }
-
-    fn remove_references(&self, type_: &Node<ScalarType>, referencers: &mut Referencers) {
-        for directive_reference in type_.directives.iter() {
-            self.remove_directive_name_references(referencers, &directive_reference.name);
-        }
     }
 
     fn insert_directive_name_references(
@@ -1335,7 +1337,7 @@ impl ObjectTypeDefinitionPosition {
         schema: &mut FederationSchema,
     ) -> Result<Option<ObjectTypeReferencers>, FederationError> {
         log::debug!("remove object {self}");
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(None);
         };
         for root in &referencers.schema_roots {
@@ -1350,6 +1352,7 @@ impl ObjectTypeDefinitionPosition {
         for type_ in &referencers.union_types {
             type_.remove_member(schema, &self.type_name);
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(Some(referencers))
     }
 
@@ -1357,7 +1360,7 @@ impl ObjectTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<(), FederationError> {
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(());
         };
         for root in referencers.schema_roots {
@@ -1372,10 +1375,11 @@ impl ObjectTypeDefinitionPosition {
         for type_ in referencers.union_types {
             type_.remove_member_recursive(schema, &self.type_name)?;
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(())
     }
 
-    fn remove_internal(
+    fn take_referencers(
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<ObjectTypeReferencers>, FederationError> {
@@ -1383,7 +1387,6 @@ impl ObjectTypeDefinitionPosition {
             return Ok(None);
         };
         self.remove_references(type_, &schema.schema, &mut schema.referencers)?;
-        schema.schema.types.remove(&self.type_name);
         Ok(Some(
             schema
                 .referencers
@@ -2645,7 +2648,7 @@ impl InterfaceTypeDefinitionPosition {
         schema: &mut FederationSchema,
     ) -> Result<Option<InterfaceTypeReferencers>, FederationError> {
         log::debug!("remove interface {self}");
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(None);
         };
         for type_ in &referencers.object_types {
@@ -2660,6 +2663,7 @@ impl InterfaceTypeDefinitionPosition {
         for field in &referencers.interface_fields {
             field.remove(schema)?;
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(Some(referencers))
     }
 
@@ -2667,7 +2671,7 @@ impl InterfaceTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<(), FederationError> {
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(());
         };
         for type_ in referencers.object_types {
@@ -2682,10 +2686,11 @@ impl InterfaceTypeDefinitionPosition {
         for field in referencers.interface_fields {
             field.remove_recursive(schema)?;
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(())
     }
 
-    fn remove_internal(
+    fn take_referencers(
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<InterfaceTypeReferencers>, FederationError> {
@@ -2693,7 +2698,6 @@ impl InterfaceTypeDefinitionPosition {
             return Ok(None);
         };
         self.remove_references(type_, &schema.schema, &mut schema.referencers)?;
-        schema.schema.types.remove(&self.type_name);
         Ok(Some(
             schema
                 .referencers
@@ -3889,7 +3893,7 @@ impl UnionTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<UnionTypeReferencers>, FederationError> {
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(None);
         };
         for field in &referencers.object_fields {
@@ -3898,6 +3902,7 @@ impl UnionTypeDefinitionPosition {
         for field in &referencers.interface_fields {
             field.remove(schema)?;
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(Some(referencers))
     }
 
@@ -3905,7 +3910,7 @@ impl UnionTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<(), FederationError> {
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(());
         };
         for field in referencers.object_fields {
@@ -3914,10 +3919,11 @@ impl UnionTypeDefinitionPosition {
         for field in referencers.interface_fields {
             field.remove_recursive(schema)?;
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(())
     }
 
-    fn remove_internal(
+    fn take_referencers(
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<UnionTypeReferencers>, FederationError> {
@@ -3925,7 +3931,6 @@ impl UnionTypeDefinitionPosition {
             return Ok(None);
         };
         self.remove_references(type_, &mut schema.referencers)?;
-        schema.schema.types.remove(&self.type_name);
         Ok(Some(
             schema
                 .referencers
@@ -4355,78 +4360,77 @@ impl EnumTypeDefinitionPosition {
     }
 
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
-        self.remove_internal(schema, |schema, referencers| {
-            for field in &referencers.object_fields {
-                field.remove(schema)?;
-            }
-            for argument in &referencers.object_field_arguments {
-                argument.remove(schema)?;
-            }
-            for field in &referencers.interface_fields {
-                field.remove(schema)?;
-            }
-            for argument in &referencers.interface_field_arguments {
-                argument.remove(schema)?;
-            }
-            for field in &referencers.input_object_fields {
-                field.remove(schema)?;
-            }
-            for argument in &referencers.directive_arguments {
-                argument.remove(schema)?;
-            }
-            Ok(())
-        })
+        let Some(referencers) = self.take_referencers(schema)? else {
+            return Ok(());
+        };
+        for field in &referencers.object_fields {
+            field.remove(schema)?;
+        }
+        for argument in &referencers.object_field_arguments {
+            argument.remove(schema)?;
+        }
+        for field in &referencers.interface_fields {
+            field.remove(schema)?;
+        }
+        for argument in &referencers.interface_field_arguments {
+            argument.remove(schema)?;
+        }
+        for field in &referencers.input_object_fields {
+            field.remove(schema)?;
+        }
+        for argument in &referencers.directive_arguments {
+            argument.remove(schema)?;
+        }
+        schema.schema.types.remove(&self.type_name);
+        Ok(())
     }
 
     pub(crate) fn remove_recursive(
         &self,
         schema: &mut FederationSchema,
     ) -> Result<(), FederationError> {
-        self.remove_internal(schema, |schema, referencers| {
-            for field in &referencers.object_fields {
-                field.remove_recursive(schema)?;
-            }
-            for argument in &referencers.object_field_arguments {
-                argument.remove(schema)?;
-            }
-            for field in &referencers.interface_fields {
-                field.remove_recursive(schema)?;
-            }
-            for argument in &referencers.interface_field_arguments {
-                argument.remove(schema)?;
-            }
-            for field in &referencers.input_object_fields {
-                field.remove_recursive(schema)?;
-            }
-            for argument in &referencers.directive_arguments {
-                argument.remove(schema)?;
-            }
-            Ok(())
-        })
-    }
-
-    fn remove_internal(
-        &self,
-        schema: &mut FederationSchema,
-        remove_references: impl FnOnce(
-            &mut FederationSchema,
-            &mut EnumTypeReferencers,
-        ) -> Result<(), FederationError>,
-    ) -> Result<(), FederationError> {
-        let Some(type_) = self.try_get(&schema.schema) else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(());
         };
-        self.remove_references(type_, &mut schema.referencers)?;
-        let mut referencers = schema
-            .referencers
-            .enum_types
-            .remove(&self.type_name)
-            .ok_or_else(|| SingleFederationError::Internal {
-                message: format!("Schema missing referencers for type \"{}\"", self),
-            })?;
-        remove_references(schema, &mut referencers)?;
+        for field in &referencers.object_fields {
+            field.remove_recursive(schema)?;
+        }
+        for argument in &referencers.object_field_arguments {
+            argument.remove(schema)?;
+        }
+        for field in &referencers.interface_fields {
+            field.remove_recursive(schema)?;
+        }
+        for argument in &referencers.interface_field_arguments {
+            argument.remove(schema)?;
+        }
+        for field in &referencers.input_object_fields {
+            field.remove_recursive(schema)?;
+        }
+        for argument in &referencers.directive_arguments {
+            argument.remove(schema)?;
+        }
         schema.schema.types.remove(&self.type_name);
         Ok(())
+    }
+
+    fn take_referencers(
+        &self,
+        schema: &mut FederationSchema,
+    ) -> Result<Option<EnumTypeReferencers>, FederationError> {
+        let Some(type_) = self.try_get(&schema.schema) else {
+            return Ok(None);
+        };
+        self.remove_references(type_, &mut schema.referencers)?;
+        Ok(Some(
+            schema
+                .referencers
+                .enum_types
+                .remove(&self.type_name)
+                .ok_or_else(|| SingleFederationError::Internal {
+                    message: format!("Schema missing referencers for type \"{}\"", self),
+                })?,
+        ))
     }
 
     pub(crate) fn insert_directive(
@@ -4956,7 +4960,7 @@ impl InputObjectTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<InputObjectTypeReferencers>, FederationError> {
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(None);
         };
         for argument in &referencers.object_field_arguments {
@@ -4971,6 +4975,7 @@ impl InputObjectTypeDefinitionPosition {
         for argument in &referencers.directive_arguments {
             argument.remove(schema)?;
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(Some(referencers))
     }
 
@@ -4978,7 +4983,7 @@ impl InputObjectTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<(), FederationError> {
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(());
         };
         for argument in referencers.object_field_arguments {
@@ -4993,10 +4998,11 @@ impl InputObjectTypeDefinitionPosition {
         for argument in referencers.directive_arguments {
             argument.remove(schema)?;
         }
+        schema.schema.types.remove(&self.type_name);
         Ok(())
     }
 
-    fn remove_internal(
+    fn take_referencers(
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<InputObjectTypeReferencers>, FederationError> {
@@ -5004,7 +5010,6 @@ impl InputObjectTypeDefinitionPosition {
             return Ok(None);
         };
         self.remove_references(type_, &schema.schema, &mut schema.referencers)?;
-        schema.schema.types.remove(&self.type_name);
         Ok(Some(
             schema
                 .referencers
@@ -5656,7 +5661,7 @@ impl DirectiveDefinitionPosition {
         schema: &mut FederationSchema,
     ) -> Result<Option<DirectiveReferencers>, FederationError> {
         log::debug!("remove directive {self}");
-        let Some(referencers) = self.remove_internal(schema)? else {
+        let Some(referencers) = self.take_referencers(schema)? else {
             return Ok(None);
         };
         if let Some(schema_definition) = &referencers.schema {
@@ -5701,10 +5706,14 @@ impl DirectiveDefinitionPosition {
         for argument in &referencers.directive_arguments {
             argument.remove_directive_name(schema, &self.directive_name);
         }
+        schema
+            .schema
+            .directive_definitions
+            .remove(&self.directive_name);
         Ok(Some(referencers))
     }
 
-    fn remove_internal(
+    fn take_referencers(
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<DirectiveReferencers>, FederationError> {
@@ -5712,10 +5721,6 @@ impl DirectiveDefinitionPosition {
             return Ok(None);
         };
         self.remove_references(directive, &schema.schema, &mut schema.referencers)?;
-        schema
-            .schema
-            .directive_definitions
-            .remove(&self.directive_name);
         Ok(Some(
             schema
                 .referencers
