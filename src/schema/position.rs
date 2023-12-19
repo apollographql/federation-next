@@ -767,6 +767,7 @@ impl SchemaRootDefinitionPosition {
     }
 
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        log::debug!("remove root definition {self}");
         let Some(root_type) = self.try_get(&schema.schema) else {
             return Ok(());
         };
@@ -984,6 +985,7 @@ impl ScalarTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<ScalarTypeReferencers>, FederationError> {
+        log::debug!("remove scalar {self}");
         let Some(referencers) = self.remove_internal(schema)? else {
             return Ok(None);
         };
@@ -1332,6 +1334,7 @@ impl ObjectTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<ObjectTypeReferencers>, FederationError> {
+        log::debug!("remove object {self}");
         let Some(referencers) = self.remove_internal(schema)? else {
             return Ok(None);
         };
@@ -1784,6 +1787,7 @@ impl ObjectFieldDefinitionPosition {
     }
 
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        log::debug!("remove field {self}");
         let Some(field) = self.try_get(&schema.schema) else {
             return Ok(());
         };
@@ -1796,6 +1800,7 @@ impl ObjectFieldDefinitionPosition {
         Ok(())
     }
 
+    /// Removes this field and also the whole object type if it has no fields left.
     pub(crate) fn remove_recursive(
         &self,
         schema: &mut FederationSchema,
@@ -2223,6 +2228,7 @@ impl ObjectFieldArgumentDefinitionPosition {
     }
 
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        log::debug!("remove field argument {self}");
         let Some(argument) = self.try_get(&schema.schema) else {
             return Ok(());
         };
@@ -2638,6 +2644,7 @@ impl InterfaceTypeDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<InterfaceTypeReferencers>, FederationError> {
+        log::debug!("remove interface {self}");
         let Some(referencers) = self.remove_internal(schema)? else {
             return Ok(None);
         };
@@ -3024,6 +3031,7 @@ impl InterfaceFieldDefinitionPosition {
     }
 
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        log::debug!("remove interface field {self}");
         let Some(field) = self.try_get(&schema.schema) else {
             return Ok(());
         };
@@ -3036,6 +3044,7 @@ impl InterfaceFieldDefinitionPosition {
         Ok(())
     }
 
+    /// Removes this field and also the whole interface if it has no fields left.
     pub(crate) fn remove_recursive(
         &self,
         schema: &mut FederationSchema,
@@ -3467,6 +3476,7 @@ impl InterfaceFieldArgumentDefinitionPosition {
     }
 
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        log::debug!("remove interface field argument {self}");
         let Some(argument) = self.try_get(&schema.schema) else {
             return Ok(());
         };
@@ -4010,6 +4020,7 @@ impl UnionTypeDefinitionPosition {
             .retain(|other_type| !name.equivalent(other_type.deref()));
     }
 
+    /// Removes a member and also this whole union type if it has no members left.
     pub(crate) fn remove_member_recursive<Q: Hash + Equivalent<Name>>(
         &self,
         schema: &mut FederationSchema,
@@ -4639,6 +4650,7 @@ impl EnumValueDefinitionPosition {
     }
 
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        log::debug!("remove enum value {self}");
         let Some(value) = self.try_get(&schema.schema) else {
             return Ok(());
         };
@@ -4651,6 +4663,7 @@ impl EnumValueDefinitionPosition {
         Ok(())
     }
 
+    /// Removes this value and also the whole enum if it has no values left.
     pub(crate) fn remove_recursive(
         &self,
         schema: &mut FederationSchema,
@@ -5232,6 +5245,7 @@ impl InputObjectFieldDefinitionPosition {
     }
 
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        log::debug!("remove input object field {self}");
         let Some(field) = self.try_get(&schema.schema) else {
             return Ok(());
         };
@@ -5641,6 +5655,7 @@ impl DirectiveDefinitionPosition {
         &self,
         schema: &mut FederationSchema,
     ) -> Result<Option<DirectiveReferencers>, FederationError> {
+        log::debug!("remove directive {self}");
         let Some(referencers) = self.remove_internal(schema)? else {
             return Ok(None);
         };
@@ -5860,6 +5875,7 @@ impl DirectiveArgumentDefinitionPosition {
     }
 
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        log::debug!("remove directive argument {self}");
         let Some(argument) = self.try_get(&schema.schema) else {
             return Ok(());
         };
