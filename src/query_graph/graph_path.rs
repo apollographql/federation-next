@@ -1,10 +1,11 @@
+use crate::error::FederationError;
 use crate::link::graphql_definition::{DeferDirectiveArguments, OperationConditional};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
 use crate::query_plan::operation::{
     NormalizedField, NormalizedInlineFragment, NormalizedSelectionSet,
 };
-use crate::query_plan::QueryPlanCost;
+use crate::query_plan::{QueryPathElement, QueryPlanCost};
 use crate::schema::position::ObjectTypeDefinitionPosition;
 use indexmap::IndexSet;
 use petgraph::graph::{EdgeIndex, NodeIndex};
@@ -125,7 +126,7 @@ pub(crate) enum OpGraphPathTrigger {
 
 /// A path of operation elements within a GraphQL operation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct OpPath(Vec<Arc<OpPathElement>>);
+pub(crate) struct OpPath(pub(crate) Vec<Arc<OpPathElement>>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum OpPathElement {
@@ -183,3 +184,22 @@ pub(crate) struct ClosedBranch(Vec<Arc<ClosedPath>>);
 /// A list of the options generated during query planning for a specific "open branch", which is a
 /// partial/open path in a GraphQL operation (i.e. one that does not end in a leaf field).
 pub(crate) struct OpenBranch(Vec<SimultaneousPathsWithLazyIndirectPaths>);
+
+impl TryFrom<&'_ OpPath> for Vec<QueryPathElement> {
+    type Error = FederationError;
+
+    fn try_from(value: &'_ OpPath) -> Result<Self, Self::Error> {
+        value
+            .0
+            .iter()
+            .map(|path_element| {
+                Ok(match path_element.as_ref() {
+                    OpPathElement::Field(field) => QueryPathElement::Field(field.try_into()?),
+                    OpPathElement::InlineFragment(inline) => {
+                        QueryPathElement::InlineFragment(inline.try_into()?)
+                    }
+                })
+            })
+            .collect()
+    }
+}

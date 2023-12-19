@@ -33,6 +33,7 @@ pub struct SubscriptionNode {
     rest: Option<PlanNode>,
 }
 
+#[derive(Clone)]
 pub enum PlanNode {
     Fetch(Arc<FetchNode>),
     Sequence(Arc<SequenceNode>),

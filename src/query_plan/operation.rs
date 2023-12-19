@@ -774,23 +774,18 @@ impl TryFrom<&NormalizedSelectionSet> for SelectionSet {
     }
 }
 
-impl TryFrom<&NormalizedFieldSelection> for Field {
+impl TryFrom<&NormalizedField> for Field {
     type Error = FederationError;
 
-    fn try_from(val: &NormalizedFieldSelection) -> Result<Self, Self::Error> {
-        let normalized_field = &val.field;
+    fn try_from(normalized_field: &NormalizedField) -> Result<Self, Self::Error> {
         let definition = normalized_field
             .field_position
             .get(normalized_field.schema.schema())?
             .node
             .to_owned();
-        let selection_set = if let Some(selection_set) = &val.selection_set {
-            selection_set.try_into()?
-        } else {
-            SelectionSet {
-                ty: definition.ty.inner_named_type().clone(),
-                selections: vec![],
-            }
+        let selection_set = SelectionSet {
+            ty: definition.ty.inner_named_type().clone(),
+            selections: vec![],
         };
         Ok(Self {
             definition,
@@ -803,18 +798,52 @@ impl TryFrom<&NormalizedFieldSelection> for Field {
     }
 }
 
+impl TryFrom<&NormalizedFieldSelection> for Field {
+    type Error = FederationError;
+
+    fn try_from(val: &NormalizedFieldSelection) -> Result<Self, Self::Error> {
+        let mut field = Self::try_from(&val.field)?;
+        if let Some(selection_set) = &val.selection_set {
+            field.selection_set = selection_set.try_into()?;
+        }
+        Ok(field)
+    }
+}
+
+impl TryFrom<&NormalizedInlineFragment> for InlineFragment {
+    type Error = FederationError;
+
+    fn try_from(
+        normalized_inline_fragment: &NormalizedInlineFragment,
+    ) -> Result<Self, Self::Error> {
+        let type_condition = normalized_inline_fragment
+            .type_condition_position
+            .as_ref()
+            .map(|pos| pos.type_name().clone());
+        let ty = type_condition.clone().unwrap_or_else(|| {
+            normalized_inline_fragment
+                .parent_type_position
+                .type_name()
+                .clone()
+        });
+        Ok(Self {
+            type_condition,
+            directives: normalized_inline_fragment.directives.deref().to_owned(),
+            selection_set: SelectionSet {
+                ty,
+                selections: Vec::new(),
+            },
+        })
+    }
+}
+
 impl TryFrom<&NormalizedInlineFragmentSelection> for InlineFragment {
     type Error = FederationError;
 
     fn try_from(val: &NormalizedInlineFragmentSelection) -> Result<Self, Self::Error> {
-        let normalized_inline_fragment = &val.inline_fragment;
         Ok(Self {
-            type_condition: normalized_inline_fragment
-                .type_condition_position
-                .as_ref()
-                .map(|pos| pos.type_name().clone()),
-            directives: normalized_inline_fragment.directives.deref().to_owned(),
             selection_set: (&val.selection_set).try_into()?,
+            ..Self::try_from(&val.inline_fragment)?
         })
     }
 }

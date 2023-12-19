@@ -17,7 +17,7 @@ pub(crate) enum Condition {
 /// is negated in the condition. We maintain the invariant that there's at least one condition (i.e.
 /// the map is non-empty), and that there's at most one condition per variable name.
 #[derive(Debug, Clone)]
-pub(crate) struct VariableConditions(IndexMap<Name, bool>);
+pub(crate) struct VariableConditions(pub(crate) IndexMap<Name, bool>);
 
 #[derive(Debug, Clone)]
 pub(crate) struct VariableCondition {
