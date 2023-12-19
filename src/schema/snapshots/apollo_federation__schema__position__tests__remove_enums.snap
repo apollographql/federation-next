@@ -1,0 +1,24 @@
+---
+source: src/schema/position.rs
+expression: schema.schema
+---
+directive @directiveName(scalar: ScalarType) on FIELD_DEFINITION
+
+directive @applied on SCALAR | ENUM
+
+type Query {
+  object: ObjectType
+  arguments(scalar: ScalarType): ObjectType
+  scalar: ScalarType
+}
+
+input InputObjectType {
+  scalar: ScalarType
+}
+
+scalar ScalarType @applied
+
+type ObjectType {
+  returnScalar: ScalarType
+}
+

@@ -42,6 +42,30 @@ impl TypeDefinitionPosition {
         }
     }
 
+    pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        match self {
+            TypeDefinitionPosition::Scalar(type_) => {
+                type_.remove(schema)?;
+            }
+            TypeDefinitionPosition::Object(type_) => {
+                type_.remove(schema)?;
+            }
+            TypeDefinitionPosition::Interface(type_) => {
+                type_.remove(schema)?;
+            }
+            TypeDefinitionPosition::Union(type_) => {
+                type_.remove(schema)?;
+            }
+            TypeDefinitionPosition::Enum(type_) => {
+                type_.remove(schema)?;
+            }
+            TypeDefinitionPosition::InputObject(type_) => {
+                type_.remove(schema)?;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn get<'schema>(
         &self,
         schema: &'schema Schema,
@@ -821,6 +845,10 @@ pub(crate) struct ScalarTypeDefinitionPosition {
 }
 
 impl ScalarTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn get<'schema>(
         &self,
         schema: &'schema Schema,
@@ -1146,6 +1174,10 @@ pub(crate) struct ObjectTypeDefinitionPosition {
 }
 
 impl ObjectTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn field(&self, field_name: Name) -> ObjectFieldDefinitionPosition {
         ObjectFieldDefinitionPosition {
             type_name: self.type_name.clone(),
@@ -3433,6 +3465,7 @@ impl InterfaceFieldArgumentDefinitionPosition {
             &mut schema.referencers,
         )
     }
+
     pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
         let Some(argument) = self.try_get(&schema.schema) else {
             return Ok(());
@@ -4179,6 +4212,10 @@ pub(crate) struct EnumTypeDefinitionPosition {
 }
 
 impl EnumTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn value(&self, value_name: Name) -> EnumValueDefinitionPosition {
         EnumValueDefinitionPosition {
             type_name: self.type_name.clone(),
@@ -4306,80 +4343,79 @@ impl EnumTypeDefinitionPosition {
         self.insert_references(self.get(&schema.schema)?, &mut schema.referencers)
     }
 
-    pub(crate) fn remove(
-        &self,
-        schema: &mut FederationSchema,
-    ) -> Result<Option<EnumTypeReferencers>, FederationError> {
-        let Some(referencers) = self.remove_internal(schema)? else {
-            return Ok(None);
-        };
-        for field in &referencers.object_fields {
-            field.remove(schema)?;
-        }
-        for argument in &referencers.object_field_arguments {
-            argument.remove(schema)?;
-        }
-        for field in &referencers.interface_fields {
-            field.remove(schema)?;
-        }
-        for argument in &referencers.interface_field_arguments {
-            argument.remove(schema)?;
-        }
-        for field in &referencers.input_object_fields {
-            field.remove(schema)?;
-        }
-        for argument in &referencers.directive_arguments {
-            argument.remove(schema)?;
-        }
-        Ok(Some(referencers))
+    pub(crate) fn remove(&self, schema: &mut FederationSchema) -> Result<(), FederationError> {
+        self.remove_internal(schema, |schema, referencers| {
+            for field in &referencers.object_fields {
+                field.remove(schema)?;
+            }
+            for argument in &referencers.object_field_arguments {
+                argument.remove(schema)?;
+            }
+            for field in &referencers.interface_fields {
+                field.remove(schema)?;
+            }
+            for argument in &referencers.interface_field_arguments {
+                argument.remove(schema)?;
+            }
+            for field in &referencers.input_object_fields {
+                field.remove(schema)?;
+            }
+            for argument in &referencers.directive_arguments {
+                argument.remove(schema)?;
+            }
+            Ok(())
+        })
     }
 
     pub(crate) fn remove_recursive(
         &self,
         schema: &mut FederationSchema,
     ) -> Result<(), FederationError> {
-        let Some(referencers) = self.remove_internal(schema)? else {
-            return Ok(());
-        };
-        for field in referencers.object_fields {
-            field.remove_recursive(schema)?;
-        }
-        for argument in referencers.object_field_arguments {
-            argument.remove(schema)?;
-        }
-        for field in referencers.interface_fields {
-            field.remove_recursive(schema)?;
-        }
-        for argument in referencers.interface_field_arguments {
-            argument.remove(schema)?;
-        }
-        for field in referencers.input_object_fields {
-            field.remove_recursive(schema)?;
-        }
-        for argument in referencers.directive_arguments {
-            argument.remove(schema)?;
-        }
-        Ok(())
+        self.remove_internal(schema, |schema, referencers| {
+            for field in &referencers.object_fields {
+                field.remove_recursive(schema)?;
+            }
+            for argument in &referencers.object_field_arguments {
+                argument.remove(schema)?;
+            }
+            for field in &referencers.interface_fields {
+                field.remove_recursive(schema)?;
+            }
+            for argument in &referencers.interface_field_arguments {
+                argument.remove(schema)?;
+            }
+            for field in &referencers.input_object_fields {
+                field.remove_recursive(schema)?;
+            }
+            for argument in &referencers.directive_arguments {
+                argument.remove(schema)?;
+            }
+            Ok(())
+        })
     }
 
     fn remove_internal(
         &self,
         schema: &mut FederationSchema,
-    ) -> Result<Option<EnumTypeReferencers>, FederationError> {
+        remove_references: impl FnOnce(
+            &mut FederationSchema,
+            &mut EnumTypeReferencers,
+        ) -> Result<(), FederationError>,
+    ) -> Result<(), FederationError> {
         let Some(type_) = self.try_get(&schema.schema) else {
-            return Ok(None);
+            return Ok(());
         };
         self.remove_references(type_, &mut schema.referencers)?;
+        let mut referencers = schema
+            .referencers
+            .enum_types
+            .remove(&self.type_name)
+            .ok_or_else(|| SingleFederationError::Internal {
+                message: format!("Schema missing referencers for type \"{}\"", self),
+            })?;
+        remove_references(schema, &mut referencers)?;
         schema.schema.types.remove(&self.type_name);
-        Ok(Some(
-            schema
-                .referencers
-                .enum_types
-                .remove(&self.type_name)
-                .ok_or_else(|| SingleFederationError::Internal {
-                    message: format!("Schema missing referencers for type \"{}\"", self),
-                })?,
-        ))
+        Ok(())
     }
 
     pub(crate) fn insert_directive(
@@ -5476,6 +5512,10 @@ pub(crate) struct DirectiveDefinitionPosition {
 }
 
 impl DirectiveDefinitionPosition {
+    pub(crate) fn new(directive_name: Name) -> Self {
+        Self { directive_name }
+    }
+
     pub(crate) fn argument(&self, argument_name: Name) -> DirectiveArgumentDefinitionPosition {
         DirectiveArgumentDefinitionPosition {
             directive_name: self.directive_name.clone(),
@@ -6280,5 +6320,108 @@ impl FederationSchema {
             metadata,
             referencers,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use apollo_compiler::name;
+    use apollo_compiler::Schema;
+    use insta::assert_display_snapshot;
+
+    const EXAMPLE_SCHEMA: &str = r#"
+directive @directiveName(
+    enum: EnumType
+    scalar: ScalarType
+) on FIELD_DEFINITION
+directive @applied on SCALAR | ENUM
+
+type Query {
+    object: ObjectType @directiveName(enum: VALUE1)
+    enum: EnumType @directiveName(scalar: 1)
+    scalar: ScalarType
+    arguments(
+        enum: EnumType,
+        scalar: ScalarType,
+    ): ObjectType
+}
+
+enum EnumType @applied {
+    VALUE1
+    VALUE2
+}
+
+scalar ScalarType @applied
+
+type ObjectType {
+    returnEnum(inputScalar: ScalarType): EnumType
+    returnScalar(inputEnum: EnumType): ScalarType
+}
+
+input InputObjectType {
+    enum: EnumType
+    scalar: ScalarType
+}
+    "#;
+
+    #[test]
+    fn remove_enums() {
+        let schema = Schema::parse(EXAMPLE_SCHEMA, "schema.graphqls").unwrap();
+        let mut schema = FederationSchema::new(schema).unwrap();
+
+        EnumTypeDefinitionPosition::new(name!("EnumType"))
+            .remove(&mut schema)
+            .unwrap();
+
+        assert_display_snapshot!(schema.schema);
+    }
+
+    #[test]
+    fn remove_scalars() {
+        let schema = Schema::parse(EXAMPLE_SCHEMA, "schema.graphqls").unwrap();
+        let mut schema = FederationSchema::new(schema).unwrap();
+
+        ScalarTypeDefinitionPosition::new(name!("ScalarType"))
+            .remove(&mut schema)
+            .unwrap();
+
+        assert_display_snapshot!(schema.schema);
+    }
+
+    #[test]
+    fn remove_types() {
+        let schema = Schema::parse(EXAMPLE_SCHEMA, "schema.graphqls").unwrap();
+        let mut schema = FederationSchema::new(schema).unwrap();
+
+        ObjectTypeDefinitionPosition::new(name!("ObjectType"))
+            .remove(&mut schema)
+            .unwrap();
+
+        assert_display_snapshot!(schema.schema);
+    }
+
+    #[test]
+    fn remove_directive_from_field() {
+        let schema = Schema::parse(EXAMPLE_SCHEMA, "schema.graphqls").unwrap();
+        let mut schema = FederationSchema::new(schema).unwrap();
+
+        DirectiveDefinitionPosition::new(name!("directiveName"))
+            .remove(&mut schema)
+            .unwrap();
+
+        assert_display_snapshot!(schema.schema);
+    }
+
+    #[test]
+    fn remove_directive_from_type() {
+        let schema = Schema::parse(EXAMPLE_SCHEMA, "schema.graphqls").unwrap();
+        let mut schema = FederationSchema::new(schema).unwrap();
+
+        DirectiveDefinitionPosition::new(name!("applied"))
+            .remove(&mut schema)
+            .unwrap();
+
+        assert_display_snapshot!(schema.schema);
     }
 }

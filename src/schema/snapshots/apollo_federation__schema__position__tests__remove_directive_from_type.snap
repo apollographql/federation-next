@@ -1,0 +1,30 @@
+---
+source: src/schema/position.rs
+expression: schema.schema
+---
+directive @directiveName(enum: EnumType, scalar: ScalarType) on FIELD_DEFINITION
+
+type Query {
+  object: ObjectType @directiveName(enum: VALUE1)
+  enum: EnumType @directiveName(scalar: 1)
+  scalar: ScalarType
+  arguments(enum: EnumType, scalar: ScalarType): ObjectType
+}
+
+enum EnumType {
+  VALUE1
+  VALUE2
+}
+
+scalar ScalarType
+
+type ObjectType {
+  returnEnum(inputScalar: ScalarType): EnumType
+  returnScalar(inputEnum: EnumType): ScalarType
+}
+
+input InputObjectType {
+  enum: EnumType
+  scalar: ScalarType
+}
+
