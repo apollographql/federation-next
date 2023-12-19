@@ -6058,15 +6058,7 @@ impl DirectiveArgumentDefinitionPosition {
                     .remove(self);
             }
             _ => {
-                return Err(
-                    SingleFederationError::Internal {
-                        message: format!(
-                            "Directive argument \"{}\"'s inner type \"{}\" does not refer to an existing input type.",
-                            self,
-                            input_type_reference.deref(),
-                        )
-                    }.into()
-                );
+                // Already gone
             }
         }
         Ok(())
