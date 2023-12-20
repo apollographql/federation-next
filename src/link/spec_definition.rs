@@ -155,23 +155,19 @@ impl<T: SpecDefinition> SpecDefinitions<T> {
         }
     }
 
-    pub(crate) fn add(&mut self, definition: T) -> Result<(), FederationError> {
-        if *definition.identity() != self.identity {
-            return Err(SingleFederationError::Internal {
-                message: format!(
-                    "Cannot add definition for {} to the versions of definitions for {}",
-                    definition.to_string(),
-                    self.identity
-                ),
-            }
-            .into());
-        }
+    pub(crate) fn add(&mut self, definition: T) {
+        assert_eq!(
+            *definition.identity(),
+            self.identity,
+            "Cannot add definition for {} to the versions of definitions for {}",
+            definition.to_string(),
+            self.identity
+        );
         if self.definitions.contains_key(definition.version()) {
-            return Ok(());
+            return;
         }
         self.definitions
             .insert(definition.version().clone(), definition);
-        Ok(())
     }
 
     pub(crate) fn find(&self, requested: &Version) -> Option<&T> {
@@ -180,14 +176,5 @@ impl<T: SpecDefinition> SpecDefinitions<T> {
 
     pub(crate) fn versions(&self) -> Keys<Version, T> {
         self.definitions.keys()
-    }
-}
-
-pub(crate) fn spec_definitions<T: SpecDefinition>(
-    spec_definitions: &'static Result<SpecDefinitions<T>, FederationError>,
-) -> Result<&'static SpecDefinitions<T>, FederationError> {
-    match spec_definitions {
-        Ok(spec_definitions) => Ok(spec_definitions),
-        Err(error) => Err(error.clone()),
     }
 }
