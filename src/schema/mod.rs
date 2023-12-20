@@ -30,8 +30,8 @@ impl FederationSchema {
         &self.schema
     }
 
-    pub(crate) fn metadata(&self) -> &Option<LinksMetadata> {
-        &self.metadata
+    pub(crate) fn metadata(&self) -> Option<&LinksMetadata> {
+        self.metadata.as_ref()
     }
 
     pub(crate) fn referencers(&self) -> &Referencers {
