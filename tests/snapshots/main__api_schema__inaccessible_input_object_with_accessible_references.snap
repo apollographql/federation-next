@@ -1,0 +1,13 @@
+---
+source: tests/api_schema.rs
+expression: errors
+---
+The following errors occurred:
+
+  - Type `InputObject` is @inaccessible but is referenced by `Referencer1.someField(someArg:)`, which is in the API schema.
+
+  - Type `InputObject` is @inaccessible but is referenced by `Referencer2.someField(someArg:)`, which is in the API schema.
+
+  - Type `InputObject` is @inaccessible but is referenced by `Referencer3.someField`, which is in the API schema.
+
+  - Type `InputObject` is @inaccessible but is referenced by `@referencer4(someArg:)`, which is in the API schema.

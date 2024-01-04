@@ -126,6 +126,151 @@ fn inaccessible_union_with_accessible_references() {
 }
 
 #[test]
+fn inaccessible_input_object_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible input object type
+      input InputObject @inaccessible {
+        someField: String
+      }
+
+      # Inaccessible input object type can't be referenced by object field
+      # argument in the API schema
+      type Referencer1 implements Referencer2 {
+        someField(someArg: InputObject): String
+      }
+
+      # Inaccessible input object type can't be referenced by interface field
+      # argument in the API schema
+      interface Referencer2 {
+        someField(someArg: InputObject): String
+      }
+
+      # Inaccessible input object type can't be referenced by input object field
+      # in the API schema
+      input Referencer3 {
+        someField: InputObject
+      }
+
+      # Inaccessible input object type can't be referenced by directive argument
+      # in the API schema
+      directive @referencer4(someArg: InputObject) on QUERY
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors);
+}
+
+#[test]
+fn inaccessible_enum_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible enum type
+      enum Enum @inaccessible {
+        SOME_VALUE
+      }
+
+      # Inaccessible enum type can't be referenced by object field in the API
+      # schema
+      type Referencer1 implements Referencer2 {
+        somefield: [Enum!]!
+      }
+
+      # Inaccessible enum type can't be referenced by interface field in the API
+      # schema
+      interface Referencer2 {
+        somefield: [Enum]
+      }
+
+      # Inaccessible enum type can't be referenced by object field argument in
+      # the API schema
+      type Referencer3 implements Referencer4 {
+        someField(someArg: Enum): String
+      }
+
+      # Inaccessible enum type can't be referenced by interface field argument
+      # in the API schema
+      interface Referencer4 {
+        someField(someArg: Enum): String
+      }
+
+      # Inaccessible enum type can't be referenced by input object field in the
+      # API schema
+      input Referencer5 {
+        someField: Enum
+      }
+
+      # Inaccessible enum type can't be referenced by directive argument in the
+      # API schema
+      directive @referencer6(someArg: Enum) on FRAGMENT_SPREAD
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors);
+}
+
+#[test]
+fn inaccessible_scalar_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible scalar type
+      scalar Scalar @inaccessible
+
+      # Inaccessible scalar type can't be referenced by object field in the API
+      # schema
+      type Referencer1 implements Referencer2 {
+        somefield: [[Scalar!]!]!
+      }
+
+      # Inaccessible scalar type can't be referenced by interface field in the
+      # API schema
+      interface Referencer2 {
+        somefield: [[Scalar]]
+      }
+
+      # Inaccessible scalar type can't be referenced by object field argument in
+      # the API schema
+      type Referencer3 implements Referencer4 {
+        someField(someArg: Scalar): String
+      }
+
+      # Inaccessible scalar type can't be referenced by interface field argument
+      # in the API schema
+      interface Referencer4 {
+        someField(someArg: Scalar): String
+      }
+
+      # Inaccessible scalar type can't be referenced by input object field in
+      # the API schema
+      input Referencer5 {
+        someField: Scalar
+      }
+
+      # Inaccessible scalar type can't be referenced by directive argument in
+      # the API schema
+      directive @referencer6(someArg: Scalar) on MUTATION
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors);
+}
+
+#[test]
 fn remove_inaccessible() {
     // let s = api_schema(r#""#);
 }
