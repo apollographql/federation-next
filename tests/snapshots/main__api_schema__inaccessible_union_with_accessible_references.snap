@@ -1,0 +1,9 @@
+---
+source: tests/api_schema.rs
+expression: errors
+---
+The following errors occurred:
+
+  - Type `Union` is @inaccessible but is referenced by `Referencer1.someField`, which is in the API schema.
+
+  - Type `Union` is @inaccessible but is referenced by `Referencer2.someField`, which is in the API schema.

@@ -66,6 +66,66 @@ fn inaccessible_types_with_accessible_references() {
 }
 
 #[test]
+fn inaccessible_interface_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible interface type
+      interface Interface @inaccessible {
+        someField: String
+      }
+
+      # Inaccessible interface type can't be referenced by object field in the
+      # API schema
+      type Referencer1 implements Referencer2 {
+        someField: [Interface!]!
+      }
+
+      # Inaccessible interface type can't be referenced by interface field in
+      # the API schema
+      interface Referencer2 {
+        someField: [Interface]
+      }
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors);
+}
+
+#[test]
+fn inaccessible_union_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible union type
+      union Union @inaccessible = Query
+
+      # Inaccessible union type can't be referenced by object field in the API
+      # schema
+      type Referencer1 implements Referencer2 {
+        someField: Union!
+      }
+
+      # Inaccessible union type can't be referenced by interface field in the
+      # API schema
+      interface Referencer2 {
+        someField: Union
+      }
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors);
+}
+
+#[test]
 fn remove_inaccessible() {
     // let s = api_schema(r#""#);
 }
