@@ -2,7 +2,7 @@ use crate::error::{FederationError, MultipleFederationErrors, SingleFederationEr
 use crate::link::spec::{Identity, Url, Version};
 use crate::link::spec_definition::{SpecDefinition, SpecDefinitions};
 use crate::schema::position::TypeDefinitionPosition;
-use crate::schema::referencer::TypeDefinitionReferencer;
+use crate::schema::referencer2::TypeDefinitionReferencer;
 use crate::schema::FederationSchema;
 use apollo_compiler::name;
 use apollo_compiler::schema::Component;
