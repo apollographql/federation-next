@@ -12,7 +12,7 @@ use apollo_compiler::schema::{
     ExtendedType, FieldDefinition, InputObjectType, InputValueDefinition, InterfaceType, Name,
     ObjectType, ScalarType, SchemaDefinition, UnionType,
 };
-use apollo_compiler::{name, Node, Schema};
+use apollo_compiler::{ast, name, Node, Schema};
 use indexmap::{Equivalent, IndexSet};
 use lazy_static::lazy_static;
 use std::fmt::{Display, Formatter};
@@ -618,6 +618,16 @@ pub(crate) enum SchemaRootDefinitionKind {
     Mutation,
     #[strum(to_string = "subscription")]
     Subscription,
+}
+
+impl From<SchemaRootDefinitionKind> for ast::OperationType {
+    fn from(value: SchemaRootDefinitionKind) -> Self {
+        match value {
+            SchemaRootDefinitionKind::Query => ast::OperationType::Query,
+            SchemaRootDefinitionKind::Mutation => ast::OperationType::Mutation,
+            SchemaRootDefinitionKind::Subscription => ast::OperationType::Subscription,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

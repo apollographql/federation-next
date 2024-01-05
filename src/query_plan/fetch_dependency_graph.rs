@@ -144,3 +144,43 @@ pub(crate) struct FetchDependencyGraphPath {
     path_in_node: OpPath,
     response_path: Vec<FetchDataPathElement>,
 }
+
+impl FetchDependencyGraph {
+    pub(crate) fn new(
+        supergraph_schema: ValidFederationSchema,
+        federated_query_graph: Arc<QueryGraph>,
+        root_type_for_defer: Option<CompositeTypeDefinitionPosition>,
+        starting_id_generation: u64,
+    ) -> Self {
+        Self {
+            defer_tracking: DeferTracking::empty(&supergraph_schema, root_type_for_defer),
+            supergraph_schema,
+            federated_query_graph,
+            graph: Default::default(),
+            root_nodes_by_subgraph: Default::default(),
+            starting_id_generation,
+            fetch_id_generation: starting_id_generation,
+            is_reduced: false,
+            is_optimized: false,
+        }
+    }
+}
+
+impl DeferTracking {
+    fn empty(
+        schema: &ValidFederationSchema,
+        root_type_for_defer: Option<CompositeTypeDefinitionPosition>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            top_level_deferred: Default::default(),
+            deferred: Default::default(),
+            primary_selection: root_type_for_defer.map(|type_position| {
+                Arc::new(NormalizedSelectionSet {
+                    schema: schema.clone(),
+                    type_position,
+                    selections: Default::default(),
+                })
+            }),
+        })
+    }
+}

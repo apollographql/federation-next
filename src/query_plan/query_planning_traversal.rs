@@ -2,13 +2,14 @@ use crate::query_graph::graph_path::{ClosedBranch, OpenBranch};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
 use crate::query_plan::fetch_dependency_graph::FetchDependencyGraph;
-use crate::query_plan::fetch_dependency_graph_processor::{
-    FetchDependencyGraphToCostProcessor, FetchDependencyGraphToQueryPlanProcessor,
-};
+use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToCostProcessor;
+use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToQueryPlanProcessor;
 use crate::query_plan::operation::{NormalizedOperation, NormalizedSelection};
 use crate::query_plan::query_planner::QueryPlannerConfig;
 use crate::query_plan::QueryPlanCost;
-use crate::schema::position::{AbstractTypeDefinitionPosition, SchemaRootDefinitionKind};
+use crate::schema::position::AbstractTypeDefinitionPosition;
+use crate::schema::position::ObjectTypeDefinitionPosition;
+use crate::schema::position::SchemaRootDefinitionKind;
 use crate::schema::ValidFederationSchema;
 use indexmap::IndexSet;
 use petgraph::graph::NodeIndex;
@@ -85,4 +86,26 @@ struct BestQueryPlanInfo {
     path_tree: OpPathTree,
     /// The cost of this query plan.
     cost: QueryPlanCost,
+}
+
+impl QueryPlanningTraversal {
+    pub(crate) fn new_dependency_graph(&self) -> FetchDependencyGraph {
+        let root_type = if self.is_top_level && self.has_defers {
+            self.parameters
+                .supergraph_schema
+                .schema()
+                .root_operation(self.root_kind.into())
+                .cloned()
+                // A root operation type has to be an object type
+                .map(|type_name| ObjectTypeDefinitionPosition { type_name }.into())
+        } else {
+            None
+        };
+        FetchDependencyGraph::new(
+            self.parameters.supergraph_schema.clone(),
+            self.parameters.federated_query_graph.clone(),
+            root_type,
+            self.starting_id_generation,
+        )
+    }
 }
