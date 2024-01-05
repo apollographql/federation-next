@@ -539,9 +539,7 @@ impl SchemaDefinitionPosition {
             self.insert_directive_name_references(referencers, &directive_reference.name)?;
         }
         for root_kind in SchemaRootDefinitionKind::iter() {
-            let child = SchemaRootDefinitionPosition {
-                root_kind: root_kind.clone(),
-            };
+            let child = SchemaRootDefinitionPosition { root_kind };
             match root_kind {
                 SchemaRootDefinitionKind::Query => {
                     if let Some(root_type) = &schema_definition.query {
@@ -610,7 +608,9 @@ impl SchemaDefinitionPosition {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, strum_macros::Display, strum_macros::EnumIter)]
+#[derive(
+    Debug, Copy, Clone, PartialEq, Eq, Hash, strum_macros::Display, strum_macros::EnumIter,
+)]
 pub(crate) enum SchemaRootDefinitionKind {
     #[strum(to_string = "query")]
     Query,
