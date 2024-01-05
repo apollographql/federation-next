@@ -1,15 +1,16 @@
+use crate::error::FederationError;
 use crate::query_graph::graph_path::{ClosedBranch, OpenBranch};
 use crate::query_graph::path_tree::OpPathTree;
-use crate::query_graph::QueryGraph;
+use crate::query_graph::{QueryGraph, QueryGraphNodeType};
 use crate::query_plan::fetch_dependency_graph::FetchDependencyGraph;
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToCostProcessor;
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToQueryPlanProcessor;
 use crate::query_plan::operation::{NormalizedOperation, NormalizedSelection};
 use crate::query_plan::query_planner::QueryPlannerConfig;
 use crate::query_plan::QueryPlanCost;
-use crate::schema::position::AbstractTypeDefinitionPosition;
 use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::position::SchemaRootDefinitionKind;
+use crate::schema::position::{AbstractTypeDefinitionPosition, OutputTypeDefinitionPosition};
 use crate::schema::ValidFederationSchema;
 use indexmap::IndexSet;
 use petgraph::graph::NodeIndex;
@@ -108,4 +109,95 @@ impl QueryPlanningTraversal {
             self.starting_id_generation,
         )
     }
+
+    fn updated_dependency_graph(
+        &self,
+        dependency_graph: &mut FetchDependencyGraph,
+        path_tree: &OpPathTree,
+    ) -> Result<(), FederationError> {
+        // TODO: is this right?
+        // In `query-planner-js/src/buildPlan.ts`, `isRootPathTree(tree)` is dependent on `tree`,
+        // but type-Tetris gives us something dependent on `self.root_kind`.
+        let is_root_path_tree = self
+            .parameters
+            .federated_query_graph
+            .root_kinds_to_nodes()?
+            .contains_key(&self.root_kind);
+
+        if is_root_path_tree {
+            // The root of the pathTree is one of the "fake" root of the subgraphs graph,
+            // which belongs to no subgraph but points to each ones.
+            // So we "unpack" the first level of the tree to find out our top level groups
+            // (and initialize our stack).
+            // Note that we can safely ignore the triggers of that first level
+            // as it will all be free transition, and we know we cannot have conditions.
+            for child in &path_tree.childs {
+                let edge = child.edge.expect("The root edge should not be None");
+                let (_source_node, target_node) = path_tree.graph.edge_endpoints(edge)?;
+                let target_node = path_tree.graph.node_weight(target_node)?;
+                let subgraph_name = &target_node.source;
+                // The edge tail type is one of the subgraph root type, so it has to be an ObjectType.
+                //     const rootType = edge.tail.type as ObjectType;
+                let root_type = match &target_node.type_ {
+                    QueryGraphNodeType::SchemaType(position) => match position {
+                        OutputTypeDefinitionPosition::Object(object) => object.clone().into(),
+                        _ => todo!(), // Return a FederationError?
+                    },
+                    QueryGraphNodeType::FederatedRootType(_) => todo!(), // Return a FederationError?
+                };
+                let group = dependency_graph.get_or_create_root_fetch_group(
+                    subgraph_name,
+                    self.root_kind,
+                    root_type,
+                );
+                compute_groups_for_tree(
+                    dependency_graph,
+                    &child.tree,
+                    // group,
+                    // GroupPath.empty(),
+                    // emptyDeferContext,
+                );
+            }
+        } else {
+            let query_graph_node = path_tree.graph.node_weight(path_tree.node)?;
+            let subgraph_name = &query_graph_node.source;
+            // The edge tail type is one of the subgraph root type, so it has to be an ObjectType.
+            let root_type = match &query_graph_node.type_ {
+                QueryGraphNodeType::SchemaType(position) => {
+                    position.clone().try_into().map_err(|err| {
+                        // TODO: add details to the error message?
+                        // format!("Should not have condition on non-selectable type {position}")
+                        err
+                    })?
+                }
+                QueryGraphNodeType::FederatedRootType(_) => todo!(), // Return a FederationError?
+            };
+            let group = dependency_graph.get_or_create_root_fetch_group(
+                subgraph_name,
+                self.root_kind,
+                root_type,
+            );
+            compute_groups_for_tree(
+                dependency_graph,
+                path_tree,
+                // group,
+                // GroupPath.empty(),
+                // emptyDeferContext,
+            );
+        }
+        Ok(())
+    }
+}
+
+fn compute_groups_for_tree(
+    dependency_graph: &mut FetchDependencyGraph,
+    path_tree: &OpPathTree,
+    // start_group: FetchGroup,
+    // initial_group_path: GroupPath,
+    // initial_defer_context: DeferContext,
+    // initial_context: PathContext = emptyContext,
+)
+//   -> Vec<FetchGroup>
+{
+    todo!()
 }

@@ -105,7 +105,7 @@ pub(crate) struct FetchDependencyGraph {
     graph: StableDiGraph<Arc<FetchDependencyGraphNode>, Arc<FetchDependencyGraphEdge>>,
     /// The root nodes by subgraph name, representing the fetches against root operation types of
     /// the subgraphs.
-    root_nodes_by_subgraph: Arc<IndexMap<NodeStr, IndexSet<NodeIndex>>>,
+    root_nodes_by_subgraph: IndexMap<NodeStr, IndexSet<NodeIndex>>,
     /// Tracks metadata about deferred blocks and their dependencies on one another.
     defer_tracking: Arc<DeferTracking>,
     /// The initial fetch ID generation (used when handling `@defer`).
@@ -162,6 +162,30 @@ impl FetchDependencyGraph {
             fetch_id_generation: starting_id_generation,
             is_reduced: false,
             is_optimized: false,
+        }
+    }
+
+    /// Must be called every time the "shape" of the graph is modified
+    /// to know that the graph may not be minimal/optimized anymore.
+    fn on_modification(&mut self) {
+        self.is_reduced = false;
+        self.is_optimized = false;
+    }
+
+    pub(crate) fn get_or_create_root_fetch_group(
+        &mut self,
+        subgraph_name: &NodeStr,
+        root_kind: SchemaRootDefinitionKind,
+        parent_type: CompositeTypeDefinitionPosition,
+    ) -> &IndexSet<NodeIndex> {
+        if self.root_nodes_by_subgraph.contains_key(subgraph_name) {
+            &self.root_nodes_by_subgraph[subgraph_name]
+        } else {
+            // TODO: is there anything more to do here than create an empty IndexSet?
+            self.on_modification();
+            self.root_nodes_by_subgraph
+                .entry(subgraph_name.clone())
+                .or_default()
         }
     }
 }

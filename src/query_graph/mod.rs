@@ -304,7 +304,10 @@ impl QueryGraph {
         })
     }
 
-    fn edge_endpoints(&self, edge: EdgeIndex) -> Result<(NodeIndex, NodeIndex), FederationError> {
+    pub(crate) fn edge_endpoints(
+        &self,
+        edge: EdgeIndex,
+    ) -> Result<(NodeIndex, NodeIndex), FederationError> {
         self.graph.edge_endpoints(edge).ok_or_else(|| {
             SingleFederationError::Internal {
                 message: "Edge unexpectedly missing".to_owned(),
