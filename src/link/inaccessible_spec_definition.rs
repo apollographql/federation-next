@@ -5,7 +5,13 @@ use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::referencer::TypeDefinitionReferencer;
 use crate::schema::FederationSchema;
 use apollo_compiler::name;
-use apollo_compiler::schema::{Directive, Name};
+use apollo_compiler::schema::Component;
+use apollo_compiler::schema::ComponentName;
+use apollo_compiler::schema::Directive;
+use apollo_compiler::schema::FieldDefinition;
+use apollo_compiler::schema::Name;
+use indexmap::IndexMap;
+use indexmap::IndexSet;
 use lazy_static::lazy_static;
 
 pub(crate) const INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC: Name = name!("inaccessible");
@@ -85,6 +91,52 @@ pub(crate) fn get_inaccessible_spec_definition_from_subgraph(
         })?)
 }
 
+fn validate_inaccessible_in_fields(
+    schema: &FederationSchema,
+    inaccessible_directive: &Name,
+    type_position: &TypeDefinitionPosition,
+    fields: &IndexMap<Name, Component<FieldDefinition>>,
+    implements: &IndexSet<ComponentName>,
+    errors: &mut MultipleFederationErrors,
+) {
+    let mut has_inaccessible_field = false;
+    let mut has_accessible_field = false;
+    for (field_name, field) in fields {
+        let mut super_fields = implements.iter().filter_map(|interface_name| {
+            schema
+                .schema()
+                .type_field(interface_name, field_name)
+                .ok()
+                .map(|field| (interface_name, field))
+        });
+
+        if field.directives.has(inaccessible_directive) {
+            has_inaccessible_field = true;
+
+            if let Some((interface_name, super_field)) = super_fields
+                .find(|super_field| !super_field.1.directives.has(inaccessible_directive))
+            {
+                let interface_name = interface_name.as_str();
+                let super_field_name = &super_field.name;
+                errors.push(
+                    SingleFederationError::ImplementedByInaccessible {
+                        message: format!("Field `{type_position}.{field_name}` is @inaccessible but implements the interface field `{interface_name}.{super_field_name}`, which is in the API schema."),
+                    }
+                    .into(),
+                );
+            }
+        } else {
+            has_accessible_field = true;
+        }
+    }
+
+    if has_inaccessible_field && !has_accessible_field {
+        errors.push(SingleFederationError::OnlyInaccessibleChildren {
+            message: format!("Type `{type_position}` is in the API schema but all of its members are @inaccessible."),
+        }.into());
+    }
+}
+
 pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), FederationError> {
     let inaccessible_spec = get_inaccessible_spec_definition_from_subgraph(schema)?;
     let directive_name = inaccessible_spec
@@ -103,9 +155,8 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
         };
         let is_inaccessible = ty.directives().has(&directive_name);
 
-        if !is_inaccessible {
-            // A union that is accessible must have at least 1 accessible member
-            if let TypeDefinitionPosition::Union(union_position) = &position {
+        match &position {
+            TypeDefinitionPosition::Union(union_position) if !is_inaccessible => {
                 let union_ = union_position.get(schema.schema())?;
                 let any_accessible_member = union_.members.iter().any(|member| {
                     !schema
@@ -121,7 +172,32 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     }.into());
                 }
             }
+            TypeDefinitionPosition::Object(object_position) => {
+                let object = object_position.get(schema.schema())?;
+                validate_inaccessible_in_fields(
+                    schema,
+                    &directive_name,
+                    &position,
+                    &object.fields,
+                    &object.implements_interfaces,
+                    &mut errors,
+                );
+            }
+            TypeDefinitionPosition::Interface(interface_position) => {
+                let interface = interface_position.get(schema.schema())?;
+                validate_inaccessible_in_fields(
+                    schema,
+                    &directive_name,
+                    &position,
+                    &interface.fields,
+                    &interface.implements_interfaces,
+                    &mut errors,
+                );
+            }
+            _ => {}
+        }
 
+        if !is_inaccessible {
             continue;
         }
 

@@ -331,6 +331,112 @@ fn inaccessible_scalar_with_accessible_references() {
 }
 
 #[test]
+fn inaccessible_object_field_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      extend schema {
+        mutation: Mutation
+        subscription: Subscription
+      }
+
+      # Inaccessible object field can't have a non-inaccessible parent query
+      # type and no non-inaccessible siblings
+      type Query {
+        privateField: String @inaccessible
+        otherPrivateField: Float @inaccessible
+      }
+
+      # Inaccessible object field can't have a non-inaccessible parent mutation
+      # type and no non-inaccessible siblings
+      type Mutation {
+        privateField: String @inaccessible
+        otherPrivateField: Float @inaccessible
+      }
+
+      # Inaccessible object field can't have a non-inaccessible parent
+      # subscription type and no non-inaccessible siblings
+      type Subscription {
+        privateField: String @inaccessible
+        otherPrivateField: Float @inaccessible
+      }
+
+      # Inaccessible object field
+      type Object implements Referencer1 {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible object field can't be referenced by interface field in the
+      # API schema
+      interface Referencer1 {
+        privateField: String
+      }
+
+      # Inaccessible object field can't have a non-inaccessible parent object
+      # type and no non-inaccessible siblings
+      type Referencer2 {
+        privateField: String @inaccessible
+        otherPrivateField: Float @inaccessible
+      }
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Type `Query` is in the API schema but all of its members are @inaccessible.
+
+      - Type `Mutation` is in the API schema but all of its members are @inaccessible.
+
+      - Type `Subscription` is in the API schema but all of its members are @inaccessible.
+
+      - Field `Object.privateField` is @inaccessible but implements the interface field `Referencer1.privateField`, which is in the API schema.
+
+      - Type `Referencer2` is in the API schema but all of its members are @inaccessible.
+    "###);
+}
+
+#[test]
+fn inaccessible_interface_field_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible interface field
+      interface Interface implements Referencer1 {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible interface field can't be referenced by interface field in
+      # the API schema
+      interface Referencer1 {
+        privateField: String
+      }
+
+      # Inaccessible interface field can't have a non-inaccessible parent object
+      # type and no non-inaccessible siblings
+      interface Referencer2 {
+        privateField: String @inaccessible
+        otherPrivateField: Float @inaccessible
+      }
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Field `Interface.privateField` is @inaccessible but implements the interface field `Referencer1.privateField`, which is in the API schema.
+
+      - Type `Referencer2` is in the API schema but all of its members are @inaccessible.
+    "###);
+}
+
+#[test]
 fn remove_inaccessible() {
     // let s = api_schema(r#""#);
 }
