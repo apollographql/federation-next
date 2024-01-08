@@ -7,6 +7,7 @@ use crate::schema::position::EnumValueDefinitionPosition;
 use crate::schema::position::InputObjectFieldDefinitionPosition;
 use crate::schema::position::InterfaceFieldDefinitionPosition;
 use crate::schema::position::ObjectFieldDefinitionPosition;
+use crate::schema::position::SchemaRootDefinitionKind;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::referencer2::TypeDefinitionReferencer;
 use crate::schema::FederationSchema;
@@ -129,6 +130,10 @@ fn validate_inaccessible_in_default_value(
     errors: &mut MultipleFederationErrors,
 ) {
     match (default_value, value_type) {
+        // Input fields can be referenced by schema default values. When an
+        // input field is hidden (but its parent isn't), we check that the
+        // arguments/input fields with such default values aren't in the API
+        // schema.
         (Value::Object(value), ExtendedType::InputObject(type_)) => {
             for (field_name, child_value) in value {
                 let Some(field) = type_.fields.get(field_name) else {
@@ -168,6 +173,11 @@ fn validate_inaccessible_in_default_value(
                 );
             }
         }
+        // Enum values can be referenced by schema default values. When an
+        // enum value is hidden (but its parent isn't), we check that the
+        // arguments/input fields with such default values aren't in the API
+        // schema.
+        //
         // For back-compat, this also supports using string literals where an enum value is
         // expected.
         (Value::Enum(_) | Value::String(_), ExtendedType::Enum(type_)) => {
@@ -195,12 +205,6 @@ fn validate_inaccessible_in_default_value(
     }
 }
 
-// Should nested inaccessible fields be accepted?
-// ```graphql
-// input WithInaccessible { accessible: Boolean inaccessible: Boolean @inaccessible }
-// input DefaultNested { nested: WithInaccessible }
-// type Object { field(arg: DefaultNested = { nested: { inaccessible: true } } }
-// ```
 fn validate_inaccessible_in_arguments(
     schema: &FederationSchema,
     inaccessible_directive: &Name,
@@ -304,6 +308,7 @@ fn validate_inaccessible_in_values(
         has_accessible_value |= !value_inaccessible;
     }
 
+    // At this point, we know the type must be in the API schema. Check that at least one of the children is accessible.
     if has_inaccessible_value && !has_accessible_value {
         errors.push(SingleFederationError::OnlyInaccessibleChildren {
             message: format!("Type `{enum_position}` is in the API schema but all of its members are @inaccessible."),
@@ -326,115 +331,140 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
         let Ok(ty) = position.get(schema.schema()) else {
             continue;
         };
-        let is_inaccessible = ty.directives().has(&directive_name);
 
-        match &position {
-            TypeDefinitionPosition::Union(union_position) if !is_inaccessible => {
-                let union_ = union_position.get(schema.schema())?;
-                let any_accessible_member = union_.members.iter().any(|member| {
-                    !schema
-                        .schema()
-                        .types
-                        .get(&member.name)
-                        .is_some_and(|ty| ty.directives().has("inaccessible"))
-                });
+        if !ty.directives().has(&directive_name) {
+            // This type must be in the API schema. For types with children (all types except scalar),
+            // we check that at least one of the children is accessible.
+            match &position {
+                TypeDefinitionPosition::Union(union_position) => {
+                    let union_ = union_position.get(schema.schema())?;
+                    let any_accessible_member = union_.members.iter().any(|member| {
+                        !schema
+                            .schema()
+                            .types
+                            .get(&member.name)
+                            .is_some_and(|ty| ty.directives().has("inaccessible"))
+                    });
 
-                if !any_accessible_member {
-                    errors.push(SingleFederationError::OnlyInaccessibleChildren {
-                        message: format!("Type `{position}` is in the API schema but all of its members are @inaccessible."),
-                    }.into());
-                }
-            }
-            TypeDefinitionPosition::Object(object_position) => {
-                let object = object_position.get(schema.schema())?;
-                validate_inaccessible_in_fields(
-                    schema,
-                    &directive_name,
-                    &position,
-                    &object.fields,
-                    &object.implements_interfaces,
-                    &mut errors,
-                );
-            }
-            TypeDefinitionPosition::Interface(interface_position) => {
-                let interface = interface_position.get(schema.schema())?;
-                validate_inaccessible_in_fields(
-                    schema,
-                    &directive_name,
-                    &position,
-                    &interface.fields,
-                    &interface.implements_interfaces,
-                    &mut errors,
-                );
-            }
-            TypeDefinitionPosition::InputObject(input_object_position) => {
-                let input_object = input_object_position.get(schema.schema())?;
-                let mut has_inaccessible_field = false;
-                let mut has_accessible_field = false;
-                for field in input_object.fields.values() {
-                    let field_inaccessible = field.directives.has(&directive_name);
-                    if field_inaccessible && field.ty.is_non_null() {
-                        errors.push(SingleFederationError::RequiredInaccessible{
-                            message: format!("Input field `{position}` is @inaccessible but is a required input field of its type."),
+                    if !any_accessible_member {
+                        errors.push(SingleFederationError::OnlyInaccessibleChildren {
+                            message: format!("Type `{position}` is in the API schema but all of its members are @inaccessible."),
                         }.into());
                     }
-                    has_inaccessible_field |= field_inaccessible;
-                    has_accessible_field |= !field_inaccessible;
+                }
+                TypeDefinitionPosition::Object(object_position) => {
+                    let object = object_position.get(schema.schema())?;
+                    validate_inaccessible_in_fields(
+                        schema,
+                        &directive_name,
+                        &position,
+                        &object.fields,
+                        &object.implements_interfaces,
+                        &mut errors,
+                    );
+                }
+                TypeDefinitionPosition::Interface(interface_position) => {
+                    let interface = interface_position.get(schema.schema())?;
+                    validate_inaccessible_in_fields(
+                        schema,
+                        &directive_name,
+                        &position,
+                        &interface.fields,
+                        &interface.implements_interfaces,
+                        &mut errors,
+                    );
+                }
+                TypeDefinitionPosition::InputObject(input_object_position) => {
+                    let input_object = input_object_position.get(schema.schema())?;
+                    let mut has_inaccessible_field = false;
+                    let mut has_accessible_field = false;
+                    for field in input_object.fields.values() {
+                        let field_inaccessible = field.directives.has(&directive_name);
+                        has_inaccessible_field |= field_inaccessible;
+                        has_accessible_field |= !field_inaccessible;
 
-                    if let (Some(default_value), Some(field_type)) = (
-                        &field.default_value,
-                        schema.schema().types.get(field.ty.inner_named_type()),
-                    ) {
-                        validate_inaccessible_in_default_value(
-                            schema,
-                            &directive_name,
-                            field_type,
-                            default_value,
-                            input_object_position.field(field.name.clone()).to_string(),
-                            &mut errors,
-                        );
+                        if field_inaccessible && field.ty.is_non_null() {
+                            errors.push(SingleFederationError::RequiredInaccessible{
+                                message: format!("Input field `{position}` is @inaccessible but is a required input field of its type."),
+                            }.into());
+                        }
+                        if let (Some(default_value), Some(field_type)) = (
+                            &field.default_value,
+                            schema.schema().types.get(field.ty.inner_named_type()),
+                        ) {
+                            validate_inaccessible_in_default_value(
+                                schema,
+                                &directive_name,
+                                field_type,
+                                default_value,
+                                input_object_position.field(field.name.clone()).to_string(),
+                                &mut errors,
+                            );
+                        }
+                    }
+                    if has_inaccessible_field && !has_accessible_field {
+                        errors.push(SingleFederationError::OnlyInaccessibleChildren {
+                            message: format!("Type `{position}` is in the API schema but all of its input fields are @inaccessible."),
+                        }.into());
                     }
                 }
-                if has_inaccessible_field && !has_accessible_field {
-                    errors.push(SingleFederationError::OnlyInaccessibleChildren {
-                        message: format!("Type `{position}` is in the API schema but all of its input fields are @inaccessible."),
-                    }.into());
+                TypeDefinitionPosition::Enum(enum_position) => {
+                    let enum_ = enum_position.get(schema.schema())?;
+                    validate_inaccessible_in_values(
+                        schema,
+                        &directive_name,
+                        enum_position,
+                        &enum_.values,
+                        &mut errors,
+                    );
                 }
+                _ => {}
             }
-            TypeDefinitionPosition::Enum(enum_position) => {
-                let enum_ = enum_position.get(schema.schema())?;
-                validate_inaccessible_in_values(
-                    schema,
-                    &directive_name,
-                    enum_position,
-                    &enum_.values,
-                    &mut errors,
-                );
-            }
-            _ => {}
-        }
 
-        // Nothing more to do for accessible types.
-        if !is_inaccessible {
+            // This type is in the API schema, so we do not have to check if it is referenced
+            // by other types.
             continue;
         }
 
         let Some(references) = type_definitions.get(&position) else {
-            continue; // no references, OK to remove
+            // This type is not in the API schema, but there are no references, so we already know
+            // it's OK to remove.
+            continue;
         };
 
+        // Types can be referenced by other schema elements in a few ways:
+        // 1. Fields, arguments, and input fields may have the type as their base
+        //    type.
+        // 2. Union types may have the type as a member (for object types).
+        // 3. Object and interface types may implement the type (for interface
+        //    types).
+        // 4. Schemas may have the type as a root operation type (for object
+        //    types).
+        //
+        // When a type is hidden, the referencer must follow certain rules for the
+        // schema to be valid. Respectively, these rules are:
+        // 1. The field/argument/input field must not be in the API schema.
+        // 2. The union type, if empty, must not be in the API schema.
+        // 3. No rules are imposed in this case.
+        // 4. The root operation type must not be the query type.
+        //
+        // We validate the 2nd rule above. The other rules are validated here.
         for ref_position in references.iter() {
             let ref_inaccessible = match ref_position {
-                TypeDefinitionReferencer::SchemaRoot(_) => {
-                    errors.push(SingleFederationError::QueryRootTypeInaccessible {
+                TypeDefinitionReferencer::SchemaRoot(root) => {
+                    if root.root_kind == SchemaRootDefinitionKind::Query {
+                        errors.push(SingleFederationError::QueryRootTypeInaccessible {
                         message: format!("Type `{position}` is @inaccessible but is the query root type, which must be in the API schema."),
                     }.into());
+                    }
                     continue;
                 }
                 TypeDefinitionReferencer::Union(_) => {
-                    // This type will be removed from the union
+                    // This type will be removed from the union, or the whole union will be removed
+                    // if all its members are inaccessible. This is checked above.
                     continue;
                 }
+
                 // General types
                 TypeDefinitionReferencer::Object(ref_position) => ref_position
                     .get(schema.schema())?
@@ -444,7 +474,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     .get(schema.schema())?
                     .directives
                     .has(&directive_name),
-                TypeDefinitionReferencer::ObjectFieldArgument(_) => false,
+                TypeDefinitionReferencer::ObjectFieldArgument(_) => todo!("argument reference"),
                 TypeDefinitionReferencer::Interface(ref_position) => ref_position
                     .get(schema.schema())?
                     .directives
@@ -453,7 +483,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     .get(schema.schema())?
                     .directives
                     .has(&directive_name),
-                TypeDefinitionReferencer::InterfaceFieldArgument(_) => false,
+                TypeDefinitionReferencer::InterfaceFieldArgument(_) => todo!("argument reference"),
                 TypeDefinitionReferencer::UnionField(ref_position) => ref_position
                     .get(schema.schema())?
                     .directives
@@ -462,8 +492,9 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     .get(schema.schema())?
                     .directives
                     .has(&directive_name),
-                TypeDefinitionReferencer::DirectiveArgument(_) => false,
+                TypeDefinitionReferencer::DirectiveArgument(_) => todo!("argument reference"),
             };
+
             if !ref_inaccessible {
                 errors.push(SingleFederationError::ReferencedInaccessible {
                     message: format!("Type `{position}` is @inaccessible but is referenced by `{ref_position}`, which is in the API schema."),
