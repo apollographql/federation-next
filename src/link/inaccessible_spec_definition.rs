@@ -20,7 +20,6 @@ use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::schema::FieldDefinition;
 use apollo_compiler::schema::InputValueDefinition;
 use apollo_compiler::schema::Name;
-use apollo_compiler::schema::NamedType;
 use apollo_compiler::schema::Value;
 use apollo_compiler::Node;
 use indexmap::IndexMap;
@@ -240,7 +239,7 @@ fn validate_inaccessible_in_fields(
     let mut has_inaccessible_field = false;
     let mut has_accessible_field = false;
     for (field_name, field) in fields {
-        let mut super_fields = implements
+        let super_fields = implements
             .iter()
             .filter_map(|interface_name| {
                 schema
@@ -337,7 +336,6 @@ fn validate_inaccessible_in_fields(
 }
 
 fn validate_inaccessible_in_values(
-    schema: &FederationSchema,
     inaccessible_directive: &Name,
     enum_position: &EnumTypeDefinitionPosition,
     values: &IndexMap<Name, Component<EnumValueDefinition>>,
@@ -345,7 +343,7 @@ fn validate_inaccessible_in_values(
 ) {
     let mut has_inaccessible_value = false;
     let mut has_accessible_value = false;
-    for (value_name, value) in values {
+    for value in values.values() {
         let value_inaccessible = value.directives.has(inaccessible_directive);
         has_inaccessible_value |= value_inaccessible;
         has_accessible_value |= !value_inaccessible;
@@ -458,7 +456,6 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                 TypeDefinitionPosition::Enum(enum_position) => {
                     let enum_ = enum_position.get(schema.schema())?;
                     validate_inaccessible_in_values(
-                        schema,
                         &directive_name,
                         enum_position,
                         &enum_.values,

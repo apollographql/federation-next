@@ -1,13 +1,12 @@
 #![allow(dead_code)] // TODO: This is fine while we're iterating, but should be removed later.
 use apollo_compiler::ast::DirectiveList;
-use apollo_compiler::schema::Name;
 use apollo_compiler::Schema;
+use link::inaccessible_spec_definition::validate_inaccessible;
 use schema::FederationSchema;
 
 use crate::error::FederationError;
 use crate::merge::merge_subgraphs;
 use crate::merge::MergeFailure;
-use crate::schema::position;
 use crate::subgraph::ValidSubgraph;
 use apollo_compiler::validation::Valid;
 
@@ -38,55 +37,48 @@ impl Supergraph {
 
     /// Generates API schema from the supergraph schema.
     pub fn to_api_schema(&self) -> Result<Valid<Schema>, FederationError> {
-        let mut api_schema = FederationSchema::new(self.schema.clone().into_inner())?;
-        let links = api_schema
-            .metadata()
-            .as_ref()
-            .map_or(vec![], |metadata| metadata.all_links().to_vec());
+        let api_schema = FederationSchema::new(self.schema.clone().into_inner())?;
 
-        let is_fed_directive_name = |name: &Name| -> bool {
-            name == "core"
-                || links
-                    .iter()
-                    .any(|link| link.is_feature_directive_definition(name))
-        };
+        validate_inaccessible(&api_schema)?;
 
-        let is_fed_type_name = |name: &Name| -> bool {
-            links
-                .iter()
-                .any(|link| link.is_feature_type_definition(name))
-        };
+        /*
+        let metadata = api_schema.metadata().unwrap();
 
-        // Return whether a directive application should be kept in the schema.
-        // Federation directives should be removed.
-
-        // remove known internal types
+        // Remove federation types and directives
         let types_for_removal = api_schema
             .get_types()
-            .filter(|position| {
-                is_fed_type_name(position.type_name())
-                    || position
-                        .get(api_schema.schema())
-                        .ok()
-                        .is_some_and(|ty| ty.directives().has("inaccessible"))
-            })
+            .filter(|position| metadata.source_link_of_type(position.type_name()).is_some())
             .collect::<Vec<_>>();
         let directives_for_removal = api_schema
             .get_directive_definitions()
-            .filter(|position| is_fed_directive_name(&position.directive_name))
+            .filter(|position| {
+                metadata
+                    .source_link_of_directive(&position.directive_name)
+                    .is_some()
+            })
+            .collect::<Vec<_>>();
+
+        let inaccessible_types = api_schema
+            .get_types()
+            .filter(|position| {
+                position
+                    .get(api_schema.schema())
+                    .ok()
+                    .is_some_and(|ty| ty.directives().has("inaccessible"))
+            })
             .collect::<Vec<_>>();
 
         for position in types_for_removal {
             println!("remove {}", position.type_name());
-            use position::TypeDefinitionPosition as P;
+            use crate::schema::position::TypeDefinitionPosition as P;
             match position {
-                P::Object(object) => object.remove_recursive(&mut api_schema).unwrap(),
-                P::Scalar(scalar) => scalar.remove_recursive(&mut api_schema).unwrap(),
-                P::Interface(interface) => interface.remove_recursive(&mut api_schema).unwrap(),
-                P::Union(union_) => union_.remove_recursive(&mut api_schema).unwrap(),
-                P::Enum(enum_) => enum_.remove_recursive(&mut api_schema).unwrap(),
+                P::Object(object) => object.remove(&mut api_schema).unwrap(),
+                P::Scalar(scalar) => scalar.remove(&mut api_schema).unwrap(),
+                P::Interface(interface) => interface.remove(&mut api_schema).unwrap(),
+                P::Union(union_) => union_.remove(&mut api_schema).unwrap(),
+                P::Enum(enum_) => enum_.remove(&mut api_schema).unwrap(),
                 P::InputObject(input_object) => {
-                    input_object.remove_recursive(&mut api_schema).unwrap()
+                    input_object.remove(&mut api_schema).unwrap()
                 }
             }
         }
@@ -95,6 +87,7 @@ impl Supergraph {
             println!("remove @{}", position.directive_name);
             position.remove(&mut api_schema).unwrap();
         }
+        */
 
         Ok(apollo_compiler::validation::Valid::assume_valid(
             api_schema.schema().clone(),
