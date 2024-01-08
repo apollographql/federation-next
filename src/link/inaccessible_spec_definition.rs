@@ -135,7 +135,7 @@ fn validate_inaccessible_in_default_value(
                 // here.
                 return;
             };
-            for (field_name, _) in value {
+            for (field_name, child_value) in value {
                 let Some(field) = type_.fields.get(field_name) else {
                     return;
                 };
@@ -144,13 +144,33 @@ fn validate_inaccessible_in_default_value(
                         type_name: type_.name.clone(),
                         field_name: field_name.clone(),
                     };
-                    errors.push(
-                SingleFederationError::DefaultValueUsesInaccessible {
-                    message: format!("Input field `{input_field_position}` is @inaccessible but is used in the default value of `{value_position}`, which is in the API schema."),
+                    errors.push(SingleFederationError::DefaultValueUsesInaccessible {
+                        message: format!("Input field `{input_field_position}` is @inaccessible but is used in the default value of `{value_position}`, which is in the API schema."),
+                    }.into());
                 }
-                .into(),
-            );
+
+                if let Some(field_type) = schema.schema().types.get(field.ty.inner_named_type()) {
+                    validate_inaccessible_in_default_value(
+                        schema,
+                        inaccessible_directive,
+                        field_type,
+                        child_value,
+                        value_position.clone(),
+                        errors,
+                    );
                 }
+            }
+        }
+        Value::List(list) => {
+            for child_value in list {
+                validate_inaccessible_in_default_value(
+                    schema,
+                    inaccessible_directive,
+                    value_type,
+                    child_value,
+                    value_position.clone(),
+                    errors,
+                );
             }
         }
         Value::Enum(value) => {
@@ -167,12 +187,9 @@ fn validate_inaccessible_in_default_value(
                     type_name: type_.name.clone(),
                     value_name: enum_value.value.clone(),
                 };
-                errors.push(
-                SingleFederationError::DefaultValueUsesInaccessible {
+                errors.push(SingleFederationError::DefaultValueUsesInaccessible {
                     message: format!("Enum value `{enum_value_position}` is @inaccessible but is used in the default value of `{value_position}`, which is in the API schema."),
-                }
-                .into(),
-            );
+                }.into());
             }
         }
         _ => {}

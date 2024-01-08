@@ -639,3 +639,60 @@ fn inaccessible_enum_values_with_accessible_references() {
       - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `@referencer4(someArg:)`, which is in the API schema.
     "###);
 }
+
+#[test]
+fn inaccessible_complex_default_values() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField(arg1: [[RootInputObject!]]! = [
+          {
+            foo: {
+              # 2 references (with nesting)
+              privateField: [PRIVATE_VALUE]
+            }
+            bar: SOME_VALUE
+            # 0 references since scalar
+            baz: { privateField: PRIVATE_VALUE }
+          },
+          [{
+            foo: [{
+              someField: "foo"
+            }]
+            # 1 reference
+            bar: PRIVATE_VALUE
+          }]
+        ]): String
+      }
+
+      input RootInputObject {
+        foo: [NestedInputObject]
+        bar: Enum!
+        baz: Scalar! = { default: 4 }
+      }
+
+      input NestedInputObject {
+        someField: String
+        privateField: [Enum!] @inaccessible
+      }
+
+      enum Enum {
+        SOME_VALUE
+        PRIVATE_VALUE @inaccessible
+      }
+
+      scalar Scalar
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Input field `NestedInputObject.privateField` is @inaccessible but is used in the default value of `Query.someField(arg1:)`, which is in the API schema.
+
+      - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Query.someField(arg1:)`, which is in the API schema.
+
+      - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Query.someField(arg1:)`, which is in the API schema.
+    "###);
+}
