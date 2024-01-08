@@ -758,9 +758,146 @@ fn inaccessible_directive_arguments_with_accessible_references() {
     "#,
     )
     .expect_err("should return validation errors");
+
     insta::assert_display_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Argument `@directiveRequired(privateArg:)` is @inaccessible but is a required argument of its directive.
     "###);
+}
+
+#[test]
+fn inaccessible_directive_on_schema_elements() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      directive @foo(arg1: String @inaccessible) repeatable on OBJECT
+
+      directive @bar(arg2: String, arg3: String @inaccessible) repeatable on SCHEMA | FIELD
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###""###);
+}
+
+#[test]
+fn inaccessible_on_builtins() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Built-in scalar
+      scalar String @inaccessible
+
+      # Built-in directive
+      directive @deprecated(
+        reason: String = "No longer supported" @inaccessible
+      ) on FIELD_DEFINITION | ENUM_VALUE
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###""###);
+}
+
+#[test]
+fn inaccessible_on_imported_elements() {
+    let graph = Supergraph::new(
+        r#"
+      directive @link(url: String!, as: String, import: [link__Import], for: link__Purpose) repeatable on SCHEMA
+
+      scalar link__Import
+
+      enum link__Purpose {
+        EXECUTION @inaccessible
+        SECURITY
+      }
+
+      directive @inaccessible on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
+
+      schema
+        @link(url: "https://specs.apollo.dev/link/v0.3")
+        @link(url: "https://specs.apollo.dev/inaccessible/v0.2")
+        @link(url: "http://localhost/foo/v1.0")
+      {
+        query: Query
+      }
+
+      type Query {
+        someField: String!
+      }
+
+      # Object type
+      type foo__Object1 @inaccessible {
+        foo__Field: String!
+      }
+
+      # Object field
+      type foo__Object2 implements foo__Interface2 {
+        foo__Field: foo__Enum1! @inaccessible
+      }
+
+      # Object field argument
+      type foo__Object3 {
+        someField(someArg: foo__Enum1 @inaccessible): foo__Enum2!
+      }
+
+      # Interface type
+      interface foo__Interface1 @inaccessible {
+        foo__Field: String!
+      }
+
+      # Interface field
+      interface foo__Interface2 {
+        foo__Field: foo__Enum1! @inaccessible
+      }
+
+      # Interface field argument
+      interface foo__Interface3 {
+        someField(someArg: foo__InputObject1 @inaccessible): foo__Enum2!
+      }
+
+      # Union type
+      union foo__Union @inaccessible = foo__Object1 | foo__Object2 | foo__Object3
+
+      # Input object type
+      input foo__InputObject1 @inaccessible {
+        someField: foo__Enum1
+      }
+
+      # Input object field
+      input foo__InputObject2 {
+        someField: foo__Scalar @inaccessible
+      }
+
+      # Enum type
+      enum foo__Enum1 @inaccessible {
+        someValue
+      }
+
+      # Enum value
+      enum foo__Enum2 {
+        someValue @inaccessible
+      }
+
+      # Scalar type
+      scalar foo__Scalar @inaccessible
+
+      # Directive argument
+      directive @foo(arg: foo__InputObject2 @inaccessible) repeatable on OBJECT
+    "#,
+    )
+    .unwrap();
+
+    let errors = graph
+        .to_api_schema()
+        .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###""###);
 }

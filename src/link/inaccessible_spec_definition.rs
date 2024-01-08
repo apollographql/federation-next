@@ -380,6 +380,22 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
             continue;
         };
 
+        let metadata = schema.metadata().unwrap();
+        if metadata.source_link_of_type(position.type_name()).is_some() {
+            // TODO must check recursively if the directive is used
+            if ty.directives().has(&directive_name) {
+                errors.push(
+                    SingleFederationError::DisallowedInaccessible {
+                        message: format!(
+                            "Core feature type `{position}` cannot use @inaccessible."
+                        ),
+                    }
+                    .into(),
+                );
+            }
+            continue;
+        }
+
         if !ty.directives().has(&directive_name) {
             // This type must be in the API schema. For types with children (all types except scalar),
             // we check that at least one of the children is accessible.
