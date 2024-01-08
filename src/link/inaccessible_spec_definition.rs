@@ -128,13 +128,8 @@ fn validate_inaccessible_in_default_value(
     value_position: String,
     errors: &mut MultipleFederationErrors,
 ) {
-    match default_value {
-        Value::Object(value) => {
-            let ExtendedType::InputObject(type_) = value_type else {
-                // Argument types must be input objects or scalars, only input objects are relevant
-                // here.
-                return;
-            };
+    match (default_value, value_type) {
+        (Value::Object(value), ExtendedType::InputObject(type_)) => {
             for (field_name, child_value) in value {
                 let Some(field) = type_.fields.get(field_name) else {
                     return;
@@ -161,7 +156,7 @@ fn validate_inaccessible_in_default_value(
                 }
             }
         }
-        Value::List(list) => {
+        (Value::List(list), _) => {
             for child_value in list {
                 validate_inaccessible_in_default_value(
                     schema,
@@ -173,13 +168,17 @@ fn validate_inaccessible_in_default_value(
                 );
             }
         }
-        Value::Enum(value) => {
-            let ExtendedType::Enum(type_) = value_type else {
-                // Argument types must be input objects or scalars, only input objects are relevant
-                // here.
-                return;
+        // For back-compat, this also supports using string literals where an enum value is
+        // expected.
+        (Value::Enum(_) | Value::String(_), ExtendedType::Enum(type_)) => {
+            let value = match default_value {
+                Value::Enum(name) => name.clone(),
+                // It's no problem if this name is invalid.
+                Value::String(node_str) => Name::new_unchecked(node_str.clone()),
+                // Guaranteed to be enum or string by parent match branch.
+                _ => unreachable!(),
             };
-            let Some(enum_value) = type_.values.get(value) else {
+            let Some(enum_value) = type_.values.get(&value) else {
                 return;
             };
             if enum_value.directives.has(inaccessible_directive) {

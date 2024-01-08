@@ -696,3 +696,29 @@ fn inaccessible_complex_default_values() {
       - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Query.someField(arg1:)`, which is in the API schema.
     "###);
 }
+
+/// It's not GraphQL-spec-compliant to allow a string for an enum value, but
+/// since we're allowing it, we need to make sure this logic keeps working
+/// until we're allowed to make breaking changes and remove it.
+#[test]
+fn inaccessible_enum_value_as_string() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField(arg1: Enum! = "PRIVATE_VALUE"): String
+      }
+
+      enum Enum {
+        SOME_VALUE
+        PRIVATE_VALUE @inaccessible
+      }
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Query.someField(arg1:)`, which is in the API schema.
+    "###);
+}
