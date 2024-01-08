@@ -2,6 +2,7 @@ use crate::error::{FederationError, MultipleFederationErrors, SingleFederationEr
 use crate::link::spec::{Identity, Url, Version};
 use crate::link::spec_definition::{SpecDefinition, SpecDefinitions};
 use crate::schema::position::DirectiveDefinitionPosition;
+use crate::schema::position::EnumTypeDefinitionPosition;
 use crate::schema::position::InputObjectFieldDefinitionPosition;
 use crate::schema::position::InterfaceFieldDefinitionPosition;
 use crate::schema::position::ObjectFieldDefinitionPosition;
@@ -12,6 +13,7 @@ use apollo_compiler::name;
 use apollo_compiler::schema::Component;
 use apollo_compiler::schema::ComponentName;
 use apollo_compiler::schema::Directive;
+use apollo_compiler::schema::EnumValueDefinition;
 use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::schema::FieldDefinition;
 use apollo_compiler::schema::InputValueDefinition;
@@ -132,33 +134,52 @@ fn validate_inaccessible_in_arguments(
         let Some(default_value) = &arg.default_value else {
             continue;
         };
-        let Some(ExtendedType::InputObject(type_)) =
-            schema.schema().types.get(arg.ty.inner_named_type())
-        else {
-            // Argument types must be input objects or scalars, only input objects are relevant
-            // here.
-            continue;
-        };
+        let arg_type = schema.schema().types.get(arg.ty.inner_named_type());
 
-        let Value::Object(value) = &**default_value else {
-            continue;
-        };
-        for (field_name, _) in value {
-            let Some(field) = type_.fields.get(field_name) else {
-                continue;
-            };
-            if field.directives.has(inaccessible_directive) {
-                let input_field_position = InputObjectFieldDefinitionPosition {
-                    type_name: type_.name.clone(),
-                    field_name: field_name.clone(),
+        match &**default_value {
+            Value::Object(value) => {
+                let Some(ExtendedType::InputObject(type_)) = arg_type else {
+                    // Argument types must be input objects or scalars, only input objects are relevant
+                    // here.
+                    continue;
                 };
-                errors.push(
+                for (field_name, _) in value {
+                    let Some(field) = type_.fields.get(field_name) else {
+                        continue;
+                    };
+                    if field.directives.has(inaccessible_directive) {
+                        let input_field_position = InputObjectFieldDefinitionPosition {
+                            type_name: type_.name.clone(),
+                            field_name: field_name.clone(),
+                        };
+                        errors.push(
                     SingleFederationError::DefaultValueUsesInaccessible {
                         message: format!("Input field `{input_field_position}` is @inaccessible but is used in the default value of `{usage_position}({}:)`, which is in the API schema.", arg.name),
                     }
                     .into(),
                 );
+                    }
+                }
             }
+            Value::Enum(value) => {
+                let Some(ExtendedType::Enum(type_)) = arg_type else {
+                    // Argument types must be input objects or scalars, only input objects are relevant
+                    // here.
+                    continue;
+                };
+                let Some(enum_value) = type_.values.get(value) else {
+                    continue;
+                };
+                if enum_value.directives.has(inaccessible_directive) {
+                    errors.push(
+                    SingleFederationError::DefaultValueUsesInaccessible {
+                        message: format!("Enum value `{}.{}` is @inaccessible but is used in the default value of `{usage_position}({}:)`, which is in the API schema.", type_.name, enum_value.value, arg.name),
+                    }
+                    .into(),
+                );
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -227,6 +248,27 @@ fn validate_inaccessible_in_fields(
     }
 }
 
+fn validate_inaccessible_in_values(
+    schema: &FederationSchema,
+    inaccessible_directive: &Name,
+    enum_position: &EnumTypeDefinitionPosition,
+    values: &IndexMap<Name, Component<EnumValueDefinition>>,
+    errors: &mut MultipleFederationErrors,
+) {
+    let mut has_inaccessible_value = false;
+    let mut has_accessible_value = false;
+    for (value_name, value) in values {
+        let value_inaccessible = value.directives.has(inaccessible_directive);
+        has_inaccessible_value |= value_inaccessible;
+        has_accessible_value |= !value_inaccessible;
+    }
+
+    if has_inaccessible_value && !has_accessible_value {
+        errors.push(SingleFederationError::OnlyInaccessibleChildren {
+            message: format!("Type `{enum_position}` is in the API schema but all of its members are @inaccessible."),
+        }.into());
+    }
+}
 pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), FederationError> {
     let inaccessible_spec = get_inaccessible_spec_definition_from_subgraph(schema)?;
     let directive_name = inaccessible_spec
@@ -301,32 +343,53 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     let Some(default_value) = &field.default_value else {
                         continue;
                     };
-                    let Some(ExtendedType::InputObject(type_)) =
-                        schema.schema().types.get(field.ty.inner_named_type())
-                    else {
-                        // Input types must be input objects or scalars, only objects are relevant here.
-                        continue;
-                    };
-                    let Value::Object(value) = &**default_value else {
-                        continue;
-                    };
-                    for (field_name, _) in value {
-                        let Some(field) = type_.fields.get(field_name) else {
-                            continue;
-                        };
-                        if field.directives.has(&directive_name) {
-                            let input_field_position = InputObjectFieldDefinitionPosition {
-                                type_name: type_.name.clone(),
-                                field_name: field_name.clone(),
+                    let field_type = schema.schema().types.get(field.ty.inner_named_type());
+
+                    let usage_position = input_object_position.field(field.name.clone());
+                    match &**default_value {
+                        Value::Object(value) => {
+                            let Some(ExtendedType::InputObject(type_)) = field_type else {
+                                // Argument types must be input objects or scalars, only input objects are relevant
+                                // here.
+                                continue;
                             };
-                            let usage_position = input_object_position.field(field_name.clone());
-                            errors.push(
+                            for (field_name, _) in value {
+                                let Some(field) = type_.fields.get(field_name) else {
+                                    continue;
+                                };
+                                if field.directives.has(&directive_name) {
+                                    let input_field_position = InputObjectFieldDefinitionPosition {
+                                        type_name: type_.name.clone(),
+                                        field_name: field_name.clone(),
+                                    };
+                                    errors.push(
                                 SingleFederationError::DefaultValueUsesInaccessible {
                                     message: format!("Input field `{input_field_position}` is @inaccessible but is used in the default value of `{usage_position}`, which is in the API schema."),
                                 }
                                 .into(),
                             );
+                                }
+                            }
                         }
+                        Value::Enum(value) => {
+                            let Some(ExtendedType::Enum(type_)) = field_type else {
+                                // Argument types must be input objects or scalars, only input objects are relevant
+                                // here.
+                                continue;
+                            };
+                            let Some(enum_value) = type_.values.get(value) else {
+                                continue;
+                            };
+                            if enum_value.directives.has(&directive_name) {
+                                errors.push(
+                                SingleFederationError::DefaultValueUsesInaccessible {
+                                    message: format!("Enum value `{}.{}` is @inaccessible but is used in the default value of `{usage_position}`, which is in the API schema.", type_.name, enum_value.value)
+                                }
+                                .into(),
+                            );
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 if has_inaccessible_field && !has_accessible_field {
@@ -334,6 +397,16 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                         message: format!("Type `{position}` is in the API schema but all of its input fields are @inaccessible."),
                     }.into());
                 }
+            }
+            TypeDefinitionPosition::Enum(enum_position) => {
+                let enum_ = enum_position.get(schema.schema())?;
+                validate_inaccessible_in_values(
+                    schema,
+                    &directive_name,
+                    enum_position,
+                    &enum_.values,
+                    &mut errors,
+                );
             }
             _ => {}
         }

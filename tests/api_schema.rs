@@ -569,12 +569,73 @@ fn inaccessible_input_object_fields_with_accessible_references() {
 
       - Input field `InputObject.privateField` is @inaccessible but is used in the default value of `Referencer2.someField(someArg:)`, which is in the API schema.
 
-      - Input field `InputObject.privateField` is @inaccessible but is used in the default value of `Referencer3.privateField`, which is in the API schema.
+      - Input field `InputObject.privateField` is @inaccessible but is used in the default value of `Referencer3.someField`, which is in the API schema.
 
       - Type `Referencer5` is in the API schema but all of its input fields are @inaccessible.
 
       - Input field `InputObjectRequired` is @inaccessible but is a required input field of its type.
 
       - Input field `InputObject.privateField` is @inaccessible but is used in the default value of `@referencer4(someArg:)`, which is in the API schema.
+    "###);
+}
+
+#[test]
+fn inaccessible_enum_values_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible enum value
+      enum Enum {
+        SOME_VALUE
+        PRIVATE_VALUE @inaccessible
+      }
+
+      # Inaccessible enum value can't be referenced by default value of object
+      # field argument in the API schema
+      type Referencer1 implements Referencer2 {
+        someField(someArg: Enum = PRIVATE_VALUE): String
+      }
+
+      # Inaccessible enum value can't be referenced by default value of
+      # interface field argument in the API schema
+      interface Referencer2 {
+        someField(someArg: Enum = PRIVATE_VALUE): String
+      }
+
+      # Inaccessible enum value can't be referenced by default value of input
+      # object field in the API schema
+      input Referencer3 {
+        someField: Enum = PRIVATE_VALUE
+      }
+
+      # Inaccessible input enum value can't be referenced by default value of
+      # directive argument in the API schema
+      directive @referencer4(someArg: Enum = PRIVATE_VALUE) on INLINE_FRAGMENT
+
+      # Inaccessible enum value can't have a non-inaccessible parent and no
+      # non-inaccessible siblings
+      enum Referencer5 {
+        PRIVATE_VALUE @inaccessible
+        OTHER_PRIVATE_VALUE @inaccessible
+      }
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Referencer1.someField(someArg:)`, which is in the API schema.
+
+      - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Referencer2.someField(someArg:)`, which is in the API schema.
+
+      - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Referencer3.someField`, which is in the API schema.
+
+      - Type `Referencer5` is in the API schema but all of its members are @inaccessible.
+
+      - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `@referencer4(someArg:)`, which is in the API schema.
     "###);
 }
