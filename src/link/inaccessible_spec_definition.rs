@@ -1,6 +1,10 @@
 use crate::error::{FederationError, MultipleFederationErrors, SingleFederationError};
 use crate::link::spec::{Identity, Url, Version};
 use crate::link::spec_definition::{SpecDefinition, SpecDefinitions};
+use crate::schema::position::DirectiveDefinitionPosition;
+use crate::schema::position::InputObjectFieldDefinitionPosition;
+use crate::schema::position::InterfaceFieldDefinitionPosition;
+use crate::schema::position::ObjectFieldDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::referencer2::TypeDefinitionReferencer;
 use crate::schema::FederationSchema;
@@ -8,11 +12,16 @@ use apollo_compiler::name;
 use apollo_compiler::schema::Component;
 use apollo_compiler::schema::ComponentName;
 use apollo_compiler::schema::Directive;
+use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::schema::FieldDefinition;
+use apollo_compiler::schema::InputValueDefinition;
 use apollo_compiler::schema::Name;
+use apollo_compiler::schema::Value;
+use apollo_compiler::Node;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
 use lazy_static::lazy_static;
+use std::fmt;
 
 pub(crate) const INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC: Name = name!("inaccessible");
 
@@ -91,6 +100,69 @@ pub(crate) fn get_inaccessible_spec_definition_from_subgraph(
         })?)
 }
 
+enum HasArgumentDefinitionsPosition {
+    ObjectField(ObjectFieldDefinitionPosition),
+    InterfaceField(InterfaceFieldDefinitionPosition),
+    DirectiveDefinition(DirectiveDefinitionPosition),
+}
+impl fmt::Display for HasArgumentDefinitionsPosition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ObjectField(x) => x.fmt(f),
+            Self::InterfaceField(x) => x.fmt(f),
+            Self::DirectiveDefinition(x) => x.fmt(f),
+        }
+    }
+}
+
+// Should nested inaccessible fields be accepted?
+// ```graphql
+// input WithInaccessible { accessible: Boolean inaccessible: Boolean @inaccessible }
+// input DefaultNested { nested: WithInaccessible }
+// type Object { field(arg: DefaultNested = { nested: { inaccessible: true } } }
+// ```
+fn validate_inaccessible_in_arguments(
+    schema: &FederationSchema,
+    inaccessible_directive: &Name,
+    usage_position: HasArgumentDefinitionsPosition,
+    arguments: &Vec<Node<InputValueDefinition>>,
+    errors: &mut MultipleFederationErrors,
+) {
+    for arg in arguments {
+        let Some(default_value) = &arg.default_value else {
+            continue;
+        };
+        let Some(ExtendedType::InputObject(type_)) =
+            schema.schema().types.get(arg.ty.inner_named_type())
+        else {
+            // Argument types must be input objects or scalars, only input objects are relevant
+            // here.
+            continue;
+        };
+
+        let Value::Object(value) = &**default_value else {
+            continue;
+        };
+        for (field_name, _) in value {
+            let Some(field) = type_.fields.get(field_name) else {
+                continue;
+            };
+            if field.directives.has(inaccessible_directive) {
+                let input_field_position = InputObjectFieldDefinitionPosition {
+                    type_name: type_.name.clone(),
+                    field_name: field_name.clone(),
+                };
+                errors.push(
+                    SingleFederationError::DefaultValueUsesInaccessible {
+                        message: format!("Input field `{input_field_position}` is @inaccessible but is used in the default value of `{usage_position}({}:)`, which is in the API schema.", arg.name),
+                    }
+                    .into(),
+                );
+            }
+        }
+    }
+}
+
 fn validate_inaccessible_in_fields(
     schema: &FederationSchema,
     inaccessible_directive: &Name,
@@ -128,6 +200,24 @@ fn validate_inaccessible_in_fields(
         } else {
             has_accessible_field = true;
         }
+
+        validate_inaccessible_in_arguments(
+            schema,
+            inaccessible_directive,
+            match type_position {
+                TypeDefinitionPosition::Object(object) => {
+                    HasArgumentDefinitionsPosition::ObjectField(object.field(field.name.clone()))
+                }
+                TypeDefinitionPosition::Interface(interface) => {
+                    HasArgumentDefinitionsPosition::InterfaceField(
+                        interface.field(field.name.clone()),
+                    )
+                }
+                _ => unreachable!(),
+            },
+            &field.arguments,
+            errors,
+        );
     }
 
     if has_inaccessible_field && !has_accessible_field {
@@ -194,9 +284,61 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     &mut errors,
                 );
             }
+            TypeDefinitionPosition::InputObject(input_object_position) => {
+                let input_object = input_object_position.get(schema.schema())?;
+                let mut has_inaccessible_field = false;
+                let mut has_accessible_field = false;
+                for field in input_object.fields.values() {
+                    let field_inaccessible = field.directives.has(&directive_name);
+                    if field_inaccessible && field.ty.is_non_null() {
+                        errors.push(SingleFederationError::RequiredInaccessible{
+                            message: format!("Input field `{position}` is @inaccessible but is a required input field of its type."),
+                        }.into());
+                    }
+                    has_inaccessible_field |= field_inaccessible;
+                    has_accessible_field |= !field_inaccessible;
+
+                    let Some(default_value) = &field.default_value else {
+                        continue;
+                    };
+                    let Some(ExtendedType::InputObject(type_)) =
+                        schema.schema().types.get(field.ty.inner_named_type())
+                    else {
+                        // Input types must be input objects or scalars, only objects are relevant here.
+                        continue;
+                    };
+                    let Value::Object(value) = &**default_value else {
+                        continue;
+                    };
+                    for (field_name, _) in value {
+                        let Some(field) = type_.fields.get(field_name) else {
+                            continue;
+                        };
+                        if field.directives.has(&directive_name) {
+                            let input_field_position = InputObjectFieldDefinitionPosition {
+                                type_name: type_.name.clone(),
+                                field_name: field_name.clone(),
+                            };
+                            let usage_position = input_object_position.field(field_name.clone());
+                            errors.push(
+                                SingleFederationError::DefaultValueUsesInaccessible {
+                                    message: format!("Input field `{input_field_position}` is @inaccessible but is used in the default value of `{usage_position}`, which is in the API schema."),
+                                }
+                                .into(),
+                            );
+                        }
+                    }
+                }
+                if has_inaccessible_field && !has_accessible_field {
+                    errors.push(SingleFederationError::OnlyInaccessibleChildren {
+                        message: format!("Type `{position}` is in the API schema but all of its input fields are @inaccessible."),
+                    }.into());
+                }
+            }
             _ => {}
         }
 
+        // Nothing more to do for accessible types.
         if !is_inaccessible {
             continue;
         }
@@ -252,6 +394,20 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                 }.into());
             }
         }
+    }
+
+    for position in schema.get_directive_definitions() {
+        let Ok(directive) = position.get(schema.schema()) else {
+            continue;
+        };
+
+        validate_inaccessible_in_arguments(
+            schema,
+            &directive_name,
+            HasArgumentDefinitionsPosition::DirectiveDefinition(position),
+            &directive.arguments,
+            &mut errors,
+        );
     }
 
     if !errors.errors.is_empty() {

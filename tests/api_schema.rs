@@ -437,6 +437,144 @@ fn inaccessible_interface_field_with_accessible_references() {
 }
 
 #[test]
-fn remove_inaccessible() {
-    // let s = api_schema(r#""#);
+fn inaccessible_object_field_arguments_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField(someArg: String): String
+      }
+
+      # Inaccessible object field argument
+      type Object implements Referencer1 {
+        someField(privateArg: String @inaccessible): String
+      }
+
+      # Inaccessible object field argument can't be referenced by interface
+      # field argument in the API schema
+      interface Referencer1 {
+        someField(privateArg: String): String
+      }
+
+      # Inaccessible object field argument can't be a required argument
+      type ObjectRequired {
+        someField(privateArg: String! @inaccessible): String
+      }
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###""###);
+}
+
+#[test]
+fn inaccessible_interface_field_arguments_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField(someArg: String): String
+      }
+
+      # Inaccessible interface field argument
+      interface Interface implements Referencer1 {
+        someField(privateArg: String! = "default" @inaccessible): String
+      }
+
+      # Inaccessible interface field argument can't be referenced by interface
+      # field argument in the API schema
+      interface Referencer1 {
+        someField(privateArg: String! = "default"): String
+      }
+
+      # Inaccessible object field argument can't be a required argument
+      type InterfaceRequired {
+        someField(privateArg: String! @inaccessible): String
+      }
+
+      # Inaccessible object field argument can't be implemented by a required
+      # object field argument in the API schema
+      type Referencer2 implements Interface & Referencer1 {
+        someField(privateArg: String!): String
+      }
+
+      # Inaccessible object field argument can't be implemented by a required
+      # interface field argument in the API schema
+      interface Referencer3 implements Interface & Referencer1 {
+        someField(privateArg: String!): String
+      }
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###""###);
+}
+
+#[test]
+fn inaccessible_input_object_fields_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible input object field
+      input InputObject {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible input object field can't be referenced by default value of
+      # object field argument in the API schema
+      type Referencer1 implements Referencer2 {
+        someField(someArg: InputObject = { privateField: "" }): String
+      }
+
+      # Inaccessible input object field can't be referenced by default value of
+      # interface field argument in the API schema
+      interface Referencer2 {
+        someField(someArg: InputObject = { privateField: "" }): String
+      }
+
+      # Inaccessible input object field can't be referenced by default value of
+      # input object field in the API schema
+      input Referencer3 {
+        someField: InputObject = { privateField: "" }
+      }
+
+      # Inaccessible input object field can't be referenced by default value of
+      # directive argument in the API schema
+      directive @referencer4(
+        someArg: InputObject = { privateField: "" }
+      ) on FIELD
+
+      # Inaccessible input object field can't have a non-inaccessible parent
+      # and no non-inaccessible siblings
+      input Referencer5 {
+        privateField: String @inaccessible
+        otherPrivateField: Float @inaccessible
+      }
+
+      # Inaccessible input object field can't be a required field
+      input InputObjectRequired {
+        someField: String
+        privateField: String! @inaccessible
+      }
+    "#,
+    )
+    .expect_err("should return validation errors");
+
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Input field `InputObject.privateField` is @inaccessible but is used in the default value of `Referencer1.someField(someArg:)`, which is in the API schema.
+
+      - Input field `InputObject.privateField` is @inaccessible but is used in the default value of `Referencer2.someField(someArg:)`, which is in the API schema.
+
+      - Input field `InputObject.privateField` is @inaccessible but is used in the default value of `Referencer3.privateField`, which is in the API schema.
+
+      - Type `Referencer5` is in the API schema but all of its input fields are @inaccessible.
+
+      - Input field `InputObjectRequired` is @inaccessible but is a required input field of its type.
+
+      - Input field `InputObject.privateField` is @inaccessible but is used in the default value of `@referencer4(someArg:)`, which is in the API schema.
+    "###);
 }
