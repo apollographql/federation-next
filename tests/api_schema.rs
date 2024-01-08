@@ -463,7 +463,13 @@ fn inaccessible_object_field_arguments_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###""###);
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Argument `Object.someField(privateArg:)` is @inaccessible but implements the interface argument `Referencer1.someField(privateArg:)` which is in the API schema.
+
+      - Argument `ObjectRequired.someField(privateArg:)` is @inaccessible but is a required argument of its field.
+    "###);
 }
 
 #[test]
@@ -505,7 +511,17 @@ fn inaccessible_interface_field_arguments_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###""###);
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Argument `Interface.someField(privateArg:)` is @inaccessible but implements the interface argument `Referencer1.someField(privateArg:)` which is in the API schema.
+
+      - Argument `InterfaceRequired.someField(privateArg:)` is @inaccessible but is a required argument of its field.
+
+      - Argument `Interface.someField(privateArg:)` is @inaccessible but is implemented by the argument `Referencer2.someField(privateArg:)` which is in the API schema.
+
+      - Argument `Interface.someField(privateArg:)` is @inaccessible but is implemented by the argument `Referencer3.someField(privateArg:)` which is in the API schema.
+    "###);
 }
 
 #[test]

@@ -240,18 +240,23 @@ fn validate_inaccessible_in_fields(
     let mut has_inaccessible_field = false;
     let mut has_accessible_field = false;
     for (field_name, field) in fields {
-        let mut super_fields = implements.iter().filter_map(|interface_name| {
-            schema
-                .schema()
-                .type_field(interface_name, field_name)
-                .ok()
-                .map(|field| (interface_name, field))
-        });
+        let mut super_fields = implements
+            .iter()
+            .filter_map(|interface_name| {
+                schema
+                    .schema()
+                    .type_field(interface_name, field_name)
+                    .ok()
+                    .map(|field| (interface_name, field))
+            })
+            .collect::<Vec<_>>();
 
-        if field.directives.has(inaccessible_directive) {
+        let field_inaccessible = field.directives.has(inaccessible_directive);
+        if field_inaccessible {
             has_inaccessible_field = true;
 
             if let Some((interface_name, super_field)) = super_fields
+                .iter()
                 .find(|super_field| !super_field.1.directives.has(inaccessible_directive))
             {
                 let interface_name = interface_name.as_str();
@@ -265,6 +270,44 @@ fn validate_inaccessible_in_fields(
             }
         } else {
             has_accessible_field = true;
+        }
+
+        for arg in &field.arguments {
+            let arg_name = &arg.name;
+            let arg_inaccessible = arg.directives.has(inaccessible_directive);
+            if arg_inaccessible
+                && arg.is_required()
+                // TODO remove after update to apollo-compiler 1.0.0-beta.12
+                && arg.default_value.is_none()
+            {
+                errors.push(SingleFederationError::RequiredInaccessible {
+                    message: format!("Argument `{type_position}.{field_name}({arg_name}:)` is @inaccessible but is a required argument of its field."),
+                }.into());
+            }
+
+            for (interface_name, super_field) in super_fields.iter() {
+                let Some(super_arg) = super_field
+                    .arguments
+                    .iter()
+                    .find(|super_arg| super_arg.name == *arg_name)
+                else {
+                    continue;
+                };
+
+                let interface_name = interface_name.as_str();
+                let super_field_name = &super_field.name;
+                if arg_inaccessible != super_arg.directives.has(inaccessible_directive) {
+                    if arg_inaccessible {
+                        errors.push(SingleFederationError::ImplementedByInaccessible {
+                            message: format!("Argument `{type_position}.{field_name}({arg_name}:)` is @inaccessible but implements the interface argument `{interface_name}.{super_field_name}({arg_name}:)` which is in the API schema."),
+                        }.into());
+                    } else {
+                        errors.push(SingleFederationError::ImplementedByInaccessible {
+                            message: format!("Argument `{interface_name}.{super_field_name}({arg_name}:)` is @inaccessible but is implemented by the argument `{type_position}.{field_name}({arg_name}:)` which is in the API schema."),
+                        }.into());
+                    }
+                }
+            }
         }
 
         validate_inaccessible_in_arguments(
@@ -383,7 +426,11 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                         has_inaccessible_field |= field_inaccessible;
                         has_accessible_field |= !field_inaccessible;
 
-                        if field_inaccessible && field.ty.is_non_null() {
+                        if field_inaccessible
+                            && field.is_required()
+                            // TODO remove after update to apollo-compiler 1.0.0-beta.12
+                            && field.default_value.is_none()
+                        {
                             errors.push(SingleFederationError::RequiredInaccessible{
                                 message: format!("Input field `{position}` is @inaccessible but is a required input field of its type."),
                             }.into());
@@ -454,8 +501,8 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                 TypeDefinitionReferencer::SchemaRoot(root) => {
                     if root.root_kind == SchemaRootDefinitionKind::Query {
                         errors.push(SingleFederationError::QueryRootTypeInaccessible {
-                        message: format!("Type `{position}` is @inaccessible but is the query root type, which must be in the API schema."),
-                    }.into());
+                            message: format!("Type `{position}` is @inaccessible but is the query root type, which must be in the API schema."),
+                        }.into());
                     }
                     continue;
                 }
