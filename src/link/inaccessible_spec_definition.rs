@@ -213,6 +213,22 @@ fn validate_inaccessible_in_arguments(
 ) {
     let types = &schema.schema().types;
     for arg in arguments {
+        let arg_name = &arg.name;
+        let arg_inaccessible = arg.directives.has(inaccessible_directive);
+        if arg_inaccessible
+            && arg.is_required()
+            // TODO remove after update to apollo-compiler 1.0.0-beta.12
+            && arg.default_value.is_none()
+        {
+            let kind = match usage_position {
+                HasArgumentDefinitionsPosition::DirectiveDefinition(_) => "directive",
+                _ => "field",
+            };
+            errors.push(SingleFederationError::RequiredInaccessible {
+                message: format!("Argument `{usage_position}({arg_name}:)` is @inaccessible but is a required argument of its {kind}."),
+            }.into());
+        }
+
         if let (Some(default_value), Some(arg_type)) =
             (&arg.default_value, types.get(arg.ty.inner_named_type()))
         {
@@ -221,7 +237,7 @@ fn validate_inaccessible_in_arguments(
                 inaccessible_directive,
                 arg_type,
                 default_value,
-                format!("{usage_position}({}:)", arg.name),
+                format!("{usage_position}({arg_name}:)"),
                 errors,
             );
         }
@@ -274,15 +290,6 @@ fn validate_inaccessible_in_fields(
         for arg in &field.arguments {
             let arg_name = &arg.name;
             let arg_inaccessible = arg.directives.has(inaccessible_directive);
-            if arg_inaccessible
-                && arg.is_required()
-                // TODO remove after update to apollo-compiler 1.0.0-beta.12
-                && arg.default_value.is_none()
-            {
-                errors.push(SingleFederationError::RequiredInaccessible {
-                    message: format!("Argument `{type_position}.{field_name}({arg_name}:)` is @inaccessible but is a required argument of its field."),
-                }.into());
-            }
 
             for (interface_name, super_field) in super_fields.iter() {
                 let Some(super_arg) = super_field
@@ -518,7 +525,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     .get(schema.schema())?
                     .directives
                     .has(&directive_name),
-                TypeDefinitionReferencer::ObjectFieldArgument(_) => todo!("argument reference"),
+                TypeDefinitionReferencer::ObjectFieldArgument(_) => false,
                 TypeDefinitionReferencer::Interface(ref_position) => ref_position
                     .get(schema.schema())?
                     .directives
@@ -527,7 +534,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     .get(schema.schema())?
                     .directives
                     .has(&directive_name),
-                TypeDefinitionReferencer::InterfaceFieldArgument(_) => todo!("argument reference"),
+                TypeDefinitionReferencer::InterfaceFieldArgument(_) => false,
                 TypeDefinitionReferencer::UnionField(ref_position) => ref_position
                     .get(schema.schema())?
                     .directives
@@ -536,7 +543,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     .get(schema.schema())?
                     .directives
                     .has(&directive_name),
-                TypeDefinitionReferencer::DirectiveArgument(_) => todo!("argument reference"),
+                TypeDefinitionReferencer::DirectiveArgument(_) => false,
             };
 
             if !ref_inaccessible {

@@ -738,3 +738,29 @@ fn inaccessible_enum_value_as_string() {
       - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Query.someField(arg1:)`, which is in the API schema.
     "###);
 }
+
+#[test]
+fn inaccessible_directive_arguments_with_accessible_references() {
+    let errors = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible directive argument
+      directive @directive(privateArg: String @inaccessible) on SUBSCRIPTION
+
+      # Inaccessible directive argument can't be a required field
+      directive @directiveRequired(
+        someArg: String
+        privateArg: String! @inaccessible
+      ) on FRAGMENT_DEFINITION
+    "#,
+    )
+    .expect_err("should return validation errors");
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Argument `@directiveRequired(privateArg:)` is @inaccessible but is a required argument of its directive.
+    "###);
+}
