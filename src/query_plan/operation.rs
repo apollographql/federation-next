@@ -19,10 +19,10 @@ use std::sync::{atomic, Arc};
 const TYPENAME_FIELD: Name = name!("__typename");
 
 // Global storage for the counter used to uniquely identify selections
-static NEXT_ID: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+static NEXT_ID: atomic::AtomicUsize = atomic::AtomicUsize::new(1);
 
 // opaque wrapper of the unique selection ID type
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct SelectionId(usize);
 
 impl SelectionId {
@@ -85,24 +85,24 @@ pub(crate) enum NormalizedSelectionKey {
         response_name: Name,
         // directives applied on the field
         directives: Arc<DirectiveList>,
-        // unique label/counter used to distinguish fields that cannot be merged
-        label: usize,
+        // optional unique selection ID used to distinguish fields that cannot be merged (set if field is deferred)
+        deferred_id: Option<SelectionId>,
     },
     FragmentSpread {
         // fragment name
         name: Name,
         // directives applied on the fragment spread
         directives: Arc<DirectiveList>,
-        // unique label/counter used to distinguish fields that cannot be merged
-        label: usize,
+        // optional unique selection ID used to distinguish spreads that cannot be merged (set if fragment spread is deferred)
+        deferred_id: Option<SelectionId>,
     },
     InlineFragment {
         // optional type condition of a fragment
         type_condition: Option<Name>,
         // directives applied on a fragment
         directives: Arc<DirectiveList>,
-        // unique label/counter used to distinguish fragments that cannot be merged
-        label: usize,
+        // optional unique selection ID used to distinguish fragments that cannot be merged (set if inline fragment is deferred)
+        deferred_id: Option<SelectionId>,
     },
 }
 
@@ -156,7 +156,6 @@ pub(crate) struct NormalizedFieldSelection {
     pub(crate) field: NormalizedField,
     pub(crate) selection_set: Option<NormalizedSelectionSet>,
     pub(crate) sibling_typename: Option<Name>,
-    selection_id: SelectionId,
 }
 
 /// The non-selection-set data of `NormalizedFieldSelection`, used with operation paths and graph
@@ -168,6 +167,7 @@ pub(crate) struct NormalizedField {
     pub(crate) alias: Option<Name>,
     pub(crate) arguments: Arc<Vec<Node<Argument>>>,
     pub(crate) directives: Arc<DirectiveList>,
+    selection_id: SelectionId,
 }
 
 impl NormalizedField {
@@ -203,7 +203,6 @@ pub(crate) struct NormalizedFragmentSpreadSelection {
 pub(crate) struct NormalizedInlineFragmentSelection {
     pub(crate) inline_fragment: NormalizedInlineFragment,
     pub(crate) selection_set: NormalizedSelectionSet,
-    selection_id: SelectionId,
 }
 
 /// The non-selection-set data of `NormalizedInlineFragmentSelection`, used with operation paths and
@@ -214,6 +213,7 @@ pub(crate) struct NormalizedInlineFragment {
     pub(crate) parent_type_position: CompositeTypeDefinitionPosition,
     pub(crate) type_condition_position: Option<CompositeTypeDefinitionPosition>,
     pub(crate) directives: Arc<DirectiveList>,
+    selection_id: SelectionId,
 }
 
 impl NormalizedSelectionSet {
@@ -615,7 +615,7 @@ impl NormalizedFieldSelection {
     /// Copies field selection and assigns it a new unique selection ID.
     pub(crate) fn new_copy(&self) -> Self {
         let mut copy = self.clone();
-        copy.selection_id = SelectionId::new();
+        copy.field.selection_id = SelectionId::new();
         copy
     }
 
@@ -647,13 +647,13 @@ impl NormalizedFieldSelection {
             schema.get_type(field.selection_set.ty.clone())?.try_into();
 
         Ok(Some(NormalizedFieldSelection {
-            selection_id: SelectionId::new(),
             field: NormalizedField {
                 schema: schema.clone(),
                 field_position,
                 alias: field.alias.clone(),
                 arguments: Arc::new(field.arguments.clone()),
                 directives: Arc::new(field.directives.clone()),
+                selection_id: SelectionId::new(),
             },
             selection_set: if field_composite_type_result.is_ok() {
                 Some(NormalizedSelectionSet::normalize_and_expand_fragments(
@@ -762,12 +762,12 @@ impl NormalizedFragmentSpreadSelection {
         // fragment definition's directives here (which isn't great, but there's not a simple
         // alternative at the moment).
         Ok(NormalizedInlineFragmentSelection {
-            selection_id: SelectionId::new(),
             inline_fragment: NormalizedInlineFragment {
                 schema: schema.clone(),
                 parent_type_position: parent_type_position.clone(),
                 type_condition_position: Some(type_condition_position),
                 directives: Arc::new(fragment_spread.directives.clone()),
+                selection_id: SelectionId::new(),
             },
             selection_set: NormalizedSelectionSet::normalize_and_expand_fragments(
                 &fragment.selection_set,
@@ -806,7 +806,7 @@ impl NormalizedInlineFragmentSelection {
     /// Copies inline fragment selection and assigns it a new unique selection ID.
     pub(crate) fn new_copy(&self) -> Self {
         let mut copy = self.clone();
-        copy.selection_id = SelectionId::new();
+        copy.inline_fragment.selection_id = SelectionId::new();
         copy
     }
 
@@ -830,12 +830,12 @@ impl NormalizedInlineFragmentSelection {
                 None
             };
         Ok(NormalizedInlineFragmentSelection {
-            selection_id: SelectionId::new(),
             inline_fragment: NormalizedInlineFragment {
                 schema: schema.clone(),
                 parent_type_position: parent_type_position.clone(),
                 type_condition_position,
                 directives: Arc::new(inline_fragment.directives.clone()),
+                selection_id: SelectionId::new(),
             },
             selection_set: NormalizedSelectionSet::normalize_and_expand_fragments(
                 &inline_fragment.selection_set,
@@ -981,42 +981,51 @@ impl From<&NormalizedSelection> for NormalizedSelectionKey {
 
 impl From<&NormalizedFieldSelection> for NormalizedSelectionKey {
     fn from(field_selection: &NormalizedFieldSelection) -> Self {
-        let mut label = 0;
-        if is_deferred_selection(&field_selection.field.directives) {
-            label = field_selection.selection_id.0;
-        }
+        let deferred_id = if is_deferred_selection(&field_selection.field.directives) {
+            Some(field_selection.field.selection_id.clone())
+        } else {
+            None
+        };
         Self::Field {
             response_name: field_selection.field.response_name(),
             directives: Arc::new(directives_with_sorted_arguments(
                 &field_selection.field.directives,
             )),
-            label,
+            deferred_id,
         }
     }
 }
 
 impl From<&NormalizedFragmentSpreadSelection> for NormalizedSelectionKey {
     fn from(fragment_spread_selection: &NormalizedFragmentSpreadSelection) -> Self {
-        let mut label = 0;
-        if is_deferred_selection(&fragment_spread_selection.directives) {
-            label = fragment_spread_selection.selection_id.0;
-        }
+        let deferred_id = if is_deferred_selection(&fragment_spread_selection.directives) {
+            Some(fragment_spread_selection.selection_id.clone())
+        } else {
+            None
+        };
         Self::FragmentSpread {
             name: fragment_spread_selection.fragment_name.clone(),
             directives: Arc::new(directives_with_sorted_arguments(
                 &fragment_spread_selection.directives,
             )),
-            label,
+            deferred_id,
         }
     }
 }
 
 impl From<&NormalizedInlineFragmentSelection> for NormalizedSelectionKey {
     fn from(inline_fragment_selection: &NormalizedInlineFragmentSelection) -> Self {
-        let mut label = 0;
-        if is_deferred_selection(&inline_fragment_selection.inline_fragment.directives) {
-            label = inline_fragment_selection.selection_id.0;
-        }
+        let deferred_id: Option<SelectionId> =
+            if is_deferred_selection(&inline_fragment_selection.inline_fragment.directives) {
+                Some(
+                    inline_fragment_selection
+                        .inline_fragment
+                        .selection_id
+                        .clone(),
+                )
+            } else {
+                None
+            };
         Self::InlineFragment {
             type_condition: inline_fragment_selection
                 .inline_fragment
@@ -1026,7 +1035,7 @@ impl From<&NormalizedInlineFragmentSelection> for NormalizedSelectionKey {
             directives: Arc::new(directives_with_sorted_arguments(
                 &inline_fragment_selection.inline_fragment.directives,
             )),
-            label,
+            deferred_id,
         }
     }
 }
