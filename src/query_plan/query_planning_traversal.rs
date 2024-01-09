@@ -223,15 +223,14 @@ impl QueryPlanningTraversal {
 
         let max_evaluated_plans = self.parameters.config.debug.max_evaluated_plans as usize;
         loop {
+            // Note that if `self.closed_branches[0]` is our only branch, it's fine,
+            // we'll continue to remove options from it (but that is beyond unlikely).
             let first_branch_len = self.closed_branches[0].0.len();
             if plan_count <= max_evaluated_plans || first_branch_len <= 1 {
                 break;
             }
             Self::prune_and_reorder_first_branch(&mut self.closed_branches);
             plan_count -= plan_count / first_branch_len;
-
-            // Note that if firstBranch is our only branch, it's fine,
-            // we'll continue to remove options from it (but that is beyond unlikely).
 
             // debug!("Reduced plans to consider to {plan_count} plans");
         }
