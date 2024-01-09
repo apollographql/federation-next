@@ -118,7 +118,7 @@ fn validate_inaccessible_on_imported_types(
         };
     }
 
-    let referencer_type_names = referencers
+    let feature_referencer_type_names = referencers
         .scalar_types
         .iter()
         .map(|scalar| &scalar.type_name)
@@ -132,22 +132,19 @@ fn validate_inaccessible_on_imported_types(
         .chain(iter_type_names!(referencers.enum_types))
         .chain(iter_type_names!(referencers.enum_values))
         .chain(iter_type_names!(referencers.input_object_types))
-        .chain(iter_type_names!(referencers.input_object_fields));
+        .chain(iter_type_names!(referencers.input_object_fields))
+        .filter(|type_name| metadata.source_link_of_type(type_name).is_some());
 
     let mut raised_errors = HashSet::new();
-    for type_name in referencer_type_names {
-        if metadata.source_link_of_type(&type_name).is_some() {
-            let first_occurrence = raised_errors.insert(type_name);
-            if first_occurrence {
-                errors.push(
-                    SingleFederationError::DisallowedInaccessible {
-                        message: format!(
-                            "Core feature type `{type_name}` cannot use @inaccessible."
-                        ),
-                    }
-                    .into(),
-                )
-            }
+    for type_name in feature_referencer_type_names {
+        let first_occurrence = raised_errors.insert(type_name);
+        if first_occurrence {
+            errors.push(
+                SingleFederationError::DisallowedInaccessible {
+                    message: format!("Core feature type `{type_name}` cannot use @inaccessible."),
+                }
+                .into(),
+            )
         }
     }
 
