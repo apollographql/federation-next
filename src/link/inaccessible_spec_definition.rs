@@ -380,6 +380,10 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
             continue;
         };
 
+        // The JavaScript implementation checks for @inaccessible on built-in types, as well.
+        // We don't do that here because definitions of built-in types are already rejected
+        // by apollo-rs validation.
+
         let metadata = schema.metadata().unwrap();
         if metadata.source_link_of_type(position.type_name()).is_some() {
             // TODO must check recursively if the directive is used

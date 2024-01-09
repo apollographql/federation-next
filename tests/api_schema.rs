@@ -25,7 +25,7 @@ const INACCESSIBLE_V02_HEADER: &str = r#"
 
 fn inaccessible_to_api_schema(input: &str) -> Result<Valid<Schema>, FederationError> {
     let sdl = format!("{INACCESSIBLE_V02_HEADER}{input}");
-    let graph = Supergraph::new(&sdl).unwrap();
+    let graph = Supergraph::new(&sdl)?;
     graph.to_api_schema()
 }
 
@@ -803,7 +803,12 @@ fn inaccessible_on_builtins() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###""###);
+    // Note this is different from the JS implementation
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - built-in scalar definitions must be omitted
+    "###);
 }
 
 #[test]
