@@ -223,16 +223,13 @@ impl QueryPlanningTraversal {
 
         let max_evaluated_plans = self.parameters.config.debug.max_evaluated_plans as usize;
         loop {
-            let first_branch = &mut self.closed_branches[0];
-            if plan_count <= max_evaluated_plans || first_branch.0.len() <= 1 {
+            let first_branch_len = self.closed_branches[0].0.len();
+            if plan_count <= max_evaluated_plans || first_branch_len <= 1 {
                 break;
             }
-            // we remove the right-most option of the first branch,
-            // and them move that branch to it's new place.
-            let prev_size = first_branch.0.len();
-            first_branch.0.pop();
-            plan_count -= plan_count / prev_size;
-            self.reorder_first_branch();
+            Self::prune_and_reorder_first_branch(&mut self.closed_branches);
+            plan_count -= plan_count / first_branch_len;
+
             // Note that if firstBranch is our only branch, it's fine,
             // we'll continue to remove options from it (but that is beyond unlikely).
 
@@ -240,30 +237,117 @@ impl QueryPlanningTraversal {
         }
     }
 
-    /// Moves the first closed branch to after any branch having more options.
-    /// This method assumes that closed branches are sorted by decreasing number of options
-    /// _except_ for the first element which may be out of order,
-    /// and this method restore that order.
-    fn reorder_first_branch(&mut self) {
-        let first_branch_len = self.closed_branches[0].0.len();
-        let i = self
-            .closed_branches
+    /// Removes the right-most option of the first branch and moves that branch to its new place
+    /// to keep them sorted by decreasing number of options.
+    /// Assumes that branches were already sorted that way, and that there is at least one branch.
+    ///
+    /// This takes a generic parameter instead of `&mut self` for unit-testing.
+    fn prune_and_reorder_first_branch(closed_branches: &mut [impl ClosedBranchLike]) {
+        let (first_branch, rest) = closed_branches.split_first_mut().unwrap();
+        let first_branch_previous_len = first_branch.len();
+        first_branch.pop();
+        let to_jump_over = rest
             .iter()
-            .skip(1)
-            .position(|branch| branch.0.len() <= first_branch_len)
-            .unwrap_or(self.closed_branches.len());
-        // `i` is the smallest index of an element
-        // having the same number or less options than the first one,
-        // so we switch that first branch with the element "before" `i` (which has more elements).
-        self.closed_branches.swap(0, i - 1)
+            .take_while(|branch| branch.len() == first_branch_previous_len)
+            .count();
+        if to_jump_over == 0 {
+            // No other branch has as many options as `closed_branches[0]` did,
+            // so removing one option still left `closed_branches` sorted.
+        } else {
+            // `closed_branches` now looks like this:
+            //
+            // | index            | number of options in branch      |
+            // | ---------------- | -------------------------------- |
+            // | 0                | first_branch_previous_len - 1    |
+            // | 1                | first_branch_previous_len        |
+            // | …                | first_branch_previous_len        |
+            // | to_jump_over     | first_branch_previous_len        |
+            // | to_jump_over + 1 | <= first_branch_previous_len - 1 |
+            // | …                | <= first_branch_previous_len - 1 |
+            //
+            // The range `closed_branches[1 ..= to_jump_over]` is branches
+            // that all have the same number of options, so they can be in any relative order.
 
-        // FIXME: doesn’t this leave the element foremly at `i - 1` out of place?
-        // Shouldn’t the whole range be shifted?
-        //
-        // It may be easier to do a full sort again, since it’s documented as:
-        //
-        // https://doc.rust-lang.org/std/primitive.slice.html#method.sort_by
-        // > The current algorithm is an adaptive, iterative merge sort inspired by timsort.
-        // > It is designed to be very fast in cases where the slice is nearly sorted
+            closed_branches.swap(0, to_jump_over)
+
+            // `closed_branches` now looks like this, which is correctly sorted:
+            //
+            // | index            | number of options in branch      |
+            // | ---------------- | -------------------------------- |
+            // | 0                | first_branch_previous_len        |
+            // | 1                | first_branch_previous_len        |
+            // | …                | first_branch_previous_len        |
+            // | to_jump_over     | first_branch_previous_len - 1    |
+            // | to_jump_over + 1 | <= first_branch_previous_len - 1 |
+            // | …                | <= first_branch_previous_len - 1 |
+        }
     }
+}
+
+trait ClosedBranchLike {
+    fn len(&self) -> usize;
+    fn pop(&mut self);
+}
+
+impl ClosedBranchLike for ClosedBranch {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn pop(&mut self) {
+        self.0.pop();
+    }
+}
+
+#[cfg(test)]
+impl ClosedBranchLike for String {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn pop(&mut self) {
+        self.pop();
+    }
+}
+
+#[test]
+fn test_prune_and_reorder_first_branch() {
+    #[track_caller]
+    fn assert(branches: &[&str], expected: &[&str]) {
+        let mut branches: Vec<_> = branches.iter().map(|s| s.to_string()).collect();
+        QueryPlanningTraversal::prune_and_reorder_first_branch(&mut branches);
+        assert_eq!(branches, expected)
+    }
+    // Either the first branch had strictly more options than the second,
+    // so it is still at its correct potition after removing one option…
+    assert(
+        &["abcdE", "fgh", "ijk", "lmn", "op"],
+        &["abcd", "fgh", "ijk", "lmn", "op"],
+    );
+    assert(
+        &["abcD", "fgh", "ijk", "lmn", "op"],
+        &["abc", "fgh", "ijk", "lmn", "op"],
+    );
+    assert(&["abcD", "fgh"], &["abc", "fgh"]);
+    assert(&["abcD"], &["abc"]);
+
+    // … or, removing exactly one option from the first branch causes it
+    // to now have one less option (in this example: two options)
+    // than the second branch (here: three options)
+    // There is no other possibility with branches correctly sorted
+    // before calling `prune_and_reorder_first_branch`.
+    //
+    // There may be a run of consecutive branches (here: three branches)
+    // with equal number of options (here: three options each).
+    // Those branches can be in any relative order.
+    // We take advantage of that and swap the now-incorrectly-placed first branch
+    // with the last of this run:
+    assert(
+        &["abC", "fgh", "ijk", "lmn", "op"],
+        &["lmn", "fgh", "ijk", "ab", "op"],
+    );
+    assert(&["abC", "fgh", "ijk", "lmn"], &["lmn", "fgh", "ijk", "ab"]);
+    // The "run" can be a single branch:
+    assert(&["abC", "lmn", "op"], &["lmn", "ab", "op"]);
+    assert(&["abC", "lmn"], &["lmn", "ab"]);
 }
