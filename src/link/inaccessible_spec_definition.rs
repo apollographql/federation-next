@@ -425,6 +425,7 @@ fn validate_inaccessible_in_values(
         }.into());
     }
 }
+
 pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), FederationError> {
     let inaccessible_spec = get_inaccessible_spec_definition_from_subgraph(schema)?;
     let directive_name = inaccessible_spec
@@ -647,5 +648,50 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
         return Err(errors.into());
     }
 
+    Ok(())
+}
+
+pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(), FederationError> {
+    let inaccessible_spec = get_inaccessible_spec_definition_from_subgraph(schema)?;
+    let directive_name = inaccessible_spec
+        .directive_name_in_schema(schema, &INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC)?
+        .ok_or_else(|| SingleFederationError::Internal {
+            message: "Unexpectedly could not find inaccessible spec in schema".to_owned(),
+        })?;
+
+    let types_for_removal = schema
+        .get_types()
+        .filter(|position| {
+            let Ok(ty) = position.get(schema.schema()) else {
+                return false;
+            };
+            return ty.directives().has(&directive_name);
+        })
+        .collect::<Vec<_>>();
+
+    for position in types_for_removal {
+        match position {
+            TypeDefinitionPosition::Object(object) => {
+                object.remove(schema)?;
+            }
+            TypeDefinitionPosition::Scalar(scalar) => {
+                scalar.remove(schema)?;
+            }
+            TypeDefinitionPosition::Interface(interface) => {
+                interface.remove(schema)?;
+            }
+            TypeDefinitionPosition::Union(union_) => {
+                union_.remove(schema)?;
+            }
+            TypeDefinitionPosition::Enum(enum_) => {
+                enum_.remove(schema)?;
+            }
+            TypeDefinitionPosition::InputObject(input_object) => {
+                input_object.remove(schema)?;
+            }
+        }
+    }
+
+    println!("{}", schema.schema());
     todo!()
 }

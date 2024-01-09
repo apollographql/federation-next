@@ -76,6 +76,73 @@ fn inaccessible_types_with_accessible_references() {
 }
 
 #[test]
+fn removes_inaccessible_object_types() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      extend schema {
+        mutation: Mutation
+        subscription: Subscription
+      }
+
+      # Non-inaccessible object type
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible mutation types should be removed
+      type Mutation @inaccessible {
+        someObject: Object
+      }
+
+      # Inaccessible subscription types should be removed
+      type Subscription @inaccessible {
+        someField: String
+      }
+
+      # Inaccessible object type
+      type Object @inaccessible {
+        someField: String
+      }
+
+      # Inaccessible object type referenced by inaccessible object field
+      type Referencer1 implements Referencer3 {
+        someField: String
+        privatefield: Object! @inaccessible
+      }
+
+      # Inaccessible object type referenced by non-inaccessible object field
+      # with inaccessible parent
+      type Referencer2 implements Referencer4 @inaccessible {
+        privateField: [Object!]!
+      }
+
+      # Inaccessible object type referenced by inaccessible interface field
+      interface Referencer3 {
+        someField: String
+        privatefield: Object @inaccessible
+      }
+
+      # Inaccessible object type referenced by non-inaccessible interface field
+      # with inaccessible parent
+      interface Referencer4 @inaccessible {
+        privateField: [Object]
+      }
+
+      # Inaccessible object type referenced by union member with
+      # non-inaccessible siblings and parent
+      union Referencer5 = Query | Object
+
+      # Inaccessible object type referenced by union member with no siblings
+      # but with inaccessible parent
+      union Referencer6 @inaccessible = Object
+    "#,
+    )
+    .expect("should succeed");
+
+    todo!()
+}
+
+#[test]
 fn inaccessible_interface_with_accessible_references() {
     let errors = inaccessible_to_api_schema(
         r#"

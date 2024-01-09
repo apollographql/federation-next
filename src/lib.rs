@@ -1,6 +1,7 @@
 #![allow(dead_code)] // TODO: This is fine while we're iterating, but should be removed later.
 use apollo_compiler::ast::DirectiveList;
 use apollo_compiler::Schema;
+use link::inaccessible_spec_definition::remove_inaccessible_elements;
 use link::inaccessible_spec_definition::validate_inaccessible;
 use schema::FederationSchema;
 
@@ -37,9 +38,10 @@ impl Supergraph {
 
     /// Generates API schema from the supergraph schema.
     pub fn to_api_schema(&self) -> Result<Valid<Schema>, FederationError> {
-        let api_schema = FederationSchema::new(self.schema.clone().into_inner())?;
+        let mut api_schema = FederationSchema::new(self.schema.clone().into_inner())?;
 
         validate_inaccessible(&api_schema)?;
+        remove_inaccessible_elements(&mut api_schema)?;
 
         /*
         let metadata = api_schema.metadata().unwrap();
@@ -57,36 +59,6 @@ impl Supergraph {
                     .is_some()
             })
             .collect::<Vec<_>>();
-
-        let inaccessible_types = api_schema
-            .get_types()
-            .filter(|position| {
-                position
-                    .get(api_schema.schema())
-                    .ok()
-                    .is_some_and(|ty| ty.directives().has("inaccessible"))
-            })
-            .collect::<Vec<_>>();
-
-        for position in types_for_removal {
-            println!("remove {}", position.type_name());
-            use crate::schema::position::TypeDefinitionPosition as P;
-            match position {
-                P::Object(object) => object.remove(&mut api_schema).unwrap(),
-                P::Scalar(scalar) => scalar.remove(&mut api_schema).unwrap(),
-                P::Interface(interface) => interface.remove(&mut api_schema).unwrap(),
-                P::Union(union_) => union_.remove(&mut api_schema).unwrap(),
-                P::Enum(enum_) => enum_.remove(&mut api_schema).unwrap(),
-                P::InputObject(input_object) => {
-                    input_object.remove(&mut api_schema).unwrap()
-                }
-            }
-        }
-
-        for position in directives_for_removal {
-            println!("remove @{}", position.directive_name);
-            position.remove(&mut api_schema).unwrap();
-        }
         */
 
         Ok(apollo_compiler::validation::Valid::assume_valid(
@@ -99,10 +71,6 @@ impl From<Valid<Schema>> for Supergraph {
     fn from(schema: Valid<Schema>) -> Self {
         Self { schema }
     }
-}
-
-fn is_inaccessible_applied(directives: &DirectiveList) -> bool {
-    directives.has("inaccessible")
 }
 
 #[cfg(test)]
