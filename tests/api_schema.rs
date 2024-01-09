@@ -815,7 +815,7 @@ fn inaccessible_on_builtins() {
 fn inaccessible_on_imported_elements() {
     let graph = Supergraph::new(
         r#"
-      directive @link(url: String!, as: String, import: [link__Import], for: link__Purpose) repeatable on SCHEMA
+      directive @link(url: String!, as: String, import: [link__Import] @inaccessible, for: link__Purpose) repeatable on SCHEMA
 
       scalar link__Import
 
@@ -904,5 +904,37 @@ fn inaccessible_on_imported_elements() {
         .to_api_schema()
         .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###""###);
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Core feature type `foo__Scalar` cannot use @inaccessible.
+
+      - Core feature type `foo__Object1` cannot use @inaccessible.
+
+      - Core feature type `foo__Object2` cannot use @inaccessible.
+
+      - Core feature type `foo__Object3` cannot use @inaccessible.
+
+      - Core feature type `foo__Interface1` cannot use @inaccessible.
+
+      - Core feature type `foo__Interface2` cannot use @inaccessible.
+
+      - Core feature type `foo__Interface3` cannot use @inaccessible.
+
+      - Core feature type `foo__Union` cannot use @inaccessible.
+
+      - Core feature type `foo__Enum1` cannot use @inaccessible.
+
+      - Core feature type `link__Purpose` cannot use @inaccessible.
+
+      - Core feature type `foo__Enum2` cannot use @inaccessible.
+
+      - Core feature type `foo__InputObject1` cannot use @inaccessible.
+
+      - Core feature type `foo__InputObject2` cannot use @inaccessible.
+
+      - Core feature directive `@link` cannot use @inaccessible.
+
+      - Core feature directive `@foo` cannot use @inaccessible.
+    "###);
 }

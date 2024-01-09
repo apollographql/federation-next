@@ -9,6 +9,7 @@ use crate::schema::position::InterfaceFieldDefinitionPosition;
 use crate::schema::position::ObjectFieldDefinitionPosition;
 use crate::schema::position::SchemaRootDefinitionKind;
 use crate::schema::position::TypeDefinitionPosition;
+use crate::schema::referencer::DirectiveReferencers;
 use crate::schema::referencer2::TypeDefinitionReferencer;
 use crate::schema::FederationSchema;
 use apollo_compiler::name;
@@ -25,6 +26,7 @@ use apollo_compiler::Node;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
 use lazy_static::lazy_static;
+use std::collections::HashSet;
 use std::fmt;
 
 pub(crate) const INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC: Name = name!("inaccessible");
@@ -102,6 +104,69 @@ pub(crate) fn get_inaccessible_spec_definition_from_subgraph(
             message: "Subgraph unexpectedly does not use a supported inaccessible spec version"
                 .to_owned(),
         })?)
+}
+
+fn validate_inaccessible_on_imported_types(
+    schema: &FederationSchema,
+    referencers: &DirectiveReferencers,
+    errors: &mut MultipleFederationErrors,
+) {
+    let metadata = schema.metadata().unwrap();
+    macro_rules! iter_type_names {
+        ( $iterable:expr ) => {
+            $iterable.iter().map(|position| &position.type_name)
+        };
+    }
+
+    let referencer_type_names = referencers
+        .scalar_types
+        .iter()
+        .map(|scalar| &scalar.type_name)
+        .chain(iter_type_names!(referencers.object_types))
+        .chain(iter_type_names!(referencers.object_fields))
+        .chain(iter_type_names!(referencers.object_field_arguments))
+        .chain(iter_type_names!(referencers.interface_types))
+        .chain(iter_type_names!(referencers.interface_fields))
+        .chain(iter_type_names!(referencers.interface_field_arguments))
+        .chain(iter_type_names!(referencers.union_types))
+        .chain(iter_type_names!(referencers.enum_types))
+        .chain(iter_type_names!(referencers.enum_values))
+        .chain(iter_type_names!(referencers.input_object_types))
+        .chain(iter_type_names!(referencers.input_object_fields));
+
+    let mut raised_errors = HashSet::new();
+    for type_name in referencer_type_names {
+        if metadata.source_link_of_type(&type_name).is_some() {
+            let first_occurrence = raised_errors.insert(type_name);
+            if first_occurrence {
+                errors.push(
+                    SingleFederationError::DisallowedInaccessible {
+                        message: format!(
+                            "Core feature type `{type_name}` cannot use @inaccessible."
+                        ),
+                    }
+                    .into(),
+                )
+            }
+        }
+    }
+
+    for argument in &referencers.directive_arguments {
+        if metadata
+            .source_link_of_directive(&argument.directive_name)
+            .is_some()
+        {
+            errors.push(
+                SingleFederationError::DisallowedInaccessible {
+                    message: format!(
+                        "Core feature directive `@{}` cannot use @inaccessible.",
+                        argument.directive_name,
+                    ),
+                }
+                .into(),
+            )
+        }
+    }
 }
 
 enum HasArgumentDefinitionsPosition {
@@ -375,30 +440,23 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
 
     let referencers = schema.referencers();
     let type_definitions = referencers.to_type_definition_referencers();
+
+    let inaccessible_referencers = referencers.get_directive(&directive_name)?;
+    validate_inaccessible_on_imported_types(schema, inaccessible_referencers, &mut errors);
+
     for position in schema.get_types() {
         let Ok(ty) = position.get(schema.schema()) else {
             continue;
         };
+        let metadata = schema.metadata().unwrap();
+        if metadata.source_link_of_type(position.type_name()).is_some() {
+            // Linked types cannot use @inaccessible: already checked above
+            continue;
+        }
 
         // The JavaScript implementation checks for @inaccessible on built-in types, as well.
         // We don't do that here because definitions of built-in types are already rejected
         // by apollo-rs validation.
-
-        let metadata = schema.metadata().unwrap();
-        if metadata.source_link_of_type(position.type_name()).is_some() {
-            // TODO must check recursively if the directive is used
-            if ty.directives().has(&directive_name) {
-                errors.push(
-                    SingleFederationError::DisallowedInaccessible {
-                        message: format!(
-                            "Core feature type `{position}` cannot use @inaccessible."
-                        ),
-                    }
-                    .into(),
-                );
-            }
-            continue;
-        }
 
         if !ty.directives().has(&directive_name) {
             // This type must be in the API schema. For types with children (all types except scalar),
