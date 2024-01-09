@@ -164,12 +164,14 @@ impl QueryPlanningTraversal {
     fn sort_options_in_closed_branches(&mut self) -> Result<(), FederationError> {
         for branch in &mut self.closed_branches {
             let mut result = Ok(());
-            branch.0.sort_by_key(|closed_path| {
-                closed_path
+            branch.0.sort_by_key(|branch| {
+                branch
                     .paths
                     .0
                     .iter()
-                    .try_fold(0, |sum, path| Ok(sum + path.subgraph_jumps()?))
+                    .try_fold(0, |max_so_far, path| {
+                        Ok(max_so_far.max(path.subgraph_jumps()?))
+                    })
                     .unwrap_or_else(|err: FederationError| {
                         // There’s no way to abort `sort_by_key` from this callback.
                         // Store the error to be returned later and return an dummy values
