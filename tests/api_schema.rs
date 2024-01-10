@@ -532,10 +532,11 @@ fn removes_inaccessible_input_object_types() {
         .type_field("Referencer5", "privateField")
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer6"));
-    assert!(api_schema.type_field("Referencer7", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer7", "privatefield")
-        .is_err());
+    let ExtendedType::InputObject(input_object) = &api_schema.types["Referencer7"] else {
+        panic!("expected input object");
+    };
+    assert!(input_object.fields.contains_key("someField"));
+    assert!(!input_object.fields.contains_key("privatefield"));
     assert!(!api_schema.types.contains_key("Referencer8"));
     assert!(api_schema.directive_definitions.contains_key("referencer9"));
     assert!(api_schema.directive_definitions["referencer9"]
@@ -753,10 +754,11 @@ fn removes_inaccessible_enum_types() {
         .type_field("Referencer9", "privateField")
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer10"));
-    assert!(api_schema.type_field("Referencer11", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer11", "privatefield")
-        .is_err());
+    let ExtendedType::InputObject(input_object) = &api_schema.types["Referencer11"] else {
+        panic!("expected input object");
+    };
+    assert!(input_object.fields.contains_key("someField"));
+    assert!(!input_object.fields.contains_key("privatefield"));
     assert!(!api_schema.types.contains_key("Referencer12"));
     assert!(api_schema
         .directive_definitions
@@ -965,10 +967,11 @@ fn removes_inaccessible_scalar_types() {
         .type_field("Referencer9", "privateField")
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer10"));
-    assert!(api_schema.type_field("Referencer11", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer11", "privatefield")
-        .is_err());
+    let ExtendedType::InputObject(input_object) = &api_schema.types["Referencer11"] else {
+        panic!("expected input object");
+    };
+    assert!(input_object.fields.contains_key("someField"));
+    assert!(!input_object.fields.contains_key("privatefield"));
     assert!(!api_schema.types.contains_key("Referencer12"));
     assert!(api_schema
         .directive_definitions
