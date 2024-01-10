@@ -1,5 +1,4 @@
 #![allow(dead_code)] // TODO: This is fine while we're iterating, but should be removed later.
-use apollo_compiler::ast::DirectiveList;
 use apollo_compiler::Schema;
 use link::inaccessible_spec_definition::remove_inaccessible_elements;
 use link::inaccessible_spec_definition::validate_inaccessible;

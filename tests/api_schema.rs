@@ -425,6 +425,127 @@ fn inaccessible_input_object_with_accessible_references() {
 }
 
 #[test]
+fn removes_inaccessible_input_object_types() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Non-inaccessible input object type
+      input VisibleInputObject {
+        someField: String
+      }
+
+      # Inaccessible input object type
+      input InputObject @inaccessible {
+        someField: String
+      }
+
+      # Inaccessible input object type referenced by inaccessible object field
+      # argument
+      type Referencer1 implements Referencer4 {
+        someField(privateArg: InputObject @inaccessible): String
+      }
+
+      # Inaccessible input object type referenced by non-inaccessible object
+      # field argument with inaccessible parent
+      type Referencer2 implements Referencer5 {
+        someField: String
+        privateField(privateArg: InputObject!): String @inaccessible
+      }
+
+      # Inaccessible input object type referenced by non-inaccessible object
+      # field argument with inaccessible grandparent
+      type Referencer3 implements Referencer6 @inaccessible {
+        privateField(privateArg: InputObject!): String
+      }
+
+      # Inaccessible input object type referenced by inaccessible interface
+      # field argument
+      interface Referencer4 {
+        someField(privateArg: InputObject @inaccessible): String
+      }
+
+      # Inaccessible input object type referenced by non-inaccessible interface
+      # field argument with inaccessible parent
+      interface Referencer5 {
+        someField: String
+        privateField(privateArg: InputObject!): String @inaccessible
+      }
+
+      # Inaccessible input object type referenced by non-inaccessible interface
+      # field argument with inaccessible grandparent
+      interface Referencer6 @inaccessible {
+        privateField(privateArg: InputObject!): String
+      }
+
+      # Inaccessible input object type referenced by inaccessible input object
+      # field
+      input Referencer7 {
+        someField: String
+        privateField: InputObject @inaccessible
+      }
+
+      # Inaccessible input object type referenced by non-inaccessible input
+      # object field with inaccessible parent
+      input Referencer8 @inaccessible {
+        privateField: InputObject!
+      }
+
+      # Inaccessible input object type referenced by inaccessible directive
+      # argument
+      directive @referencer9(privateArg: InputObject @inaccessible) on FIELD
+    "#,
+    )
+    .expect("should succeed");
+
+    assert!(api_schema.types.contains_key("VisibleInputObject"));
+    assert!(!api_schema.types.contains_key("InputObject"));
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer1", "someField")
+        .unwrap()
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
+    assert!(api_schema.type_field("Referencer2", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer2", "privateField")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer3"));
+    assert!(api_schema.type_field("Referencer4", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer4", "someField")
+        .unwrap()
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
+    assert!(api_schema.type_field("Referencer4", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer4", "privatefield")
+        .is_err());
+    assert!(api_schema.type_field("Referencer5", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer5", "privateField")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer6"));
+    assert!(api_schema.type_field("Referencer7", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer7", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer8"));
+    assert!(api_schema.directive_definitions.contains_key("referencer9"));
+    assert!(api_schema.directive_definitions["referencer9"]
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
+}
+
+#[test]
 fn inaccessible_enum_with_accessible_references() {
     let errors = inaccessible_to_api_schema(
         r#"
@@ -492,6 +613,162 @@ fn inaccessible_enum_with_accessible_references() {
 }
 
 #[test]
+fn removes_inaccessible_enum_types() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Non-inaccessible enum type
+      enum VisibleEnum {
+        SOME_VALUE
+      }
+
+      # Inaccessible enum type
+      enum Enum @inaccessible {
+        SOME_VALUE
+      }
+
+      # Inaccessible enum type referenced by inaccessible object field
+      type Referencer1 implements Referencer3 {
+        someField: String
+        privatefield: Enum! @inaccessible
+      }
+
+      # Inaccessible enum type referenced by non-inaccessible object field with
+      # inaccessible parent
+      type Referencer2 implements Referencer4 @inaccessible {
+        privateField: [Enum!]!
+      }
+
+      # Inaccessible enum type referenced by inaccessible interface field
+      interface Referencer3 {
+        someField: String
+        privatefield: Enum @inaccessible
+      }
+
+      # Inaccessible enum type referenced by non-inaccessible interface field
+      # with inaccessible parent
+      interface Referencer4 @inaccessible {
+        privateField: [Enum]
+      }
+
+      # Inaccessible enum type referenced by inaccessible object field argument
+      type Referencer5 implements Referencer8 {
+        someField(privateArg: Enum @inaccessible): String
+      }
+
+      # Inaccessible enum type referenced by non-inaccessible object field
+      # argument with inaccessible parent
+      type Referencer6 implements Referencer9 {
+        someField: String
+        privateField(privateArg: Enum!): String @inaccessible
+      }
+
+      # Inaccessible enum type referenced by non-inaccessible object field
+      # argument with inaccessible grandparent
+      type Referencer7 implements Referencer10 @inaccessible {
+        privateField(privateArg: Enum!): String
+      }
+
+      # Inaccessible enum type referenced by inaccessible interface field
+      # argument
+      interface Referencer8 {
+        someField(privateArg: Enum @inaccessible): String
+      }
+
+      # Inaccessible enum type referenced by non-inaccessible interface field
+      # argument with inaccessible parent
+      interface Referencer9 {
+        someField: String
+        privateField(privateArg: Enum!): String @inaccessible
+      }
+
+      # Inaccessible enum type referenced by non-inaccessible interface field
+      # argument with inaccessible grandparent
+      interface Referencer10 @inaccessible {
+        privateField(privateArg: Enum!): String
+      }
+
+      # Inaccessible enum type referenced by inaccessible input object field
+      input Referencer11 {
+        someField: String
+        privateField: Enum @inaccessible
+      }
+
+      # Inaccessible enum type referenced by non-inaccessible input object field
+      # with inaccessible parent
+      input Referencer12 @inaccessible {
+        privateField: Enum!
+      }
+
+      # Inaccessible enum type referenced by inaccessible directive argument
+      directive @referencer13(privateArg: Enum @inaccessible) on FRAGMENT_DEFINITION
+    "#,
+    )
+    .expect("should succeed");
+
+    assert!(api_schema.types.contains_key("VisibleEnum"));
+    assert!(!api_schema.types.contains_key("Enum"));
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer1", "privatefield")
+        .is_err());
+    assert!(api_schema
+        .type_field("Referencer1", "someField")
+        .unwrap()
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
+    assert!(!api_schema.types.contains_key("Referencer2"));
+    assert!(api_schema.type_field("Referencer3", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer3", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer4"));
+    assert!(api_schema.type_field("Referencer5", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer5", "someField")
+        .unwrap()
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
+    assert!(api_schema.type_field("Referencer6", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer6", "privateField")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer7"));
+    assert!(api_schema.type_field("Referencer8", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer8", "someField")
+        .unwrap()
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
+    assert!(api_schema
+        .type_field("Referencer9", "privateField")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer10"));
+    assert!(api_schema.type_field("Referencer11", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer11", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer12"));
+    assert!(api_schema
+        .directive_definitions
+        .contains_key("referencer13"));
+    assert!(api_schema.directive_definitions["referencer13"]
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
+}
+
+#[test]
 fn inaccessible_scalar_with_accessible_references() {
     let errors = inaccessible_to_api_schema(
         r#"
@@ -554,6 +831,153 @@ fn inaccessible_scalar_with_accessible_references() {
 
       - Type `Scalar` is @inaccessible but is referenced by `@referencer6(someArg:)`, which is in the API schema.
     "###);
+}
+
+#[test]
+fn removes_inaccessible_scalar_types() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Non-inaccessible scalar type
+      scalar VisibleScalar
+
+      # Inaccessible scalar type
+      scalar Scalar @inaccessible
+
+      # Inaccessible scalar type referenced by inaccessible object field
+      type Referencer1 implements Referencer3 {
+        someField: String
+        privatefield: Scalar! @inaccessible
+      }
+
+      # Inaccessible scalar type referenced by non-inaccessible object field
+      # with inaccessible parent
+      type Referencer2 implements Referencer4 @inaccessible {
+        privateField: [Scalar!]!
+      }
+
+      # Inaccessible scalar type referenced by inaccessible interface field
+      interface Referencer3 {
+        someField: String
+        privatefield: Scalar @inaccessible
+      }
+
+      # Inaccessible scalar type referenced by non-inaccessible interface field
+      # with inaccessible parent
+      interface Referencer4 @inaccessible {
+        privateField: [Scalar]
+      }
+
+      # Inaccessible scalar type referenced by inaccessible object field
+      # argument
+      type Referencer5 implements Referencer8 {
+        someField(privateArg: Scalar @inaccessible): String
+      }
+
+      # Inaccessible scalar type referenced by non-inaccessible object field
+      # argument with inaccessible parent
+      type Referencer6 implements Referencer9 {
+        someField: String
+        privateField(privateArg: Scalar!): String @inaccessible
+      }
+
+      # Inaccessible scalar type referenced by non-inaccessible object field
+      # argument with inaccessible grandparent
+      type Referencer7 implements Referencer10 @inaccessible {
+        privateField(privateArg: Scalar!): String
+      }
+
+      # Inaccessible scalar type referenced by inaccessible interface field
+      # argument
+      interface Referencer8 {
+        someField(privateArg: Scalar @inaccessible): String
+      }
+
+      # Inaccessible scalar type referenced by non-inaccessible interface field
+      # argument with inaccessible parent
+      interface Referencer9 {
+        someField: String
+        privateField(privateArg: Scalar!): String @inaccessible
+      }
+
+      # Inaccessible scalar type referenced by non-inaccessible interface field
+      # argument with inaccessible grandparent
+      interface Referencer10 @inaccessible {
+        privateField(privateArg: Scalar!): String
+      }
+
+      # Inaccessible scalar type referenced by inaccessible input object field
+      input Referencer11 {
+        someField: String
+        privateField: Scalar @inaccessible
+      }
+
+      # Inaccessible scalar type referenced by non-inaccessible input object
+      # field with inaccessible parent
+      input Referencer12 @inaccessible {
+        privateField: Scalar!
+      }
+
+      # Inaccessible scalar type referenced by inaccessible directive argument
+      directive @referencer13(privateArg: Scalar @inaccessible) on INLINE_FRAGMENT
+    "#,
+    )
+    .expect("should succeed");
+
+    assert!(api_schema.types.contains_key("VisibleScalar"));
+    assert!(!api_schema.types.contains_key("Scalar"));
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer1", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer2"));
+    assert!(api_schema.type_field("Referencer3", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer3", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer4"));
+    assert!(api_schema.type_field("Referencer5", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer5", "someField")
+        .unwrap()
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
+    assert!(api_schema.type_field("Referencer6", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer6", "privateField")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer7"));
+    assert!(api_schema.type_field("Referencer8", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer8", "someField")
+        .unwrap()
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
+    assert!(api_schema.type_field("Referencer9", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer9", "privateField")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer10"));
+    assert!(api_schema.type_field("Referencer11", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer11", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer12"));
+    assert!(api_schema
+        .directive_definitions
+        .contains_key("referencer13"));
+    assert!(api_schema.directive_definitions["referencer13"]
+        .arguments
+        .iter()
+        .find(|argument| argument.name == "privateArg")
+        .is_none());
 }
 
 #[test]

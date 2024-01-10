@@ -5,7 +5,9 @@ use crate::schema::position::DirectiveDefinitionPosition;
 use crate::schema::position::EnumTypeDefinitionPosition;
 use crate::schema::position::EnumValueDefinitionPosition;
 use crate::schema::position::InputObjectFieldDefinitionPosition;
+use crate::schema::position::InterfaceFieldArgumentDefinitionPosition;
 use crate::schema::position::InterfaceFieldDefinitionPosition;
+use crate::schema::position::ObjectFieldArgumentDefinitionPosition;
 use crate::schema::position::ObjectFieldDefinitionPosition;
 use crate::schema::position::SchemaRootDefinitionKind;
 use crate::schema::position::TypeDefinitionPosition;
@@ -592,18 +594,58 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                 TypeDefinitionReferencer::Union(_) => {
                     // This type will be removed from the union, or the whole union will be removed
                     // if all its members are inaccessible. This is checked above.
-                    continue;
+                    true
                 }
                 TypeDefinitionReferencer::Object(_) => {
                     // Direct references from an object come from its `implements` list,
                     // and this type will be removed from it.
-                    continue;
+                    true
                 }
                 TypeDefinitionReferencer::Interface(_) => {
                     // Direct references from an interface come from its `implements` list,
                     // and this type will be removed from it.
-                    continue;
+                    true
                 }
+
+                // References from arguments will just be removed from the API schema.
+                TypeDefinitionReferencer::ObjectFieldArgument(ref_position) => {
+                    ref_position
+                        .get(schema.schema())?
+                        .directives
+                        .has(&directive_name)
+                        || ref_position
+                            .parent()
+                            .get(schema.schema())?
+                            .directives
+                            .has(&directive_name)
+                        || ref_position
+                            .parent()
+                            .parent()
+                            .get(schema.schema())?
+                            .directives
+                            .has(&directive_name)
+                }
+                TypeDefinitionReferencer::InterfaceFieldArgument(ref_position) => {
+                    ref_position
+                        .get(schema.schema())?
+                        .directives
+                        .has(&directive_name)
+                        || ref_position
+                            .parent()
+                            .get(schema.schema())?
+                            .directives
+                            .has(&directive_name)
+                        || ref_position
+                            .parent()
+                            .parent()
+                            .get(schema.schema())?
+                            .directives
+                            .has(&directive_name)
+                }
+                TypeDefinitionReferencer::DirectiveArgument(ref_position) => ref_position
+                    .get(schema.schema())?
+                    .directives
+                    .has(&directive_name),
 
                 // General types
                 TypeDefinitionReferencer::ObjectField(ref_position) => {
@@ -617,7 +659,6 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                             .directives
                             .has(&directive_name)
                 }
-                TypeDefinitionReferencer::ObjectFieldArgument(_) => false,
                 TypeDefinitionReferencer::InterfaceField(ref_position) => {
                     ref_position
                         .get(schema.schema())?
@@ -629,7 +670,6 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                             .directives
                             .has(&directive_name)
                 }
-                TypeDefinitionReferencer::InterfaceFieldArgument(_) => false,
                 TypeDefinitionReferencer::UnionField(ref_position) => ref_position
                     .get(schema.schema())?
                     .directives
@@ -645,7 +685,6 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                             .directives
                             .has(&directive_name)
                 }
-                TypeDefinitionReferencer::DirectiveArgument(_) => false,
             };
 
             if !ref_inaccessible {
@@ -689,7 +728,7 @@ pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(),
     // Clone so there's no live borrow.
     let inaccessible_referencers = referencers.get_directive(&directive_name)?.clone();
 
-    // Remove fields from inaccessible types first. If any inaccessible type has a field
+    // Remove fields and arguments from inaccessible types first. If any inaccessible type has a field
     // that references another inaccessible type, it would prevent the other type from being
     // removed.
     // We need an intermediate allocation as `.remove()` requires mutable access to the schema and
@@ -704,8 +743,20 @@ pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(),
                 .map(|field_name| position.field(field_name.clone())),
         );
     }
-    for field in inaccessible_children {
-        field.remove(schema)?;
+    let mut inaccessible_arguments: Vec<ObjectFieldArgumentDefinitionPosition> = vec![];
+    for position in inaccessible_children {
+        let field = position.get(schema.schema())?;
+        inaccessible_arguments.extend(
+            field
+                .arguments
+                .iter()
+                .map(|argument| position.argument(argument.name.clone())),
+        );
+
+        position.remove(schema)?;
+    }
+    for position in inaccessible_arguments {
+        position.remove(schema)?;
     }
 
     let mut inaccessible_children: Vec<InterfaceFieldDefinitionPosition> = vec![];
@@ -718,8 +769,34 @@ pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(),
                 .map(|field_name| position.field(field_name.clone())),
         );
     }
-    for field in inaccessible_children {
-        field.remove(schema)?;
+    let mut inaccessible_arguments: Vec<InterfaceFieldArgumentDefinitionPosition> = vec![];
+    for position in inaccessible_children {
+        let field = position.get(schema.schema())?;
+        inaccessible_arguments.extend(
+            field
+                .arguments
+                .iter()
+                .map(|argument| position.argument(argument.name.clone())),
+        );
+
+        position.remove(schema)?;
+    }
+    for position in inaccessible_arguments {
+        position.remove(schema)?;
+    }
+
+    let mut inaccessible_children: Vec<InputObjectFieldDefinitionPosition> = vec![];
+    for position in &inaccessible_referencers.input_object_types {
+        let object = position.get(schema.schema())?;
+        inaccessible_children.extend(
+            object
+                .fields
+                .keys()
+                .map(|field_name| position.field(field_name.clone())),
+        );
+    }
+    for position in inaccessible_children {
+        position.remove(schema)?;
     }
 
     for argument in inaccessible_referencers.interface_field_arguments {
@@ -727,6 +804,9 @@ pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(),
     }
     for argument in inaccessible_referencers.object_field_arguments {
         argument.remove(schema)?;
+    }
+    for field in inaccessible_referencers.input_object_fields {
+        field.remove(schema)?;
     }
     for field in inaccessible_referencers.interface_fields {
         field.remove(schema)?;
@@ -741,6 +821,9 @@ pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(),
         ty.remove(schema)?;
     }
     for ty in inaccessible_referencers.interface_types {
+        ty.remove(schema)?;
+    }
+    for ty in inaccessible_referencers.input_object_types {
         ty.remove(schema)?;
     }
     for ty in inaccessible_referencers.enum_types {
