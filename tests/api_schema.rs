@@ -1,3 +1,4 @@
+use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Schema;
 use apollo_federation::error::FederationError;
@@ -139,7 +140,27 @@ fn removes_inaccessible_object_types() {
     )
     .expect("should succeed");
 
-    todo!()
+    assert!(api_schema.types.contains_key("Query"));
+    assert!(!api_schema.types.contains_key("Mutation"));
+    assert!(!api_schema.types.contains_key("Subscription"));
+    assert!(!api_schema.types.contains_key("Object"));
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer1", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer2"));
+    assert!(api_schema.type_field("Referencer3", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer3", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer4"));
+
+    let ExtendedType::Union(union_) = api_schema.types.get("Referencer5").unwrap() else {
+        panic!("expected union");
+    };
+    assert!(union_.members.contains("Query"));
+    assert!(!union_.members.contains("Object"));
+    assert!(!api_schema.types.contains_key("Referencer6"));
 }
 
 #[test]
@@ -180,6 +201,88 @@ fn inaccessible_interface_with_accessible_references() {
 }
 
 #[test]
+fn removes_inaccessible_interface_types() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Non-inaccessible interface type
+      interface VisibleInterface {
+        someField: String
+      }
+
+      # Inaccessible interface type
+      interface Interface @inaccessible {
+        someField: String
+      }
+
+      # Inaccessible interface type referenced by inaccessible object field
+      type Referencer1 implements Referencer3 {
+        someField: String
+        privatefield: Interface! @inaccessible
+      }
+
+      # Inaccessible interface type referenced by non-inaccessible object field
+      # with inaccessible parent
+      type Referencer2 implements Referencer4 @inaccessible {
+        privateField: [Interface!]!
+      }
+
+      # Inaccessible interface type referenced by inaccessible interface field
+      interface Referencer3 {
+        someField: String
+        privatefield: Interface @inaccessible
+      }
+
+      # Inaccessible interface type referenced by non-inaccessible interface
+      # field with inaccessible parent
+      interface Referencer4 @inaccessible {
+        privateField: [Interface]
+      }
+
+      # Inaccessible interface type referenced by object type implements
+      type Referencer5 implements VisibleInterface & Interface {
+        someField: String
+      }
+
+      # Inaccessible interface type referenced by interface type implements
+      interface Referencer6 implements VisibleInterface & Interface {
+        someField: String
+      }
+    "#,
+    )
+    .expect("should succeed");
+
+    assert!(api_schema.types.contains_key("VisibleInterface"));
+    assert!(!api_schema.types.contains_key("Interface"));
+    assert!(!api_schema.types.contains_key("Object"));
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer1", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer2"));
+    assert!(api_schema.type_field("Referencer3", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer3", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer4"));
+
+    let ExtendedType::Object(object) = api_schema.types.get("Referencer5").unwrap() else {
+        panic!("expected object");
+    };
+    assert!(object.implements_interfaces.contains("VisibleInterface"));
+    assert!(!object.implements_interfaces.contains("Interface"));
+
+    let ExtendedType::Interface(interface) = api_schema.types.get("Referencer6").unwrap() else {
+        panic!("expected interface");
+    };
+    assert!(interface.implements_interfaces.contains("VisibleInterface"));
+    assert!(!interface.implements_interfaces.contains("Interface"));
+}
+
+#[test]
 fn inaccessible_union_with_accessible_references() {
     let errors = inaccessible_to_api_schema(
         r#"
@@ -212,6 +315,62 @@ fn inaccessible_union_with_accessible_references() {
 
       - Type `Union` is @inaccessible but is referenced by `Referencer2.someField`, which is in the API schema.
     "###);
+}
+
+#[test]
+fn removes_inaccessible_union_types() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Non-inaccessible union type
+      union VisibleUnion = Query
+
+      # Inaccessible union type
+      union Union @inaccessible = Query
+
+      # Inaccessible union type referenced by inaccessible object field
+      type Referencer1 implements Referencer3 {
+        someField: String
+        privatefield: Union! @inaccessible
+      }
+
+      # Inaccessible union type referenced by non-inaccessible object field with
+      # inaccessible parent
+      type Referencer2 implements Referencer4 @inaccessible {
+        privateField: [Union!]!
+      }
+
+      # Inaccessible union type referenced by inaccessible interface field
+      interface Referencer3 {
+        someField: String
+        privatefield: Union @inaccessible
+      }
+
+      # Inaccessible union type referenced by non-inaccessible interface field
+      # with inaccessible parent
+      interface Referencer4 @inaccessible {
+        privateField: [Union]
+      }
+    "#,
+    )
+    .expect("should succeed");
+
+    assert!(api_schema.types.contains_key("VisibleUnion"));
+    assert!(!api_schema.types.contains_key("Union"));
+    assert!(!api_schema.types.contains_key("Object"));
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer1", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer2"));
+    assert!(api_schema.type_field("Referencer3", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer3", "privatefield")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer4"));
 }
 
 #[test]
