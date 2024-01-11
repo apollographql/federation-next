@@ -795,9 +795,11 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
     for position in schema.get_types() {
         let ty = position.get(schema.schema())?;
 
-        // The JavaScript implementation checks for @inaccessible on built-in types, as well.
-        // We don't do that here because definitions of built-in types are already rejected
-        // by apollo-rs validation. Core feature types are allowed through by validation.
+        // Core feature directives (and their descendants) aren't allowed to be
+        // @inaccessible.
+        // The JavaScript implementation checks for @inaccessible on built-in types here, as well.
+        // We don't do that because redefinitions of built-in types are already rejected
+        // by apollo-rs validation.
         if metadata.source_link_of_type(position.type_name()).is_some() {
             if type_uses_inaccessible(schema, &inaccessible_directive, &position)? {
                 errors.push(
@@ -905,10 +907,6 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                 }
                 _ => {}
             }
-
-            // This type is in the API schema, so we do not have to check if it is referenced
-            // by other types.
-            continue;
         }
     }
 
@@ -936,6 +934,8 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                 );
             }
         } else if type_system_locations.peek().is_some() {
+            // Directives that can appear on type-system locations (and their
+            // descendants) aren't allowed to be @inaccessible.
             if directive_uses_inaccessible(&inaccessible_directive, &directive) {
                 let type_system_locations = type_system_locations
                     .map(ToString::to_string)
@@ -973,15 +973,18 @@ pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(),
             message: "Unexpectedly could not find inaccessible spec in schema".to_owned(),
         })?;
 
-    let referencers = schema.referencers();
-    // Clone so there's no live borrow.
-    let inaccessible_referencers = referencers.get_directive(&directive_name)?.clone();
+    // Find all elements that use @inaccessible. Clone so there's no live borrow.
+    let inaccessible_referencers = schema.referencers().get_directive(&directive_name)?.clone();
 
     // Remove fields and arguments from inaccessible types first. If any inaccessible type has a field
     // that references another inaccessible type, it would prevent the other type from being
     // removed.
     // We need an intermediate allocation as `.remove()` requires mutable access to the schema and
     // looking up fields requires immutable access.
+    //
+    // This is a lot more verbose than in the JS implementation, but the JS implementation relies on
+    // being able to set references to `undefined`, and the types all working out in the end once
+    // the removal is complete, which our Rust data structures don't support.
     let mut inaccessible_children: Vec<ObjectFieldDefinitionPosition> = vec![];
     for position in &inaccessible_referencers.object_types {
         let object = position.get(schema.schema())?;
