@@ -1,8 +1,10 @@
 use crate::query_graph::graph_path::OpPath;
+use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
 use crate::query_plan::conditions::Conditions;
 use crate::query_plan::operation::NormalizedSelectionSet;
-use crate::query_plan::{FetchDataPathElement, FetchDataRewrite, QueryPlanCost};
+use crate::query_plan::{FetchDataPathElement, QueryPathElement, ResponsePathElement};
+use crate::query_plan::{FetchDataRewrite, QueryPlanCost};
 use crate::schema::position::{CompositeTypeDefinitionPosition, SchemaRootDefinitionKind};
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::NodeStr;
@@ -32,12 +34,12 @@ pub(crate) struct FetchDependencyGraphNode {
     /// subgraph's entity union type (sometimes called a "key" fetch).
     is_entity_fetch: bool,
     /// The inputs to be passed into `_entities` field, if this is an entity fetch.
-    inputs: Arc<FetchInputs>,
+    inputs: Option<Arc<FetchInputs>>,
     /// Input rewrites for query plan execution to perform prior to executing the fetch.
     input_rewrites: Arc<Vec<Arc<FetchDataRewrite>>>,
     /// As query plan execution runs, it accumulates fetch data into a response object. This is the
     /// path at which to merge in the data for this particular fetch.
-    merge_at: Arc<Vec<Arc<FetchDataPathElement>>>,
+    merge_at: Option<Vec<ResponsePathElement>>,
     /// The fetch ID generation, if one is necessary (used when handling `@defer`).
     id: Option<u64>,
     /// The label of the `@defer` block this fetch appears in, if any.
@@ -58,7 +60,7 @@ pub(crate) struct FetchSelectionSet {
     selection_set: Arc<NormalizedSelectionSet>,
     /// The conditions determining whether the fetch should be executed (which must be recomputed
     /// from the selection set when it changes).
-    conditions: Arc<Conditions>,
+    conditions: Conditions,
 }
 
 // PORT_NOTE: The JS codebase additionally has a property `onUpdateCallback`. This was only ever
@@ -105,7 +107,7 @@ pub(crate) struct FetchDependencyGraph {
     graph: StableDiGraph<Arc<FetchDependencyGraphNode>, Arc<FetchDependencyGraphEdge>>,
     /// The root nodes by subgraph name, representing the fetches against root operation types of
     /// the subgraphs.
-    root_nodes_by_subgraph: IndexMap<NodeStr, IndexSet<NodeIndex>>,
+    root_nodes_by_subgraph: IndexMap<NodeStr, NodeIndex>,
     /// Tracks metadata about deferred blocks and their dependencies on one another.
     defer_tracking: Arc<DeferTracking>,
     /// The initial fetch ID generation (used when handling `@defer`).
@@ -145,6 +147,32 @@ pub(crate) struct FetchDependencyGraphPath {
     response_path: Vec<FetchDataPathElement>,
 }
 
+#[derive(Debug, Default)]
+pub(crate) struct NodePath {
+    full_path: Vec<QueryPathElement>,
+    path_in_group: Vec<QueryPathElement>,
+    response_path: Vec<ResponsePathElement>,
+}
+
+#[derive(Debug)]
+pub(crate) struct DeferContext {
+    current_defer_ref: Option<NodeStr>,
+    path_to_defer_parent: Vec<QueryPathElement>,
+    active_defer_ref: Option<NodeStr>,
+    is_part_of_query: bool,
+}
+
+impl Default for DeferContext {
+    fn default() -> Self {
+        Self {
+            current_defer_ref: None,
+            path_to_defer_parent: Vec::new(),
+            active_defer_ref: None,
+            is_part_of_query: true,
+        }
+    }
+}
+
 impl FetchDependencyGraph {
     pub(crate) fn new(
         supergraph_schema: ValidFederationSchema,
@@ -172,20 +200,77 @@ impl FetchDependencyGraph {
         self.is_optimized = false;
     }
 
-    pub(crate) fn get_or_create_root_fetch_group(
+    pub(crate) fn get_or_create_root_node(
         &mut self,
         subgraph_name: &NodeStr,
+        subgraph_schema: &ValidFederationSchema,
         root_kind: SchemaRootDefinitionKind,
         parent_type: CompositeTypeDefinitionPosition,
-    ) -> &IndexSet<NodeIndex> {
-        if self.root_nodes_by_subgraph.contains_key(subgraph_name) {
-            &self.root_nodes_by_subgraph[subgraph_name]
-        } else {
-            // TODO: is there anything more to do here than create an empty IndexSet?
-            self.on_modification();
-            self.root_nodes_by_subgraph
-                .entry(subgraph_name.clone())
-                .or_default()
+    ) -> NodeIndex {
+        self.root_nodes_by_subgraph
+            .get(subgraph_name)
+            .copied()
+            .unwrap_or_else(|| {
+                let node = self.new_node(
+                    subgraph_name.clone(),
+                    subgraph_schema.clone(),
+                    parent_type,
+                    /* has_inputs: */ false,
+                    root_kind,
+                );
+                self.root_nodes_by_subgraph
+                    .insert(subgraph_name.clone(), node);
+                node
+            })
+    }
+
+    pub(crate) fn new_node(
+        &mut self,
+        subgraph_name: NodeStr,
+        subgraph_schema: ValidFederationSchema,
+        parent_type: CompositeTypeDefinitionPosition,
+        has_inputs: bool,
+        root_kind: SchemaRootDefinitionKind,
+        // merge_at: Option<Vec<ResponsePathElement>>,
+        // defer_ref: Option<NodeStr>,
+    ) -> NodeIndex {
+        self.on_modification();
+        self.graph.add_node(Arc::new(FetchDependencyGraphNode {
+            subgraph_name: subgraph_name.clone(),
+            root_kind,
+            selection_set: FetchSelectionSet::empty(subgraph_schema, parent_type.clone()),
+            parent_type,
+            is_entity_fetch: has_inputs,
+            inputs: has_inputs
+                .then(|| Arc::new(FetchInputs::empty(self.supergraph_schema.clone()))),
+            input_rewrites: Default::default(),
+            merge_at: None,
+            id: None,
+            defer_ref: None,
+            cached_cost: None,
+            must_preserve_selection_set: false,
+            is_known_useful: false,
+        }))
+    }
+}
+
+impl FetchSelectionSet {
+    pub(crate) fn empty(
+        schema: ValidFederationSchema,
+        type_position: CompositeTypeDefinitionPosition,
+    ) -> Self {
+        Self {
+            selection_set: Arc::new(NormalizedSelectionSet::empty(schema, type_position)),
+            conditions: Conditions::TRUE,
+        }
+    }
+}
+
+impl FetchInputs {
+    pub(crate) fn empty(supergraph_schema: ValidFederationSchema) -> Self {
+        Self {
+            selection_sets_per_parent_type: Default::default(),
+            supergraph_schema,
         }
     }
 }
@@ -207,4 +292,16 @@ impl DeferTracking {
             }),
         })
     }
+}
+
+pub(crate) fn compute_nodes_for_tree(
+    _dependency_graph: &mut FetchDependencyGraph,
+    _tree: &OpPathTree,
+    _start_node: NodeIndex,
+    _initial_node_path: NodePath,
+    _initial_defer_context: DeferContext,
+    _initial_conditions: Conditions,
+) -> Vec<NodeIndex> {
+    // TODO: port `computeGroupsForTree` in `query-planner-js/src/buildPlan.ts`
+    todo!()
 }

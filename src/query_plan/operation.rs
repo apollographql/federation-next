@@ -200,6 +200,17 @@ pub(crate) struct NormalizedInlineFragment {
 }
 
 impl NormalizedSelectionSet {
+    pub(crate) fn empty(
+        schema: ValidFederationSchema,
+        type_position: CompositeTypeDefinitionPosition,
+    ) -> Self {
+        Self {
+            schema,
+            type_position,
+            selections: Default::default(),
+        }
+    }
+
     /// Normalize this selection set (merging selections with the same keys), with the following
     /// additional transformations:
     /// - Expand fragment spreads into inline fragments.

@@ -320,7 +320,10 @@ impl QueryGraph {
         self.schema_by_source(&self.current_source)
     }
 
-    fn schema_by_source(&self, source: &str) -> Result<&ValidFederationSchema, FederationError> {
+    pub(crate) fn schema_by_source(
+        &self,
+        source: &str,
+    ) -> Result<&ValidFederationSchema, FederationError> {
         self.sources.get(source).ok_or_else(|| {
             SingleFederationError::Internal {
                 message: "Schema unexpectedly missing".to_owned(),

@@ -2,7 +2,8 @@ use crate::error::FederationError;
 use crate::query_graph::graph_path::{ClosedBranch, OpenBranch};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::{QueryGraph, QueryGraphNodeType};
-use crate::query_plan::fetch_dependency_graph::FetchDependencyGraph;
+use crate::query_plan::conditions::Conditions;
+use crate::query_plan::fetch_dependency_graph::{compute_nodes_for_tree, FetchDependencyGraph};
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToCostProcessor;
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToQueryPlanProcessor;
 use crate::query_plan::operation::{NormalizedOperation, NormalizedSelection};
@@ -115,15 +116,10 @@ impl QueryPlanningTraversal {
         dependency_graph: &mut FetchDependencyGraph,
         path_tree: &OpPathTree,
     ) -> Result<(), FederationError> {
-        // TODO: is this right?
-        // In `query-planner-js/src/buildPlan.ts`, `isRootPathTree(tree)` is dependent on `tree`,
-        // but type-Tetris gives us something dependent on `self.root_kind`.
-        let is_root_path_tree = self
-            .parameters
-            .federated_query_graph
-            .root_kinds_to_nodes()?
-            .contains_key(&self.root_kind);
-
+        let is_root_path_tree = matches!(
+            path_tree.graph.node_weight(path_tree.node)?.type_,
+            QueryGraphNodeType::SchemaType(_)
+        );
         if is_root_path_tree {
             // The root of the pathTree is one of the "fake" root of the subgraphs graph,
             // which belongs to no subgraph but points to each ones.
@@ -136,68 +132,65 @@ impl QueryPlanningTraversal {
                 let (_source_node, target_node) = path_tree.graph.edge_endpoints(edge)?;
                 let target_node = path_tree.graph.node_weight(target_node)?;
                 let subgraph_name = &target_node.source;
-                // The edge tail type is one of the subgraph root type, so it has to be an ObjectType.
-                //     const rootType = edge.tail.type as ObjectType;
+                let subgraph_schema = self
+                    .parameters
+                    .federated_query_graph
+                    .schema_by_source(subgraph_name)?;
                 let root_type = match &target_node.type_ {
-                    QueryGraphNodeType::SchemaType(position) => match position {
-                        OutputTypeDefinitionPosition::Object(object) => object.clone().into(),
-                        _ => todo!(), // Return a FederationError?
-                    },
-                    QueryGraphNodeType::FederatedRootType(_) => todo!(), // Return a FederationError?
+                    QueryGraphNodeType::SchemaType(OutputTypeDefinitionPosition::Object(
+                        object,
+                    )) => object.clone().into(),
+                    ty => {
+                        return Err(FederationError::internal(format!(
+                            "expected an object type for the root of a subgraph, found {ty}"
+                        )))
+                    }
                 };
-                let group = dependency_graph.get_or_create_root_fetch_group(
+                let fetch_dependency_node = dependency_graph.get_or_create_root_node(
                     subgraph_name,
+                    subgraph_schema,
                     self.root_kind,
                     root_type,
                 );
-                compute_groups_for_tree(
+                compute_nodes_for_tree(
                     dependency_graph,
                     &child.tree,
-                    // group,
-                    // GroupPath.empty(),
-                    // emptyDeferContext,
+                    fetch_dependency_node,
+                    Default::default(),
+                    Default::default(),
+                    Conditions::TRUE,
                 );
             }
         } else {
             let query_graph_node = path_tree.graph.node_weight(path_tree.node)?;
             let subgraph_name = &query_graph_node.source;
-            // The edge tail type is one of the subgraph root type, so it has to be an ObjectType.
+            let subgraph_schema = self
+                .parameters
+                .federated_query_graph
+                .schema_by_source(subgraph_name)?;
             let root_type = match &query_graph_node.type_ {
-                QueryGraphNodeType::SchemaType(position) => {
-                    position.clone().try_into().map_err(|err| {
-                        // TODO: add details to the error message?
-                        // format!("Should not have condition on non-selectable type {position}")
-                        err
-                    })?
+                QueryGraphNodeType::SchemaType(position) => position.clone().try_into()?,
+                QueryGraphNodeType::FederatedRootType(_) => {
+                    return Err(FederationError::internal(
+                        "unexpected FederatedRootType not at the start of an OpPathTree",
+                    ))
                 }
-                QueryGraphNodeType::FederatedRootType(_) => todo!(), // Return a FederationError?
             };
-            let group = dependency_graph.get_or_create_root_fetch_group(
+            let fetch_dependency_node = dependency_graph.get_or_create_root_node(
                 subgraph_name,
+                subgraph_schema,
                 self.root_kind,
                 root_type,
             );
-            compute_groups_for_tree(
+            compute_nodes_for_tree(
                 dependency_graph,
                 path_tree,
-                // group,
-                // GroupPath.empty(),
-                // emptyDeferContext,
+                fetch_dependency_node,
+                Default::default(),
+                Default::default(),
+                Conditions::TRUE,
             );
         }
         Ok(())
     }
-}
-
-fn compute_groups_for_tree(
-    dependency_graph: &mut FetchDependencyGraph,
-    path_tree: &OpPathTree,
-    // start_group: FetchGroup,
-    // initial_group_path: GroupPath,
-    // initial_defer_context: DeferContext,
-    // initial_context: PathContext = emptyContext,
-)
-//   -> Vec<FetchGroup>
-{
-    todo!()
 }
