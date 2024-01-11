@@ -17,7 +17,6 @@ use std::sync::Arc;
 
 pub(crate) mod position;
 pub(crate) mod referencer;
-pub(crate) mod referencer2;
 
 #[derive(Debug)]
 pub struct FederationSchema {

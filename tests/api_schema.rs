@@ -414,11 +414,11 @@ fn inaccessible_input_object_with_accessible_references() {
     insta::assert_display_snapshot!(errors, @r###"
     The following errors occurred:
 
+      - Type `InputObject` is @inaccessible but is referenced by `Referencer3.someField`, which is in the API schema.
+
       - Type `InputObject` is @inaccessible but is referenced by `Referencer1.someField(someArg:)`, which is in the API schema.
 
       - Type `InputObject` is @inaccessible but is referenced by `Referencer2.someField(someArg:)`, which is in the API schema.
-
-      - Type `InputObject` is @inaccessible but is referenced by `Referencer3.someField`, which is in the API schema.
 
       - Type `InputObject` is @inaccessible but is referenced by `@referencer4(someArg:)`, which is in the API schema.
     "###);
@@ -601,13 +601,13 @@ fn inaccessible_enum_with_accessible_references() {
 
       - Type `Enum` is @inaccessible but is referenced by `Referencer1.somefield`, which is in the API schema.
 
-      - Type `Enum` is @inaccessible but is referenced by `Referencer3.someField(someArg:)`, which is in the API schema.
-
       - Type `Enum` is @inaccessible but is referenced by `Referencer2.somefield`, which is in the API schema.
 
-      - Type `Enum` is @inaccessible but is referenced by `Referencer4.someField(someArg:)`, which is in the API schema.
-
       - Type `Enum` is @inaccessible but is referenced by `Referencer5.someField`, which is in the API schema.
+
+      - Type `Enum` is @inaccessible but is referenced by `Referencer3.someField(someArg:)`, which is in the API schema.
+
+      - Type `Enum` is @inaccessible but is referenced by `Referencer4.someField(someArg:)`, which is in the API schema.
 
       - Type `Enum` is @inaccessible but is referenced by `@referencer6(someArg:)`, which is in the API schema.
     "###);
@@ -823,13 +823,13 @@ fn inaccessible_scalar_with_accessible_references() {
 
       - Type `Scalar` is @inaccessible but is referenced by `Referencer1.somefield`, which is in the API schema.
 
-      - Type `Scalar` is @inaccessible but is referenced by `Referencer3.someField(someArg:)`, which is in the API schema.
-
       - Type `Scalar` is @inaccessible but is referenced by `Referencer2.somefield`, which is in the API schema.
 
-      - Type `Scalar` is @inaccessible but is referenced by `Referencer4.someField(someArg:)`, which is in the API schema.
-
       - Type `Scalar` is @inaccessible but is referenced by `Referencer5.someField`, which is in the API schema.
+
+      - Type `Scalar` is @inaccessible but is referenced by `Referencer3.someField(someArg:)`, which is in the API schema.
+
+      - Type `Scalar` is @inaccessible but is referenced by `Referencer4.someField(someArg:)`, which is in the API schema.
 
       - Type `Scalar` is @inaccessible but is referenced by `@referencer6(someArg:)`, which is in the API schema.
     "###);
