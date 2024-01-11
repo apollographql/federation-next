@@ -18,6 +18,7 @@ use apollo_compiler::name;
 use apollo_compiler::schema::Component;
 use apollo_compiler::schema::ComponentName;
 use apollo_compiler::schema::Directive;
+use apollo_compiler::schema::DirectiveLocation;
 use apollo_compiler::schema::EnumValueDefinition;
 use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::schema::FieldDefinition;
@@ -106,6 +107,23 @@ pub(crate) fn get_inaccessible_spec_definition_from_subgraph(
             message: "Subgraph unexpectedly does not use a supported inaccessible spec version"
                 .to_owned(),
         })?)
+}
+
+fn is_type_system_location(location: DirectiveLocation) -> bool {
+    matches!(
+        location,
+        DirectiveLocation::Schema
+            | DirectiveLocation::Scalar
+            | DirectiveLocation::Object
+            | DirectiveLocation::FieldDefinition
+            | DirectiveLocation::ArgumentDefinition
+            | DirectiveLocation::Interface
+            | DirectiveLocation::Union
+            | DirectiveLocation::Enum
+            | DirectiveLocation::EnumValue
+            | DirectiveLocation::InputObject
+            | DirectiveLocation::InputFieldDefinition
+    )
 }
 
 fn validate_inaccessible_on_imported_types(
@@ -279,6 +297,9 @@ fn validate_inaccessible_in_arguments(
     for arg in arguments {
         let arg_name = &arg.name;
         let arg_inaccessible = arg.directives.has(inaccessible_directive);
+
+        // When an argument is hidden (but its parent isn't), we check that it
+        // isn't a required argument.
         if arg_inaccessible
             && arg.is_required()
             // TODO remove after update to apollo-compiler 1.0.0-beta.12
@@ -700,13 +721,36 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
             continue;
         };
 
-        validate_inaccessible_in_arguments(
-            schema,
-            &directive_name,
-            HasArgumentDefinitionsPosition::DirectiveDefinition(position),
-            &directive.arguments,
-            &mut errors,
-        );
+        let mut type_system_locations = directive
+            .locations
+            .iter()
+            .filter(|location| is_type_system_location(**location))
+            .peekable();
+        if type_system_locations.peek().is_some() {
+            let type_system_locations = type_system_locations
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let uses_inaccessible = directive
+                .arguments
+                .iter()
+                .any(|argument| argument.directives.has(&directive_name));
+            if uses_inaccessible {
+                errors.push(SingleFederationError::DisallowedInaccessible {
+                    message: format!("Directive `{position}` cannot use @inaccessible because it may be applied to these type-system locations: {}", type_system_locations),
+                }.into());
+            }
+        } else {
+            // At this point, we know the directive must be in the API schema. Descend
+            // into the directive's arguments.
+            validate_inaccessible_in_arguments(
+                schema,
+                &directive_name,
+                HasArgumentDefinitionsPosition::DirectiveDefinition(position),
+                &directive.arguments,
+                &mut errors,
+            );
+        }
     }
 
     if !errors.errors.is_empty() {
