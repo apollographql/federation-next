@@ -613,7 +613,7 @@ impl NormalizedSelectionSet {
 
 impl NormalizedFieldSelection {
     /// Copies field selection and assigns it a new unique selection ID.
-    pub(crate) fn new_copy(&self) -> Self {
+    pub(crate) fn with_unique_id(&self) -> Self {
         let mut copy = self.clone();
         copy.field.selection_id = SelectionId::new();
         copy
