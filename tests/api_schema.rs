@@ -1051,6 +1051,84 @@ fn inaccessible_object_field_with_accessible_references() {
 }
 
 #[test]
+fn removes_inaccessible_object_fields() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      extend schema {
+        mutation: Mutation
+        subscription: Subscription
+      }
+
+      # Inaccessible object field on query type
+      type Query {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible object field on mutation type
+      type Mutation {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible object field on subscription type
+      type Subscription {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible (and non-inaccessible) object field
+      type Object implements Referencer1 & Referencer2 {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible object field referenced by inaccessible interface field
+      interface Referencer1 {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible object field referenced by non-inaccessible interface field
+      # with inaccessible parent
+      interface Referencer2 @inaccessible {
+        privateField: String
+      }
+
+      # Inaccessible object field with an inaccessible parent and no
+      # non-inaccessible siblings
+      type Referencer3 @inaccessible {
+        privateField: String @inaccessible
+        otherPrivateField: Float @inaccessible
+      }
+    "#,
+    )
+    .expect("should succeed");
+
+    assert!(api_schema.type_field("Query", "someField").is_ok());
+    assert!(api_schema.type_field("Query", "privateField").is_err());
+    assert!(api_schema.type_field("Mutation", "someField").is_ok());
+    assert!(api_schema.type_field("Mutation", "privateField").is_err());
+    assert!(api_schema.type_field("Subscription", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Subscription", "privateField")
+        .is_err());
+    let ExtendedType::Object(object_type) = &api_schema.types["Object"] else {
+        panic!("should be object");
+    };
+    assert!(object_type.implements_interfaces.contains("Referencer1"));
+    assert!(!object_type.implements_interfaces.contains("Referencer2"));
+    assert!(api_schema.type_field("Object", "someField").is_ok());
+    assert!(api_schema.type_field("Object", "privateField").is_err());
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer1", "privatefield")
+        .is_err());
+    assert!(api_schema.types.get("Referencer2").is_none());
+    assert!(api_schema.types.get("Referencer3").is_none());
+}
+
+#[test]
 fn inaccessible_interface_field_with_accessible_references() {
     let errors = inaccessible_to_api_schema(
         r#"
@@ -1087,6 +1165,57 @@ fn inaccessible_interface_field_with_accessible_references() {
 
       - Type `Referencer2` is in the API schema but all of its members are @inaccessible.
     "###);
+}
+
+#[test]
+fn removes_inaccessible_interface_fields() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible (and non-inaccessible) interface field
+      interface Interface implements Referencer1 & Referencer2 {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible interface field referenced by inaccessible interface field
+      interface Referencer1 {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible interface field referenced by non-inaccessible interface
+      # field with inaccessible parent
+      interface Referencer2 @inaccessible {
+        privateField: String
+      }
+
+      # Inaccessible interface field with an inaccessible parent and no
+      # non-inaccessible siblings
+      interface Referencer3 @inaccessible {
+        privateField: String @inaccessible
+        otherPrivateField: Float @inaccessible
+      }
+    "#,
+    )
+    .expect("should succeed");
+
+    let ExtendedType::Interface(interface_type) = &api_schema.types["Interface"] else {
+        panic!("should be interface");
+    };
+    assert!(interface_type.implements_interfaces.contains("Referencer1"));
+    assert!(!interface_type.implements_interfaces.contains("Referencer2"));
+    assert!(api_schema.type_field("Interface", "someField").is_ok());
+    assert!(api_schema.type_field("Interface", "privateField").is_err());
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer1", "privatefield")
+        .is_err());
+    assert!(api_schema.types.get("Referencer2").is_none());
+    assert!(api_schema.types.get("Referencer3").is_none());
 }
 
 #[test]

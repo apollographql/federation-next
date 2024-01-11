@@ -367,15 +367,25 @@ fn validate_inaccessible_in_fields(
         if field_inaccessible {
             has_inaccessible_field = true;
 
-            if let Some((interface_name, super_field)) = super_fields
-                .iter()
-                .find(|super_field| !super_field.1.directives.has(inaccessible_directive))
-            {
-                let interface_name = interface_name.as_str();
-                let super_field_name = &super_field.name;
+            let accessible_super_reference = implements.iter().find_map(|interface_name| {
+                let super_type = schema.schema().get_interface(interface_name)?;
+                if super_type.directives.has(inaccessible_directive) {
+                    return None;
+                }
+                let super_field = super_type.fields.get(field_name)?;
+                if super_field.directives.has(inaccessible_directive) {
+                    return None;
+                }
+                Some(InterfaceFieldDefinitionPosition {
+                    type_name: super_type.name.clone(),
+                    field_name: super_field.name.clone(),
+                })
+            });
+
+            if let Some(super_position) = accessible_super_reference {
                 errors.push(
                     SingleFederationError::ImplementedByInaccessible {
-                        message: format!("Field `{type_position}.{field_name}` is @inaccessible but implements the interface field `{interface_name}.{super_field_name}`, which is in the API schema."),
+                        message: format!("Field `{type_position}.{field_name}` is @inaccessible but implements the interface field `{super_position}`, which is in the API schema."),
                     }
                     .into(),
                 );
