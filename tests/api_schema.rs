@@ -1,8 +1,27 @@
 use apollo_compiler::schema::ExtendedType;
+use apollo_compiler::schema::InputValueDefinition;
 use apollo_compiler::validation::Valid;
+use apollo_compiler::Node;
 use apollo_compiler::Schema;
 use apollo_federation::error::FederationError;
 use apollo_federation::Supergraph;
+
+// TODO replace by `coord!().lookup()` after apollo-compiler 1.0.0-beta.12
+fn field_argument(
+    schema: &Valid<Schema>,
+    ty: &str,
+    field: &str,
+    argument: &str,
+) -> Option<Node<InputValueDefinition>> {
+    schema
+        .type_field(ty, field)
+        .ok()?
+        .arguments
+        .iter()
+        .find(|arg| arg.name == *argument)
+        .cloned()
+        .clone()
+}
 
 const INACCESSIBLE_V02_HEADER: &str = r#"
     directive @link(url: String!, as: String, import: [link__Import], for: link__Purpose) repeatable on SCHEMA
@@ -503,26 +522,14 @@ fn removes_inaccessible_input_object_types() {
     assert!(api_schema.types.contains_key("VisibleInputObject"));
     assert!(!api_schema.types.contains_key("InputObject"));
     assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer1", "someField")
-        .unwrap()
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
+    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
     assert!(api_schema.type_field("Referencer2", "someField").is_ok());
     assert!(api_schema
         .type_field("Referencer2", "privateField")
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer3"));
     assert!(api_schema.type_field("Referencer4", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer4", "someField")
-        .unwrap()
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
+    assert!(field_argument(&api_schema, "Referencer4", "someField", "privateArg").is_none());
     assert!(api_schema.type_field("Referencer4", "someField").is_ok());
     assert!(api_schema
         .type_field("Referencer4", "privatefield")
@@ -716,13 +723,7 @@ fn removes_inaccessible_enum_types() {
     assert!(api_schema
         .type_field("Referencer1", "privatefield")
         .is_err());
-    assert!(api_schema
-        .type_field("Referencer1", "someField")
-        .unwrap()
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
+    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
     assert!(!api_schema.types.contains_key("Referencer2"));
     assert!(api_schema.type_field("Referencer3", "someField").is_ok());
     assert!(api_schema
@@ -743,13 +744,7 @@ fn removes_inaccessible_enum_types() {
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer7"));
     assert!(api_schema.type_field("Referencer8", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer8", "someField")
-        .unwrap()
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
+    assert!(field_argument(&api_schema, "Referencer8", "someField", "privateArg").is_none());
     assert!(api_schema
         .type_field("Referencer9", "privateField")
         .is_err());
@@ -942,26 +937,14 @@ fn removes_inaccessible_scalar_types() {
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer4"));
     assert!(api_schema.type_field("Referencer5", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer5", "someField")
-        .unwrap()
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
+    assert!(field_argument(&api_schema, "Referencer5", "someField", "privateArg").is_none());
     assert!(api_schema.type_field("Referencer6", "someField").is_ok());
     assert!(api_schema
         .type_field("Referencer6", "privateField")
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer7"));
     assert!(api_schema.type_field("Referencer8", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer8", "someField")
-        .unwrap()
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
+    assert!(field_argument(&api_schema, "Referencer8", "someField", "privateArg").is_none());
     assert!(api_schema.type_field("Referencer9", "someField").is_ok());
     assert!(api_schema
         .type_field("Referencer9", "privateField")
