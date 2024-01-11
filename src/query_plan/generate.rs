@@ -1,13 +1,11 @@
+use crate::query_plan::QueryPlanCost;
 use std::collections::VecDeque;
-
-/// TODO: should it be an integer?
-type Cost = f64;
 
 type Choices<T> = Vec<Option<T>>;
 
 struct Partial<Plan, Element> {
     partial_plan: Plan,
-    partial_cost: Option<Cost>,
+    partial_cost: Option<QueryPlanCost>,
     remaining: std::vec::IntoIter<Choices<Element>>,
     is_root: bool,
     index: Option<usize>,
@@ -85,9 +83,9 @@ pub fn generate_all_plans_and_find_best<Plan, Element>(
     initial: Plan,
     to_add: Vec<Choices<Element>>,
     mut add_function: impl FnMut(&Plan, Element) -> Plan,
-    mut cost_function: impl FnMut(&Plan) -> f64,
-    mut on_plan: impl FnMut(&Plan, Cost, Option<Cost>),
-) -> (Plan, Cost)
+    mut cost_function: impl FnMut(&Plan) -> QueryPlanCost,
+    mut on_plan: impl FnMut(&Plan, QueryPlanCost, Option<QueryPlanCost>),
+) -> (Plan, QueryPlanCost)
 where
     Element: Clone,
     // Uncomment to use `dbg!()`
@@ -244,7 +242,11 @@ mod tests {
                 }
                 new_plan
             },
-            |plan| plan.iter().map(|element| element.len() as Cost).sum(),
+            |plan| {
+                plan.iter()
+                    .map(|element| element.len() as QueryPlanCost)
+                    .sum()
+            },
             |_, _, _| {},
         );
         (best, generated)
