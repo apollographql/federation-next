@@ -312,7 +312,7 @@ pub struct ValidSubgraph {
 
 impl std::fmt::Debug for ValidSubgraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, r#"name: {}, urL: {}"#, self.name, self.url)
+        write!(f, r#"name: {}, url: {}"#, self.name, self.url)
     }
 }
 
@@ -357,7 +357,7 @@ mod tests {
         let subgraph = Subgraph::new("S1", "http://s1", schema).unwrap();
         let keys = keys(&subgraph.schema, &name!("T"));
         assert_eq!(keys.len(), 1);
-        assert_eq!(keys.get(0).unwrap().type_name, name!("T"));
+        assert_eq!(keys.first().unwrap().type_name, name!("T"));
 
         // TODO: no accessible selection yet.
     }
