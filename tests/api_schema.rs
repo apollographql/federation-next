@@ -1238,6 +1238,93 @@ fn inaccessible_object_field_arguments_with_accessible_references() {
 }
 
 #[test]
+fn removes_inaccessible_object_field_arguments() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      # Inaccessible object field argument in query type
+      type Query {
+        someField(privateArg: String @inaccessible): String
+      }
+
+      # Inaccessible object field argument in mutation type
+      type Mutation {
+        someField(privateArg: String @inaccessible): String
+      }
+
+      # Inaccessible object field argument in subscription type
+      type Subscription {
+        someField(privateArg: String @inaccessible): String
+      }
+
+      # Inaccessible (and non-inaccessible) object field argument
+      type Object implements Referencer1 & Referencer2 & Referencer3 {
+        someField(
+          someArg: String,
+          privateArg: String @inaccessible
+        ): String
+        someOtherField: Float
+      }
+
+      # Inaccessible object field argument referenced by inaccessible interface
+      # field argument
+      interface Referencer1 {
+        someField(
+          someArg: String,
+          privateArg: String @inaccessible
+        ): String
+      }
+
+      # Inaccessible object field argument referenced by non-inaccessible
+      # interface field argument with inaccessible parent
+      interface Referencer2 {
+        someField(
+          someArg: String,
+          privateArg: String
+        ): String @inaccessible
+        someOtherField: Float
+      }
+
+      # Inaccessible object field argument referenced by non-inaccessible
+      # interface field argument with inaccessible grandparent
+      interface Referencer3 @inaccessible {
+        someField(
+          someArg: String,
+          privateArg: String
+        ): String
+      }
+
+      # Inaccessible non-nullable object field argument with default
+      type ObjectDefault {
+        someField(privateArg: String! = "default" @inaccessible): String
+      }
+    "#,
+    )
+    .expect("should succeed");
+
+    assert!(api_schema.type_field("Query", "someField").is_ok());
+    assert!(field_argument(&api_schema, "Query", "someField", "privateArg").is_none());
+    assert!(api_schema.type_field("Mutation", "someField").is_ok());
+    assert!(field_argument(&api_schema, "Mutation", "someField", "privateArg").is_none());
+    assert!(api_schema.type_field("Subscription", "someField").is_ok());
+    assert!(field_argument(&api_schema, "Subscription", "someField", "privateArg").is_none());
+    let ExtendedType::Object(object_type) = &api_schema.types["Object"] else {
+        panic!("expected object");
+    };
+    assert!(object_type.implements_interfaces.contains("Referencer1"));
+    assert!(object_type.implements_interfaces.contains("Referencer2"));
+    assert!(!object_type.implements_interfaces.contains("Referencer3"));
+    assert!(field_argument(&api_schema, "Object", "someField", "someArg").is_some());
+    assert!(field_argument(&api_schema, "Object", "someField", "privateArg").is_none());
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
+    assert!(api_schema.types.contains_key("Referencer2"));
+    assert!(api_schema.type_field("Referencer2", "someField").is_err());
+    assert!(!api_schema.types.contains_key("Referencer3"));
+    assert!(api_schema.type_field("ObjectDefault", "someField").is_ok());
+    assert!(field_argument(&api_schema, "ObjectDefault", "someField", "privateArg").is_none());
+}
+
+#[test]
 fn inaccessible_interface_field_arguments_with_accessible_references() {
     let errors = inaccessible_to_api_schema(
         r#"
@@ -1287,6 +1374,107 @@ fn inaccessible_interface_field_arguments_with_accessible_references() {
 
       - Argument `Interface.someField(privateArg:)` is @inaccessible but is implemented by the argument `Referencer3.someField(privateArg:)` which is in the API schema.
     "###);
+}
+
+#[test]
+fn removes_inaccessible_interface_field_arguments() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible (and non-inaccessible) interface field argument
+      interface Interface implements Referencer1 & Referencer2 & Referencer3 {
+        someField(
+          someArg: String,
+          privateArg: String @inaccessible
+        ): String
+        someOtherField: Float
+      }
+
+      # Inaccessible interface field argument referenced by inaccessible
+      # interface field argument
+      interface Referencer1 {
+        someField(
+          someArg: String,
+          privateArg: String @inaccessible
+        ): String
+      }
+
+      # Inaccessible interface field argument referenced by non-inaccessible
+      # interface field argument with inaccessible parent
+      interface Referencer2 {
+        someField(
+          someArg: String,
+          privateArg: String
+        ): String @inaccessible
+        someOtherField: Float
+      }
+
+      # Inaccessible interface field argument referenced by non-inaccessible
+      # interface field argument with inaccessible grandparent
+      interface Referencer3 @inaccessible {
+        someField(
+          someArg: String,
+          privateArg: String
+        ): String
+      }
+
+      # Inaccessible non-nullable interface field argument with default
+      interface InterfaceDefault {
+        someField(privateArg: String! = "default" @inaccessible): String
+      }
+
+      # Inaccessible interface field argument referenced by non-inaccessible
+      # non-required object field argument
+      type Referencer4 implements InterfaceDefault {
+        someField(privateArg: String! = "default"): String
+      }
+
+      # Inaccessible interface field argument referenced by non-inaccessible
+      # required object field argument with inaccessible grandparent
+      type Referencer5 implements InterfaceDefault @inaccessible {
+        someField(privateArg: String!): String
+      }
+
+      # Inaccessible interface field argument referenced by non-inaccessible
+      # non-required interface field argument
+      interface Referencer6 implements InterfaceDefault {
+        someField(privateArg: String! = "default"): String
+      }
+
+      # Inaccessible interface field argument referenced by non-inaccessible
+      # required interface field argument with inaccessible grandparent
+      interface Referencer7 implements InterfaceDefault @inaccessible {
+        someField(privateArg: String!): String
+      }
+    "#,
+    )
+    .expect("should succeed");
+
+    let ExtendedType::Interface(interface_type) = &api_schema.types["Interface"] else {
+        panic!("expected interface");
+    };
+    assert!(interface_type.implements_interfaces.contains("Referencer1"));
+    assert!(interface_type.implements_interfaces.contains("Referencer2"));
+    assert!(!interface_type.implements_interfaces.contains("Referencer3"));
+    assert!(field_argument(&api_schema, "Interface", "someField", "someArg").is_some());
+    assert!(field_argument(&api_schema, "Interface", "someField", "privateArg").is_none());
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
+    assert!(api_schema.types.contains_key("Referencer2"));
+    assert!(api_schema.type_field("Referencer2", "someField").is_err());
+    assert!(!api_schema.types.contains_key("Referencer3"));
+    assert!(field_argument(&api_schema, "Interface", "someField", "privateArg").is_none());
+    let object_argument =
+        field_argument(&api_schema, "Referencer4", "someField", "privateArg").unwrap();
+    assert!(!object_argument.is_required());
+    assert!(!api_schema.types.contains_key("Referencer5"));
+    let interface_argument =
+        field_argument(&api_schema, "Referencer4", "someField", "privateArg").unwrap();
+    assert!(!interface_argument.is_required());
+    assert!(!api_schema.types.contains_key("Referencer7"));
 }
 
 #[test]
