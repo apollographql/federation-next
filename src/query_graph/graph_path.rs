@@ -172,7 +172,12 @@ impl Hash for OpGraphPathContext {
 /// type (e.g. during type explosion).
 pub(crate) struct SimultaneousPaths(pub(crate) Vec<Arc<OpGraphPath>>);
 
-pub(crate) struct SimultaneousPathsWithLazyIndirectPaths;
+/// One of the options for an `OpenBranch` (see the documentation of that struct for details). This
+/// includes
+pub(crate) struct SimultaneousPathsWithLazyIndirectPaths {
+    paths: SimultaneousPaths,
+    context: OpGraphPathContext,
+}
 
 /// One of the options for a `ClosedBranch` (see the documentation of that struct for details). Note
 /// there is an optimization here, in that if some ending section of the path within the GraphQL

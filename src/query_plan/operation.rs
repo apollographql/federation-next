@@ -1,5 +1,6 @@
 use crate::error::FederationError;
 use crate::error::SingleFederationError::Internal;
+use crate::query_plan::operation::normalized_selection_map::NormalizedSelectionMap;
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, FieldDefinitionPosition, InterfaceTypeDefinitionPosition,
     SchemaRootDefinitionKind,
@@ -12,7 +13,8 @@ use apollo_compiler::executable::{
 };
 use apollo_compiler::{name, Node};
 use indexmap::{IndexMap, IndexSet};
-use linked_hash_map::{Entry, LinkedHashMap};
+use linked_hash_map::Entry;
+use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
 
@@ -60,13 +62,113 @@ pub(crate) struct NormalizedSelectionSet {
     pub(crate) selections: Arc<NormalizedSelectionMap>,
 }
 
-/// A "normalized" selection map is an optimized representation of a selection set which does not
-/// contain selections with the same selection "key". Selections that do have the same key are
-/// merged during the normalization process. By storing a selection set as a map, we can efficiently
-/// merge/join multiple selection sets.
-///
-/// Note that this must be a `LinkedHashMap` so that removals don't change the order.
-pub(crate) type NormalizedSelectionMap = LinkedHashMap<NormalizedSelectionKey, NormalizedSelection>;
+pub(crate) mod normalized_selection_map {
+    use crate::query_plan::operation::{NormalizedSelection, NormalizedSelectionKey};
+    use linked_hash_map::LinkedHashMap;
+    use std::borrow::Borrow;
+    use std::hash::Hash;
+    use std::ops::Deref;
+
+    /// A "normalized" selection map is an optimized representation of a selection set which does
+    /// not contain selections with the same selection "key". Selections that do have the same key
+    /// are  merged during the normalization process. By storing a selection set as a map, we can
+    /// efficiently merge/join multiple selection sets.
+    ///
+    /// Because the key depends strictly on the value, we expose the underlying map's API in a
+    /// read-only capacity, while mutations use an API closer to `IndexSet`. We don't just use an
+    /// `IndexSet` since key computation is expensive (it involves sorting). This type is in its own
+    /// module to prevent code from accidentally mutating the underlying map outside the mutation
+    /// API.
+    ///
+    /// Note that this must be a `LinkedHashMap` so that removals don't change the order.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub(crate) struct NormalizedSelectionMap(
+        LinkedHashMap<NormalizedSelectionKey, NormalizedSelection>,
+    );
+
+    impl Deref for NormalizedSelectionMap {
+        type Target = LinkedHashMap<NormalizedSelectionKey, NormalizedSelection>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl NormalizedSelectionMap {
+        pub(crate) fn new() -> Self {
+            NormalizedSelectionMap(LinkedHashMap::new())
+        }
+
+        pub(crate) fn clear(&mut self) {
+            self.0.clear();
+        }
+
+        pub(crate) fn insert(&mut self, value: NormalizedSelection) -> Option<NormalizedSelection> {
+            let key: NormalizedSelectionKey = (&value).into();
+            self.insert_with_key(key, value)
+        }
+
+        pub(crate) fn remove(&mut self, value: NormalizedSelection) -> Option<NormalizedSelection> {
+            let key: NormalizedSelectionKey = (&value).into();
+            self.remove_with_key(&key)
+        }
+    }
+
+    /// These methods should only be used by algorithms that are meant to be key-aware (which is why
+    /// they have "pub(super)" instead of "pub(crate)").
+    // TODO: See if we can restructure logic that uses these methods to use non-key-aware functions
+    // instead, although it may be unavoidable in some cases.
+    impl NormalizedSelectionMap {
+        pub(super) fn insert_with_key(
+            &mut self,
+            key: NormalizedSelectionKey,
+            value: NormalizedSelection,
+        ) -> Option<NormalizedSelection> {
+            self.0.insert(key, value)
+        }
+
+        pub(super) fn remove_with_key(
+            &mut self,
+            key: &NormalizedSelectionKey,
+        ) -> Option<NormalizedSelection> {
+            self.0.remove(key)
+        }
+
+        pub(super) fn iter_mut(
+            &mut self,
+        ) -> linked_hash_map::IterMut<NormalizedSelectionKey, NormalizedSelection> {
+            self.0.iter_mut()
+        }
+
+        pub(super) fn entry(
+            &mut self,
+            key: NormalizedSelectionKey,
+        ) -> linked_hash_map::Entry<NormalizedSelectionKey, NormalizedSelection> {
+            self.0.entry(key)
+        }
+
+        pub(super) fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut NormalizedSelection>
+        where
+            NormalizedSelectionKey: Borrow<Q>,
+            Q: Eq + Hash,
+        {
+            self.0.get_mut(key)
+        }
+    }
+
+    impl IntoIterator for NormalizedSelectionMap {
+        type Item =
+            <LinkedHashMap<NormalizedSelectionKey, NormalizedSelection> as IntoIterator>::Item;
+        type IntoIter =
+            <LinkedHashMap<NormalizedSelectionKey, NormalizedSelection> as IntoIterator>::IntoIter;
+
+        fn into_iter(self) -> Self::IntoIter {
+            <LinkedHashMap<NormalizedSelectionKey, NormalizedSelection> as IntoIterator>::into_iter(
+                self.0,
+            )
+        }
+    }
+}
 
 /// A selection "key" (unrelated to the federation `@key` directive) is an identifier of a selection
 /// (field, inline fragment, or fragment spread) that is used to determine whether two selections
@@ -171,11 +273,11 @@ pub(crate) struct NormalizedField {
 }
 
 impl NormalizedField {
-    fn name(&self) -> &Name {
+    pub(crate) fn name(&self) -> &Name {
         self.field_position.field_name()
     }
 
-    fn response_name(&self) -> Name {
+    pub(crate) fn response_name(&self) -> Name {
         self.alias.clone().unwrap_or_else(|| self.name().clone())
     }
 }
@@ -246,7 +348,7 @@ impl NormalizedSelectionSet {
         let mut merged = NormalizedSelectionSet {
             schema: schema.clone(),
             type_position,
-            selections: Arc::new(LinkedHashMap::new()),
+            selections: Arc::new(NormalizedSelectionMap::new()),
         };
         merged.merge_pairs_into(normalized_selections)?;
         Ok(merged)
@@ -370,9 +472,9 @@ impl NormalizedSelectionSet {
     /// Merges the given normalized selection sets into this one.
     pub(crate) fn merge_into(
         &mut self,
-        others: Vec<NormalizedSelectionSet>,
+        others: impl Iterator<Item = NormalizedSelectionSet> + ExactSizeIterator,
     ) -> Result<(), FederationError> {
-        if !others.is_empty() {
+        if others.len() > 0 {
             let mut pairs = vec![];
             for other in others {
                 if other.schema != self.schema {
@@ -486,21 +588,21 @@ impl NormalizedSelectionSet {
                     NormalizedSelection::Field(self_field_selection) => {
                         if let Some(other_field_selections) = fields.remove(key) {
                             Arc::make_mut(self_field_selection)
-                                .merge_into(other_field_selections)?;
+                                .merge_into(other_field_selections.into_iter())?;
                         }
                     }
                     NormalizedSelection::FragmentSpread(self_fragment_spread_selection) => {
                         if let Some(other_fragment_spread_selections) = fragment_spreads.remove(key)
                         {
                             Arc::make_mut(self_fragment_spread_selection)
-                                .merge_into(other_fragment_spread_selections)?;
+                                .merge_into(other_fragment_spread_selections.into_iter())?;
                         }
                     }
                     NormalizedSelection::InlineFragment(self_inline_fragment_selection) => {
                         if let Some(other_inline_fragment_selections) = inline_fragments.remove(key)
                         {
                             Arc::make_mut(self_inline_fragment_selection)
-                                .merge_into(other_inline_fragment_selections)?;
+                                .merge_into(other_inline_fragment_selections.into_iter())?;
                         }
                     }
                 }
@@ -598,7 +700,7 @@ impl NormalizedSelectionSet {
                 Some(NormalizedSelection::Field(typename_field)),
                 Some(NormalizedSelection::Field(sibling_field)),
             ) = (
-                mutable_selection_map.remove(&typename_key),
+                mutable_selection_map.remove_with_key(&typename_key),
                 mutable_selection_map.get_mut(&sibling_field_key),
             ) {
                 let mutable_sibling_field = Arc::make_mut(sibling_field);
@@ -672,9 +774,9 @@ impl NormalizedFieldSelection {
     /// already match).
     pub(crate) fn merge_into(
         &mut self,
-        others: Vec<NormalizedFieldSelection>,
+        others: impl Iterator<Item = NormalizedFieldSelection> + ExactSizeIterator,
     ) -> Result<(), FederationError> {
-        if !others.is_empty() {
+        if others.len() > 0 {
             let self_field = &self.field;
             let mut selection_sets = vec![];
             for other in others {
@@ -716,7 +818,7 @@ impl NormalizedFieldSelection {
                 }
             }
             if let Some(self_selection_set) = &mut self.selection_set {
-                self_selection_set.merge_into(selection_sets)?;
+                self_selection_set.merge_into(selection_sets.into_iter())?;
             }
         }
         Ok(())
@@ -781,9 +883,9 @@ impl NormalizedFragmentSpreadSelection {
     /// the keys already match).
     pub(crate) fn merge_into(
         &mut self,
-        others: Vec<NormalizedFragmentSpreadSelection>,
+        others: impl Iterator<Item = NormalizedFragmentSpreadSelection> + ExactSizeIterator,
     ) -> Result<(), FederationError> {
-        if !others.is_empty() {
+        if others.len() > 0 {
             for other in others {
                 if other.schema != self.schema {
                     return Err(Internal {
@@ -849,9 +951,9 @@ impl NormalizedInlineFragmentSelection {
     /// the keys already match).
     pub(crate) fn merge_into(
         &mut self,
-        others: Vec<NormalizedInlineFragmentSelection>,
+        others: impl Iterator<Item = NormalizedInlineFragmentSelection> + ExactSizeIterator,
     ) -> Result<(), FederationError> {
-        if !others.is_empty() {
+        if others.len() > 0 {
             let self_inline_fragment = &self.inline_fragment;
             let mut selection_sets = vec![];
             for other in others {
@@ -875,7 +977,7 @@ impl NormalizedInlineFragmentSelection {
                 }
                 selection_sets.push(other.selection_set);
             }
-            self.selection_set.merge_into(selection_sets)?;
+            self.selection_set.merge_into(selection_sets.into_iter())?;
         }
         Ok(())
     }
@@ -887,26 +989,34 @@ impl TryFrom<&NormalizedSelectionSet> for SelectionSet {
     fn try_from(val: &NormalizedSelectionSet) -> Result<Self, Self::Error> {
         let mut flattened = vec![];
         for normalized_selection in val.selections.values() {
-            let selection = match normalized_selection {
-                NormalizedSelection::Field(normalized_field_selection) => {
-                    Selection::Field(Node::new(normalized_field_selection.deref().try_into()?))
-                }
-                NormalizedSelection::FragmentSpread(normalized_fragment_spread_selection) => {
-                    Selection::FragmentSpread(Node::new(
-                        normalized_fragment_spread_selection.deref().into(),
-                    ))
-                }
-                NormalizedSelection::InlineFragment(normalized_inline_fragment_selection) => {
-                    Selection::InlineFragment(Node::new(
-                        normalized_inline_fragment_selection.deref().try_into()?,
-                    ))
-                }
-            };
+            let selection: Selection = normalized_selection.try_into()?;
             flattened.push(selection);
         }
         Ok(Self {
             ty: val.type_position.type_name().clone(),
             selections: flattened,
+        })
+    }
+}
+
+impl TryFrom<&NormalizedSelection> for Selection {
+    type Error = FederationError;
+
+    fn try_from(val: &NormalizedSelection) -> Result<Self, Self::Error> {
+        Ok(match val {
+            NormalizedSelection::Field(normalized_field_selection) => {
+                Selection::Field(Node::new(normalized_field_selection.deref().try_into()?))
+            }
+            NormalizedSelection::FragmentSpread(normalized_fragment_spread_selection) => {
+                Selection::FragmentSpread(Node::new(
+                    normalized_fragment_spread_selection.deref().into(),
+                ))
+            }
+            NormalizedSelection::InlineFragment(normalized_inline_fragment_selection) => {
+                Selection::InlineFragment(Node::new(
+                    normalized_inline_fragment_selection.deref().try_into()?,
+                ))
+            }
         })
     }
 }
@@ -962,6 +1072,53 @@ impl From<&NormalizedFragmentSpreadSelection> for FragmentSpread {
             fragment_name: val.fragment_name.to_owned(),
             directives: val.directives.deref().to_owned(),
         }
+    }
+}
+
+impl Display for NormalizedSelectionSet {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let selection_set: SelectionSet = match self.try_into() {
+            Ok(selection_set) => selection_set,
+            Err(_) => return Err(std::fmt::Error),
+        };
+        selection_set.serialize().no_indent().fmt(f)
+    }
+}
+
+impl Display for NormalizedSelection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let selection: Selection = match self.try_into() {
+            Ok(selection) => selection,
+            Err(_) => return Err(std::fmt::Error),
+        };
+        selection.serialize().no_indent().fmt(f)
+    }
+}
+
+impl Display for NormalizedFieldSelection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let field: Field = match self.try_into() {
+            Ok(field) => field,
+            Err(_) => return Err(std::fmt::Error),
+        };
+        field.serialize().no_indent().fmt(f)
+    }
+}
+
+impl Display for NormalizedInlineFragmentSelection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let inline_fragment: InlineFragment = match self.try_into() {
+            Ok(inline_fragment) => inline_fragment,
+            Err(_) => return Err(std::fmt::Error),
+        };
+        inline_fragment.serialize().no_indent().fmt(f)
+    }
+}
+
+impl Display for NormalizedFragmentSpreadSelection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let fragment_spread: FragmentSpread = self.into();
+        fragment_spread.serialize().no_indent().fmt(f)
     }
 }
 
