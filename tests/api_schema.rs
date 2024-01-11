@@ -1434,7 +1434,13 @@ fn inaccessible_directive_on_schema_elements() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###""###);
+    insta::assert_display_snapshot!(errors, @r###"
+    The following errors occurred:
+
+      - Directive `@foo` cannot use @inaccessible because it may be applied to these type-system locations: OBJECT
+
+      - Directive `@bar` cannot use @inaccessible because it may be applied to these type-system locations: SCHEMA
+    "###);
 }
 
 #[test]
@@ -1560,7 +1566,7 @@ fn inaccessible_on_imported_elements() {
     insta::assert_display_snapshot!(errors, @r###"
     The following errors occurred:
 
-      - Core feature type `foo__Scalar` cannot use @inaccessible.
+      - Core feature type `link__Purpose` cannot use @inaccessible.
 
       - Core feature type `foo__Object1` cannot use @inaccessible.
 
@@ -1576,15 +1582,15 @@ fn inaccessible_on_imported_elements() {
 
       - Core feature type `foo__Union` cannot use @inaccessible.
 
-      - Core feature type `foo__Enum1` cannot use @inaccessible.
-
-      - Core feature type `link__Purpose` cannot use @inaccessible.
-
-      - Core feature type `foo__Enum2` cannot use @inaccessible.
-
       - Core feature type `foo__InputObject1` cannot use @inaccessible.
 
       - Core feature type `foo__InputObject2` cannot use @inaccessible.
+
+      - Core feature type `foo__Enum1` cannot use @inaccessible.
+
+      - Core feature type `foo__Enum2` cannot use @inaccessible.
+
+      - Core feature type `foo__Scalar` cannot use @inaccessible.
 
       - Core feature directive `@link` cannot use @inaccessible.
 

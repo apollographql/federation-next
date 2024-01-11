@@ -11,13 +11,13 @@ use crate::schema::position::ObjectFieldArgumentDefinitionPosition;
 use crate::schema::position::ObjectFieldDefinitionPosition;
 use crate::schema::position::SchemaRootDefinitionKind;
 use crate::schema::position::TypeDefinitionPosition;
-use crate::schema::referencer::DirectiveReferencers;
 use crate::schema::referencer2::TypeDefinitionReferencer;
 use crate::schema::FederationSchema;
 use apollo_compiler::name;
 use apollo_compiler::schema::Component;
 use apollo_compiler::schema::ComponentName;
 use apollo_compiler::schema::Directive;
+use apollo_compiler::schema::DirectiveDefinition;
 use apollo_compiler::schema::DirectiveLocation;
 use apollo_compiler::schema::EnumValueDefinition;
 use apollo_compiler::schema::ExtendedType;
@@ -29,7 +29,6 @@ use apollo_compiler::Node;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
 use lazy_static::lazy_static;
-use std::collections::HashSet;
 use std::fmt;
 
 pub(crate) const INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC: Name = name!("inaccessible");
@@ -126,64 +125,73 @@ fn is_type_system_location(location: DirectiveLocation) -> bool {
     )
 }
 
-fn validate_inaccessible_on_imported_types(
+fn field_uses_inaccessible(field: &FieldDefinition, inaccessible_directive: &Name) -> bool {
+    field.directives.has(inaccessible_directive)
+        || field
+            .arguments
+            .iter()
+            .any(|argument| argument.directives.has(inaccessible_directive))
+}
+
+/// Check if a type definition uses the @inaccessible directive anywhere in its definition.
+fn type_uses_inaccessible(
     schema: &FederationSchema,
-    referencers: &DirectiveReferencers,
-    errors: &mut MultipleFederationErrors,
-) {
-    let metadata = schema.metadata().unwrap();
-    macro_rules! iter_type_names {
-        ( $iterable:expr ) => {
-            $iterable.iter().map(|position| &position.type_name)
-        };
-    }
+    inaccessible_directive: &Name,
+    position: &TypeDefinitionPosition,
+) -> Result<bool, FederationError> {
+    Ok(match position {
+        TypeDefinitionPosition::Scalar(scalar_position) => {
+            let scalar = scalar_position.get(schema.schema())?;
+            scalar.directives.has(inaccessible_directive)
+        }
+        TypeDefinitionPosition::Object(object_position) => {
+            let object = object_position.get(schema.schema())?;
+            object.directives.has(inaccessible_directive)
+                || object
+                    .fields
+                    .values()
+                    .any(|field| field_uses_inaccessible(field, inaccessible_directive))
+        }
+        TypeDefinitionPosition::Interface(interface_position) => {
+            let interface = interface_position.get(schema.schema())?;
+            interface.directives.has(inaccessible_directive)
+                || interface
+                    .fields
+                    .values()
+                    .any(|field| field_uses_inaccessible(field, inaccessible_directive))
+        }
+        TypeDefinitionPosition::Union(union_position) => {
+            let union_ = union_position.get(schema.schema())?;
+            union_.directives.has(inaccessible_directive)
+        }
+        TypeDefinitionPosition::Enum(enum_position) => {
+            let enum_ = enum_position.get(schema.schema())?;
+            enum_.directives.has(inaccessible_directive)
+                || enum_
+                    .values
+                    .values()
+                    .any(|value| value.directives.has(inaccessible_directive))
+        }
+        TypeDefinitionPosition::InputObject(input_object_position) => {
+            let input_object = input_object_position.get(schema.schema())?;
+            input_object.directives.has(inaccessible_directive)
+                || input_object
+                    .fields
+                    .values()
+                    .any(|field| field.directives.has(inaccessible_directive))
+        }
+    })
+}
 
-    let feature_referencer_type_names = referencers
-        .scalar_types
+/// Check if a directive uses the @inaccessible directive anywhere in its definition.
+fn directive_uses_inaccessible(
+    inaccessible_directive: &Name,
+    directive: &DirectiveDefinition,
+) -> bool {
+    directive
+        .arguments
         .iter()
-        .map(|scalar| &scalar.type_name)
-        .chain(iter_type_names!(referencers.object_types))
-        .chain(iter_type_names!(referencers.object_fields))
-        .chain(iter_type_names!(referencers.object_field_arguments))
-        .chain(iter_type_names!(referencers.interface_types))
-        .chain(iter_type_names!(referencers.interface_fields))
-        .chain(iter_type_names!(referencers.interface_field_arguments))
-        .chain(iter_type_names!(referencers.union_types))
-        .chain(iter_type_names!(referencers.enum_types))
-        .chain(iter_type_names!(referencers.enum_values))
-        .chain(iter_type_names!(referencers.input_object_types))
-        .chain(iter_type_names!(referencers.input_object_fields))
-        .filter(|type_name| metadata.source_link_of_type(type_name).is_some());
-
-    let mut raised_errors = HashSet::new();
-    for type_name in feature_referencer_type_names {
-        let first_occurrence = raised_errors.insert(type_name);
-        if first_occurrence {
-            errors.push(
-                SingleFederationError::DisallowedInaccessible {
-                    message: format!("Core feature type `{type_name}` cannot use @inaccessible."),
-                }
-                .into(),
-            )
-        }
-    }
-
-    for argument in &referencers.directive_arguments {
-        if metadata
-            .source_link_of_directive(&argument.directive_name)
-            .is_some()
-        {
-            errors.push(
-                SingleFederationError::DisallowedInaccessible {
-                    message: format!(
-                        "Core feature directive `@{}` cannot use @inaccessible.",
-                        argument.directive_name,
-                    ),
-                }
-                .into(),
-            )
-        }
-    }
+        .any(|argument| argument.directives.has(inaccessible_directive))
 }
 
 enum HasArgumentDefinitionsPosition {
@@ -451,7 +459,7 @@ fn validate_inaccessible_in_values(
 
 pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), FederationError> {
     let inaccessible_spec = get_inaccessible_spec_definition_from_subgraph(schema)?;
-    let directive_name = inaccessible_spec
+    let inaccessible_directive = inaccessible_spec
         .directive_name_in_schema(schema, &INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC)?
         .ok_or_else(|| SingleFederationError::Internal {
             message: "Unexpectedly could not find inaccessible spec in schema".to_owned(),
@@ -460,18 +468,23 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
     let mut errors = MultipleFederationErrors { errors: vec![] };
 
     let referencers = schema.referencers();
+    let metadata = schema.metadata().unwrap();
     let type_definitions = referencers.to_type_definition_referencers();
 
-    let inaccessible_referencers = referencers.get_directive(&directive_name)?;
-    validate_inaccessible_on_imported_types(schema, inaccessible_referencers, &mut errors);
-
     for position in schema.get_types() {
-        let Ok(ty) = position.get(schema.schema()) else {
-            continue;
-        };
-        let metadata = schema.metadata().unwrap();
+        let ty = position.get(schema.schema())?;
+
         if metadata.source_link_of_type(position.type_name()).is_some() {
-            // Linked types cannot use @inaccessible: already checked above
+            if type_uses_inaccessible(schema, &inaccessible_directive, &position)? {
+                errors.push(
+                    SingleFederationError::DisallowedInaccessible {
+                        message: format!(
+                            "Core feature type `{position}` cannot use @inaccessible."
+                        ),
+                    }
+                    .into(),
+                )
+            }
             continue;
         }
 
@@ -479,7 +492,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
         // We don't do that here because definitions of built-in types are already rejected
         // by apollo-rs validation.
 
-        if !ty.directives().has(&directive_name) {
+        if !ty.directives().has(&inaccessible_directive) {
             // This type must be in the API schema. For types with children (all types except scalar),
             // we check that at least one of the children is accessible.
             match &position {
@@ -503,7 +516,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     let object = object_position.get(schema.schema())?;
                     validate_inaccessible_in_fields(
                         schema,
-                        &directive_name,
+                        &inaccessible_directive,
                         &position,
                         &object.fields,
                         &object.implements_interfaces,
@@ -514,7 +527,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     let interface = interface_position.get(schema.schema())?;
                     validate_inaccessible_in_fields(
                         schema,
-                        &directive_name,
+                        &inaccessible_directive,
                         &position,
                         &interface.fields,
                         &interface.implements_interfaces,
@@ -526,7 +539,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     let mut has_inaccessible_field = false;
                     let mut has_accessible_field = false;
                     for field in input_object.fields.values() {
-                        let field_inaccessible = field.directives.has(&directive_name);
+                        let field_inaccessible = field.directives.has(&inaccessible_directive);
                         has_inaccessible_field |= field_inaccessible;
                         has_accessible_field |= !field_inaccessible;
 
@@ -545,7 +558,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                         ) {
                             validate_inaccessible_in_default_value(
                                 schema,
-                                &directive_name,
+                                &inaccessible_directive,
                                 field_type,
                                 default_value,
                                 input_object_position.field(field.name.clone()).to_string(),
@@ -562,7 +575,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                 TypeDefinitionPosition::Enum(enum_position) => {
                     let enum_ = enum_position.get(schema.schema())?;
                     validate_inaccessible_in_values(
-                        &directive_name,
+                        &inaccessible_directive,
                         enum_position,
                         &enum_.values,
                         &mut errors,
@@ -633,78 +646,78 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                     ref_position
                         .get(schema.schema())?
                         .directives
-                        .has(&directive_name)
+                        .has(&inaccessible_directive)
                         || ref_position
                             .parent()
                             .get(schema.schema())?
                             .directives
-                            .has(&directive_name)
+                            .has(&inaccessible_directive)
                         || ref_position
                             .parent()
                             .parent()
                             .get(schema.schema())?
                             .directives
-                            .has(&directive_name)
+                            .has(&inaccessible_directive)
                 }
                 TypeDefinitionReferencer::InterfaceFieldArgument(ref_position) => {
                     ref_position
                         .get(schema.schema())?
                         .directives
-                        .has(&directive_name)
+                        .has(&inaccessible_directive)
                         || ref_position
                             .parent()
                             .get(schema.schema())?
                             .directives
-                            .has(&directive_name)
+                            .has(&inaccessible_directive)
                         || ref_position
                             .parent()
                             .parent()
                             .get(schema.schema())?
                             .directives
-                            .has(&directive_name)
+                            .has(&inaccessible_directive)
                 }
                 TypeDefinitionReferencer::DirectiveArgument(ref_position) => ref_position
                     .get(schema.schema())?
                     .directives
-                    .has(&directive_name),
+                    .has(&inaccessible_directive),
 
                 // General types
                 TypeDefinitionReferencer::ObjectField(ref_position) => {
                     ref_position
                         .get(schema.schema())?
                         .directives
-                        .has(&directive_name)
+                        .has(&inaccessible_directive)
                         || ref_position
                             .parent()
                             .get(schema.schema())?
                             .directives
-                            .has(&directive_name)
+                            .has(&inaccessible_directive)
                 }
                 TypeDefinitionReferencer::InterfaceField(ref_position) => {
                     ref_position
                         .get(schema.schema())?
                         .directives
-                        .has(&directive_name)
+                        .has(&inaccessible_directive)
                         || ref_position
                             .parent()
                             .get(schema.schema())?
                             .directives
-                            .has(&directive_name)
+                            .has(&inaccessible_directive)
                 }
                 TypeDefinitionReferencer::UnionField(ref_position) => ref_position
                     .get(schema.schema())?
                     .directives
-                    .has(&directive_name),
+                    .has(&inaccessible_directive),
                 TypeDefinitionReferencer::InputObjectField(ref_position) => {
                     ref_position
                         .get(schema.schema())?
                         .directives
-                        .has(&directive_name)
+                        .has(&inaccessible_directive)
                         || ref_position
                             .parent()
                             .get(schema.schema())?
                             .directives
-                            .has(&directive_name)
+                            .has(&inaccessible_directive)
                 }
             };
 
@@ -717,25 +730,34 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
     }
 
     for position in schema.get_directive_definitions() {
-        let Ok(directive) = position.get(schema.schema()) else {
-            continue;
-        };
+        let directive = position.get(schema.schema())?;
+        let is_feature_directive = metadata
+            .source_link_of_directive(&position.directive_name)
+            .is_some();
 
         let mut type_system_locations = directive
             .locations
             .iter()
             .filter(|location| is_type_system_location(**location))
             .peekable();
-        if type_system_locations.peek().is_some() {
-            let type_system_locations = type_system_locations
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ");
-            let uses_inaccessible = directive
-                .arguments
-                .iter()
-                .any(|argument| argument.directives.has(&directive_name));
-            if uses_inaccessible {
+
+        if is_feature_directive {
+            if directive_uses_inaccessible(&inaccessible_directive, &directive) {
+                errors.push(
+                    SingleFederationError::DisallowedInaccessible {
+                        message: format!(
+                            "Core feature directive `{position}` cannot use @inaccessible.",
+                        ),
+                    }
+                    .into(),
+                );
+            }
+        } else if type_system_locations.peek().is_some() {
+            if directive_uses_inaccessible(&inaccessible_directive, &directive) {
+                let type_system_locations = type_system_locations
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 errors.push(SingleFederationError::DisallowedInaccessible {
                     message: format!("Directive `{position}` cannot use @inaccessible because it may be applied to these type-system locations: {}", type_system_locations),
                 }.into());
@@ -745,7 +767,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
             // into the directive's arguments.
             validate_inaccessible_in_arguments(
                 schema,
-                &directive_name,
+                &inaccessible_directive,
                 HasArgumentDefinitionsPosition::DirectiveDefinition(position),
                 &directive.arguments,
                 &mut errors,
