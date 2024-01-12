@@ -2014,6 +2014,51 @@ fn inaccessible_directive_arguments_with_accessible_references() {
 }
 
 #[test]
+fn removes_inaccessible_directive_arguments() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible (and non-inaccessible) directive argument
+      directive @directive(
+        someArg: String
+        privateArg: String @inaccessible
+      ) on QUERY
+
+      # Inaccessible non-nullable directive argument with default
+      directive @directiveDefault(
+        someArg: String
+        privateArg: String! = "default" @inaccessible
+      ) on MUTATION
+    "#,
+    )
+    .expect("should succeed");
+
+    let directive = &api_schema.directive_definitions["directive"];
+
+    assert!(directive
+        .arguments
+        .iter()
+        .any(|argument| argument.name == "someArg"));
+    assert!(directive
+        .arguments
+        .iter()
+        .all(|argument| argument.name != "privateArg"));
+
+    let directive_default = &api_schema.directive_definitions["directiveDefault"];
+    assert!(directive_default
+        .arguments
+        .iter()
+        .any(|argument| argument.name == "someArg"));
+    assert!(directive_default
+        .arguments
+        .iter()
+        .all(|argument| argument.name != "privateArg"));
+}
+
+#[test]
 fn inaccessible_directive_on_schema_elements() {
     let errors = inaccessible_to_api_schema(
         r#"
