@@ -1,15 +1,14 @@
 #![allow(dead_code)] // TODO: This is fine while we're iterating, but should be removed later.
-use apollo_compiler::Schema;
-use link::inaccessible_spec_definition::remove_inaccessible_elements;
-use link::inaccessible_spec_definition::validate_inaccessible;
-use schema::position;
-use schema::FederationSchema;
-
 use crate::error::FederationError;
+use crate::link::inaccessible_spec_definition::remove_inaccessible_elements;
+use crate::link::inaccessible_spec_definition::validate_inaccessible;
 use crate::merge::merge_subgraphs;
 use crate::merge::MergeFailure;
+use crate::schema::position;
+use crate::schema::FederationSchema;
 use crate::subgraph::ValidSubgraph;
 use apollo_compiler::validation::Valid;
+use apollo_compiler::Schema;
 
 pub mod database;
 pub mod error;
