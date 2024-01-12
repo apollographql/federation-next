@@ -44,9 +44,7 @@ impl Supergraph {
 
         remove_core_feature_elements(&mut api_schema)?;
 
-        Ok(apollo_compiler::validation::Valid::assume_valid(
-            api_schema.schema().clone(),
-        ))
+        Ok(api_schema.schema().clone().validate()?)
     }
 }
 
