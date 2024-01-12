@@ -1135,6 +1135,9 @@ pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(),
     for ty in inaccessible_referencers.input_object_types {
         ty.remove(schema)?;
     }
+    for value in inaccessible_referencers.enum_values {
+        value.remove(schema)?;
+    }
     for ty in inaccessible_referencers.enum_types {
         ty.remove(schema)?;
     }
