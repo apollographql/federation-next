@@ -2,6 +2,7 @@
 use apollo_compiler::Schema;
 use link::inaccessible_spec_definition::remove_inaccessible_elements;
 use link::inaccessible_spec_definition::validate_inaccessible;
+use schema::position;
 use schema::FederationSchema;
 
 use crate::error::FederationError;
@@ -42,23 +43,7 @@ impl Supergraph {
         validate_inaccessible(&api_schema)?;
         remove_inaccessible_elements(&mut api_schema)?;
 
-        /*
-        let metadata = api_schema.metadata().unwrap();
-
-        // Remove federation types and directives
-        let types_for_removal = api_schema
-            .get_types()
-            .filter(|position| metadata.source_link_of_type(position.type_name()).is_some())
-            .collect::<Vec<_>>();
-        let directives_for_removal = api_schema
-            .get_directive_definitions()
-            .filter(|position| {
-                metadata
-                    .source_link_of_directive(&position.directive_name)
-                    .is_some()
-            })
-            .collect::<Vec<_>>();
-        */
+        remove_core_feature_elements(&mut api_schema)?;
 
         Ok(apollo_compiler::validation::Valid::assume_valid(
             api_schema.schema().clone(),
@@ -70,6 +55,107 @@ impl From<Valid<Schema>> for Supergraph {
     fn from(schema: Valid<Schema>) -> Self {
         Self { schema }
     }
+}
+
+fn remove_core_feature_elements(schema: &mut FederationSchema) -> Result<(), FederationError> {
+    let metadata = schema.metadata().unwrap();
+
+    // Remove federation types and directives
+    let types_for_removal = schema
+        .get_types()
+        .filter(|position| metadata.source_link_of_type(position.type_name()).is_some())
+        .collect::<Vec<_>>();
+
+    let directives_for_removal = schema
+        .get_directive_definitions()
+        .filter(|position| {
+            metadata
+                .source_link_of_directive(&position.directive_name)
+                .is_some()
+        })
+        .collect::<Vec<_>>();
+
+    // First remove children of elements that need to be removed, so there won't be outgoing
+    // references from the type.
+    for position in &types_for_removal {
+        match position {
+            position::TypeDefinitionPosition::Object(position) => {
+                let object = position.get(schema.schema())?;
+                let remove_children = object
+                    .fields
+                    .keys()
+                    .map(|field_name| position.field(field_name.clone()))
+                    .collect::<Vec<_>>();
+                for child in remove_children {
+                    child.remove(schema)?;
+                }
+            }
+            position::TypeDefinitionPosition::Interface(position) => {
+                let interface = position.get(schema.schema())?;
+                let remove_children = interface
+                    .fields
+                    .keys()
+                    .map(|field_name| position.field(field_name.clone()))
+                    .collect::<Vec<_>>();
+                for child in remove_children {
+                    child.remove(schema)?;
+                }
+            }
+            position::TypeDefinitionPosition::InputObject(position) => {
+                let input_object = position.get(schema.schema())?;
+                let remove_children = input_object
+                    .fields
+                    .keys()
+                    .map(|field_name| position.field(field_name.clone()))
+                    .collect::<Vec<_>>();
+                for child in remove_children {
+                    child.remove(schema)?;
+                }
+            }
+            position::TypeDefinitionPosition::Enum(position) => {
+                let enum_ = position.get(schema.schema())?;
+                let remove_children = enum_
+                    .values
+                    .keys()
+                    .map(|field_name| position.value(field_name.clone()))
+                    .collect::<Vec<_>>();
+                for child in remove_children {
+                    child.remove(schema)?;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // TODO remove arguments first
+    for position in &directives_for_removal {
+        position.remove(schema)?;
+    }
+
+    for position in &types_for_removal {
+        match position {
+            position::TypeDefinitionPosition::Object(position) => {
+                position.remove(schema)?;
+            }
+            position::TypeDefinitionPosition::Interface(position) => {
+                position.remove(schema)?;
+            }
+            position::TypeDefinitionPosition::InputObject(position) => {
+                position.remove(schema)?;
+            }
+            position::TypeDefinitionPosition::Enum(position) => {
+                position.remove(schema)?;
+            }
+            position::TypeDefinitionPosition::Scalar(position) => {
+                position.remove(schema)?;
+            }
+            position::TypeDefinitionPosition::Union(position) => {
+                position.remove(schema)?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

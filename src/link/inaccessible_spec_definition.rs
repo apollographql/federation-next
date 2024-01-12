@@ -92,20 +92,23 @@ lazy_static! {
 
 pub(crate) fn get_inaccessible_spec_definition_from_subgraph(
     schema: &FederationSchema,
-) -> Result<&'static InaccessibleSpecDefinition, FederationError> {
-    let inaccessible_link = schema
+) -> Result<Option<&'static InaccessibleSpecDefinition>, FederationError> {
+    let inaccessible_link = match schema
         .metadata()
         .as_ref()
         .and_then(|metadata| metadata.for_identity(&Identity::inaccessible_identity()))
-        .ok_or_else(|| SingleFederationError::Internal {
-            message: "Subgraph unexpectedly does not use inaccessible spec".to_owned(),
-        })?;
-    Ok(INACCESSIBLE_VERSIONS
-        .find(&inaccessible_link.url.version)
-        .ok_or_else(|| SingleFederationError::Internal {
-            message: "Subgraph unexpectedly does not use a supported inaccessible spec version"
-                .to_owned(),
-        })?)
+    {
+        None => return Ok(None),
+        Some(link) => link,
+    };
+    Ok(Some(
+        INACCESSIBLE_VERSIONS
+            .find(&inaccessible_link.url.version)
+            .ok_or_else(|| SingleFederationError::Internal {
+                message: "Subgraph unexpectedly does not use a supported inaccessible spec version"
+                    .to_owned(),
+            })?,
+    ))
 }
 
 fn is_type_system_location(location: DirectiveLocation) -> bool {
@@ -791,7 +794,9 @@ fn validate_inaccessible_type(
 }
 
 pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), FederationError> {
-    let inaccessible_spec = get_inaccessible_spec_definition_from_subgraph(schema)?;
+    let Some(inaccessible_spec) = get_inaccessible_spec_definition_from_subgraph(schema)? else {
+        return Ok(());
+    };
     let inaccessible_directive = inaccessible_spec
         .directive_name_in_schema(schema, &INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC)?
         .ok_or_else(|| SingleFederationError::Internal {
@@ -976,7 +981,9 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
 }
 
 pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(), FederationError> {
-    let inaccessible_spec = get_inaccessible_spec_definition_from_subgraph(schema)?;
+    let Some(inaccessible_spec) = get_inaccessible_spec_definition_from_subgraph(schema)? else {
+        return Ok(());
+    };
     let directive_name = inaccessible_spec
         .directive_name_in_schema(schema, &INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC)?
         .ok_or_else(|| SingleFederationError::Internal {

@@ -36,7 +36,7 @@ const INACCESSIBLE_V02_HEADER: &str = r#"
     directive @inaccessible on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
 
     schema
-      @link(url: "https://specs.apollo.dev/link/v0.2")
+      @link(url: "https://specs.apollo.dev/link/v1.0")
       @link(url: "https://specs.apollo.dev/inaccessible/v0.2")
     {
       query: Query
