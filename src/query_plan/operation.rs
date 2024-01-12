@@ -725,7 +725,7 @@ impl NormalizedFieldSelection {
 
 impl NormalizedFragmentSpreadSelection {
     /// Copies fragment spread selection and assigns it a new unique selection ID.
-    pub(crate) fn new_copy(&self) -> Self {
+    pub(crate) fn with_unique_id(&self) -> Self {
         let mut copy = self.clone();
         copy.selection_id = SelectionId::new();
         copy
@@ -804,7 +804,7 @@ impl NormalizedFragmentSpreadSelection {
 
 impl NormalizedInlineFragmentSelection {
     /// Copies inline fragment selection and assigns it a new unique selection ID.
-    pub(crate) fn new_copy(&self) -> Self {
+    pub(crate) fn with_unique_id(&self) -> Self {
         let mut copy = self.clone();
         copy.inline_fragment.selection_id = SelectionId::new();
         copy
