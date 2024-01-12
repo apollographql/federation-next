@@ -21,15 +21,17 @@ struct Extracted<Element> {
 /// this method "efficiently" generates (or at least evaluate) all the possible complete plans
 /// and the returns the "best" one (the one with the lowest cost).
 ///
-/// Note that this method abstracts the actual types of both plans
-/// and additional elements to add to the plan,
-/// and this both for clarity and to make testing of this method easier.
-/// But type parameter `Plan` should be though of as abstracting a query plan
-/// (in practice, it is instanciated to a pair of a (`DependencyGraph`, corresponding `PathTree`)),
-/// whith `Eelement` should be though of as an additional element
-/// to add to the plan to make it complete
-/// (instanciated in practice by a `PathTree` for ... reasons ...
-/// but one that really correspond to a single `GraphPath`).
+/// Note that this method abstracts the actual types of both plans (type parameter `Plan`)
+/// and additional elements to add to the plan (type parameter `Element`).
+/// This is done for both the clarity and to make testing of this method easier.
+///
+/// Type parameter `Plan` should be thought of as abstracting a query plan but in practice,
+/// it is instantiated to a pair of a (`DependencyGraph`, corresponding `PathTree`).
+///
+/// Type parameter `Element` should be thought of as an additional element
+/// to add to the plan to make it complete.
+/// It is instantiated in practice by a `PathTree` (for ... reasons ...)
+/// that really correspond to a single `GraphPath`.
 ///
 /// As said above, this method takes 2 arguments:
 /// - `initial` is a partial plan,
