@@ -975,7 +975,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
             .peekable();
 
         if is_feature_directive {
-            if directive_uses_inaccessible(&inaccessible_directive, &directive) {
+            if directive_uses_inaccessible(&inaccessible_directive, directive) {
                 errors.push(
                     SingleFederationError::DisallowedInaccessible {
                         message: format!(
@@ -988,7 +988,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
         } else if type_system_locations.peek().is_some() {
             // Directives that can appear on type-system locations (and their
             // descendants) aren't allowed to be @inaccessible.
-            if directive_uses_inaccessible(&inaccessible_directive, &directive) {
+            if directive_uses_inaccessible(&inaccessible_directive, directive) {
                 let type_system_locations = type_system_locations
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
