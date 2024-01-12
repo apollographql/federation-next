@@ -1549,6 +1549,161 @@ fn inaccessible_input_object_fields_with_accessible_references() {
 }
 
 #[test]
+fn removes_inaccessible_input_object_fields() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+      type Query {
+        someField: String
+      }
+
+      # Inaccessible (and non-inaccessible) input object field
+      input InputObject {
+        someField: String
+        privateField: String @inaccessible
+      }
+
+      # Inaccessible input object field referenced by default value of
+      # inaccessible object field argument
+      type Referencer1 implements Referencer4 {
+        someField(
+          privateArg: InputObject = { privateField: "" } @inaccessible
+        ): String
+      }
+
+      # Inaccessible input object field referenced by default value of
+      # non-inaccessible object field argument with inaccessible parent
+      type Referencer2 implements Referencer5 {
+        someField: String
+        privateField(
+          privateArg: InputObject! = { privateField: "" }
+        ): String @inaccessible
+      }
+
+      # Inaccessible input object field referenced by default value of
+      # non-inaccessible object field argument with inaccessible grandparent
+      type Referencer3 implements Referencer6 @inaccessible {
+        privateField(privateArg: InputObject! = { privateField: "" }): String
+      }
+
+      # Inaccessible input object field referenced by default value of
+      # inaccessible interface field argument
+      interface Referencer4 {
+        someField(
+          privateArg: InputObject = { privateField: "" } @inaccessible
+        ): String
+      }
+
+      # Inaccessible input object field referenced by default value of
+      # non-inaccessible interface field argument with inaccessible parent
+      interface Referencer5 {
+        someField: String
+        privateField(
+          privateArg: InputObject! = { privateField: "" }
+        ): String @inaccessible
+      }
+
+      # Inaccessible input object field referenced by default value of
+      # non-inaccessible interface field argument with inaccessible grandparent
+      interface Referencer6 @inaccessible {
+        privateField(privateArg: InputObject! = { privateField: "" }): String
+      }
+
+      # Inaccessible input object field referenced by default value of
+      # inaccessible input object field
+      input Referencer7 {
+        someField: String
+        privateField: InputObject = { privateField: "" } @inaccessible
+      }
+
+      # Inaccessible input object field referenced by default value of
+      # non-inaccessible input object field with inaccessible parent
+      input Referencer8 @inaccessible {
+        privateField: InputObject! = { privateField: "" }
+      }
+
+      # Inaccessible input object field referenced by default value of
+      # inaccessible directive argument
+      directive @referencer9(
+        privateArg: InputObject = { privateField: "" } @inaccessible
+      ) on SUBSCRIPTION
+
+      # Inaccessible input object field not referenced (but type is referenced)
+      # by default value of object field argument in the API schema
+      type Referencer10 {
+        someField(privateArg: InputObject = { someField: "" }): String
+      }
+
+      # Inaccessible input object field with an inaccessible parent and no
+      # non-inaccessible siblings
+      input Referencer11 @inaccessible {
+        privateField: String @inaccessible
+        otherPrivateField: Float @inaccessible
+      }
+
+      # Inaccessible non-nullable input object field with default
+      input InputObjectDefault {
+        someField: String
+        privateField: String! = "default" @inaccessible
+      }
+    "#,
+    )
+    .expect("should succeed");
+
+    assert!(api_schema
+        .get_input_object("InputObject")
+        .unwrap()
+        .fields
+        .contains_key("someField"));
+    assert!(!api_schema
+        .get_input_object("InputObject")
+        .unwrap()
+        .fields
+        .contains_key("privateField"));
+    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
+    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
+    assert!(api_schema.type_field("Referencer2", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer2", "privateField")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer3"));
+    assert!(api_schema.type_field("Referencer4", "someField").is_ok());
+    assert!(field_argument(&api_schema, "Referencer4", "someField", "privateArg").is_none());
+    assert!(api_schema.type_field("Referencer5", "someField").is_ok());
+    assert!(api_schema
+        .type_field("Referencer5", "privateField")
+        .is_err());
+    assert!(!api_schema.types.contains_key("Referencer6"));
+    assert!(api_schema
+        .get_input_object("Referencer7")
+        .unwrap()
+        .fields
+        .contains_key("someField"));
+    assert!(!api_schema
+        .get_input_object("Referencer7")
+        .unwrap()
+        .fields
+        .contains_key("privatefield"));
+    assert!(!api_schema.types.contains_key("Referencer8"));
+    assert!(api_schema.directive_definitions.contains_key("referencer9"));
+    assert!(api_schema.directive_definitions["referencer9"]
+        .arguments
+        .iter()
+        .all(|arg| arg.name != "privateArg"));
+    assert!(field_argument(&api_schema, "Referencer10", "someField", "privateArg").is_some());
+    assert!(!api_schema.types.contains_key("Referencer11"));
+    assert!(api_schema
+        .get_input_object("InputObjectDefault")
+        .unwrap()
+        .fields
+        .contains_key("someField"));
+    assert!(!api_schema
+        .get_input_object("InputObjectDefault")
+        .unwrap()
+        .fields
+        .contains_key("privatefield"));
+}
+
+#[test]
 fn inaccessible_enum_values_with_accessible_references() {
     let errors = inaccessible_to_api_schema(
         r#"
