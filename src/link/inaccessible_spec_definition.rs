@@ -1061,6 +1061,9 @@ pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(),
         position.remove(schema)?;
     }
 
+    for argument in inaccessible_referencers.directive_arguments {
+        argument.remove(schema)?;
+    }
     for argument in inaccessible_referencers.interface_field_arguments {
         argument.remove(schema)?;
     }
