@@ -1,7 +1,8 @@
 use crate::error::FederationError;
 use crate::error::SingleFederationError::Internal;
 use crate::schema::position::{
-    CompositeTypeDefinitionPosition, FieldDefinitionPosition, SchemaRootDefinitionKind,
+    CompositeTypeDefinitionPosition, FieldDefinitionPosition, InterfaceTypeDefinitionPosition,
+    SchemaRootDefinitionKind,
 };
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::{Argument, DirectiveList, Name};
@@ -9,11 +10,27 @@ use apollo_compiler::executable::{
     Field, Fragment, FragmentSpread, InlineFragment, Operation, Selection, SelectionSet,
     VariableDefinition,
 };
-use apollo_compiler::Node;
-use indexmap::IndexMap;
+use apollo_compiler::{name, Node};
+use indexmap::{IndexMap, IndexSet};
 use linked_hash_map::{Entry, LinkedHashMap};
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{atomic, Arc};
+
+const TYPENAME_FIELD: Name = name!("__typename");
+
+// Global storage for the counter used to uniquely identify selections
+static NEXT_ID: atomic::AtomicUsize = atomic::AtomicUsize::new(1);
+
+// opaque wrapper of the unique selection ID type
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(crate) struct SelectionId(usize);
+
+impl SelectionId {
+    fn new() -> Self {
+        // atomically increment global counter
+        Self(NEXT_ID.fetch_add(1, atomic::Ordering::AcqRel))
+    }
+}
 
 /// An analogue of the apollo-compiler type `Operation` with these changes:
 /// - Stores the schema that the operation is queried against.
@@ -68,24 +85,24 @@ pub(crate) enum NormalizedSelectionKey {
         response_name: Name,
         // directives applied on the field
         directives: Arc<DirectiveList>,
-        // unique label/counter used to distinguish fields that cannot be merged
-        label: i32,
+        // optional unique selection ID used to distinguish fields that cannot be merged (set if field is deferred)
+        deferred_id: Option<SelectionId>,
     },
     FragmentSpread {
         // fragment name
         name: Name,
         // directives applied on the fragment spread
         directives: Arc<DirectiveList>,
-        // unique label/counter used to distinguish fields that cannot be merged
-        label: i32,
+        // optional unique selection ID used to distinguish spreads that cannot be merged (set if fragment spread is deferred)
+        deferred_id: Option<SelectionId>,
     },
     InlineFragment {
         // optional type condition of a fragment
         type_condition: Option<Name>,
         // directives applied on a fragment
         directives: Arc<DirectiveList>,
-        // unique label/counter used to distinguish fragments that cannot be merged
-        label: i32,
+        // optional unique selection ID used to distinguish fragments that cannot be merged (set if inline fragment is deferred)
+        deferred_id: Option<SelectionId>,
     },
 }
 
@@ -138,6 +155,7 @@ pub(crate) struct NormalizedFragment {
 pub(crate) struct NormalizedFieldSelection {
     pub(crate) field: NormalizedField,
     pub(crate) selection_set: Option<NormalizedSelectionSet>,
+    pub(crate) sibling_typename: Option<Name>,
 }
 
 /// The non-selection-set data of `NormalizedFieldSelection`, used with operation paths and graph
@@ -149,6 +167,7 @@ pub(crate) struct NormalizedField {
     pub(crate) alias: Option<Name>,
     pub(crate) arguments: Arc<Vec<Node<Argument>>>,
     pub(crate) directives: Arc<DirectiveList>,
+    selection_id: SelectionId,
 }
 
 impl NormalizedField {
@@ -169,6 +188,7 @@ pub(crate) struct NormalizedFragmentSpreadSelection {
     pub(crate) schema: ValidFederationSchema,
     pub(crate) fragment_name: Name,
     pub(crate) directives: Arc<DirectiveList>,
+    selection_id: SelectionId,
 }
 
 /// An analogue of the apollo-compiler type `InlineFragment` with these changes:
@@ -193,6 +213,7 @@ pub(crate) struct NormalizedInlineFragment {
     pub(crate) parent_type_position: CompositeTypeDefinitionPosition,
     pub(crate) type_condition_position: Option<CompositeTypeDefinitionPosition>,
     pub(crate) directives: Arc<DirectiveList>,
+    selection_id: SelectionId,
 }
 
 impl NormalizedSelectionSet {
@@ -390,16 +411,6 @@ impl NormalizedSelectionSet {
             let mut fragment_spreads = IndexMap::new();
             let mut inline_fragments = IndexMap::new();
             for (other_key, other_selection) in others {
-                let is_deferred = is_deferred_selection(other_selection.directives());
-                let other_key = if is_deferred {
-                    let mut new_key = other_key;
-                    while self.selections.contains_key(&new_key) {
-                        new_key = new_key.next_key();
-                    }
-                    new_key
-                } else {
-                    other_key
-                };
                 match Arc::make_mut(&mut self.selections).entry(other_key.clone()) {
                     Entry::Occupied(existing) => match existing.get() {
                         NormalizedSelection::Field(self_field_selection) => {
@@ -497,9 +508,117 @@ impl NormalizedSelectionSet {
         }
         Ok(())
     }
+
+    /// Modifies the provided selection set to optimize the handling of __typename selections for query planning.
+    ///
+    /// __typename information can always be provided by any subgraph declaring that type. While this data can be
+    /// theoretically fetched from multiple sources, in practice it doesn't really matter which subgraph we use
+    /// for the __typename and we should just get it from the same source as the one that was used to resolve
+    /// other fields.
+    ///
+    /// In most cases, selecting __typename won't be a problem as query planning algorithm ignores "obviously"
+    /// inefficient paths. Typically, querying the __typename of an entity is generally ok because when looking at
+    /// a path, the query planning algorithm always favor getting a field "locally" if it can (which it always can
+    /// for __typename) and ignore alternative that would jump subgraphs.
+    ///
+    /// When querying a __typename after a @shareable field, query planning algorithm would consider getting the
+    /// __typename from EACH version of the @shareable field. This unnecessarily explodes the number of possible
+    /// query plans with some useless options and results in degraded performance. Since the number of possible
+    /// plans doubles for every field for which there is a choice, eliminating unnecessary choices improves query
+    /// planning performance.
+    ///
+    /// It is unclear how to do this cleanly with the current planning algorithm, so this method is a workaround
+    /// so we can efficiently generate query plans. In order to prevent the query planner from spending time
+    /// exploring those useless __typename options, we "remove" the unnecessary __typename selections from the
+    /// operation. Since we need to ensure that the __typename field will still need to be queried, we "tag"
+    /// one of the "sibling" selections (using "attachement") to remember that __typename needs to be added
+    /// back eventually. The core query planning algorithm will ignore that tag, and because __typename has been
+    /// otherwise removed, we'll save any related work. As we build the final query plan, we'll check back for
+    /// those "tags" and add back the __typename selections. As this only happen after the query planning
+    /// algorithm has computed all choices, we achieve our goal of not considering useless choices due to
+    /// __typename. Do note that if __typename is the "only" selection of some selection set, then we leave it
+    /// untouched, and let the query planning algorithm treat it as any other field. We have no other choice in
+    /// that case, and that's actually what we want.
+    pub(crate) fn optimize_sibling_typenames(
+        &mut self,
+        interface_types_with_interface_objects: &IndexSet<InterfaceTypeDefinitionPosition>,
+    ) -> Result<(), FederationError> {
+        let is_interface_object =
+            interface_types_with_interface_objects.contains(&InterfaceTypeDefinitionPosition {
+                type_name: self.type_position.type_name().clone(),
+            });
+        let mut typename_field_key: Option<NormalizedSelectionKey> = None;
+        let mut sibling_field_key: Option<NormalizedSelectionKey> = None;
+
+        let mutable_selection_map = Arc::make_mut(&mut self.selections);
+        for (key, entry) in mutable_selection_map.iter_mut() {
+            match entry {
+                NormalizedSelection::Field(field_selection) => {
+                    if field_selection.field.name() == &TYPENAME_FIELD
+                        && !is_interface_object
+                        && typename_field_key.is_none()
+                    {
+                        typename_field_key = Some(key.clone());
+                    } else if sibling_field_key.is_none() {
+                        sibling_field_key = Some(key.clone());
+                    }
+
+                    let mutable_field_selection = Arc::make_mut(field_selection);
+                    if let Some(field_selection_set) =
+                        mutable_field_selection.selection_set.as_mut()
+                    {
+                        field_selection_set
+                            .optimize_sibling_typenames(interface_types_with_interface_objects)?;
+                    } else {
+                        continue;
+                    }
+                }
+                NormalizedSelection::InlineFragment(inline_fragment) => {
+                    let mutable_inline_fragment = Arc::make_mut(inline_fragment);
+                    mutable_inline_fragment
+                        .selection_set
+                        .optimize_sibling_typenames(interface_types_with_interface_objects)?;
+                }
+                NormalizedSelection::FragmentSpread(fragment_spread) => {
+                    // at this point in time all fragment spreads should have been converted into inline fragments
+                    return Err(FederationError::SingleFederationError(Internal {
+                        message: format!(
+                            "Error while optimizing sibling typename information, selection set contains {} named fragment",
+                            fragment_spread.fragment_name
+                        ),
+                    }));
+                }
+            }
+        }
+
+        if let (Some(typename_key), Some(sibling_field_key)) =
+            (typename_field_key, sibling_field_key)
+        {
+            if let (
+                Some(NormalizedSelection::Field(typename_field)),
+                Some(NormalizedSelection::Field(sibling_field)),
+            ) = (
+                mutable_selection_map.remove(&typename_key),
+                mutable_selection_map.get_mut(&sibling_field_key),
+            ) {
+                let mutable_sibling_field = Arc::make_mut(sibling_field);
+                mutable_sibling_field.sibling_typename = Some(typename_field.field.response_name());
+            } else {
+                unreachable!("typename and sibling fields must both exist at this point")
+            }
+        }
+        Ok(())
+    }
 }
 
 impl NormalizedFieldSelection {
+    /// Copies field selection and assigns it a new unique selection ID.
+    pub(crate) fn with_unique_id(&self) -> Self {
+        let mut copy = self.clone();
+        copy.field.selection_id = SelectionId::new();
+        copy
+    }
+
     /// Normalize this field selection (merging selections with the same keys), with the following
     /// additional transformations:
     /// - Expand fragment spreads into inline fragments.
@@ -534,6 +653,7 @@ impl NormalizedFieldSelection {
                 alias: field.alias.clone(),
                 arguments: Arc::new(field.arguments.clone()),
                 directives: Arc::new(field.directives.clone()),
+                selection_id: SelectionId::new(),
             },
             selection_set: if field_composite_type_result.is_ok() {
                 Some(NormalizedSelectionSet::normalize_and_expand_fragments(
@@ -544,6 +664,7 @@ impl NormalizedFieldSelection {
             } else {
                 None
             },
+            sibling_typename: None,
         }))
     }
 
@@ -603,6 +724,13 @@ impl NormalizedFieldSelection {
 }
 
 impl NormalizedFragmentSpreadSelection {
+    /// Copies fragment spread selection and assigns it a new unique selection ID.
+    pub(crate) fn with_unique_id(&self) -> Self {
+        let mut copy = self.clone();
+        copy.selection_id = SelectionId::new();
+        copy
+    }
+
     /// Normalize this fragment spread (merging selections with the same keys), with the following
     /// additional transformations:
     /// - Expand fragment spreads into inline fragments.
@@ -639,6 +767,7 @@ impl NormalizedFragmentSpreadSelection {
                 parent_type_position: parent_type_position.clone(),
                 type_condition_position: Some(type_condition_position),
                 directives: Arc::new(fragment_spread.directives.clone()),
+                selection_id: SelectionId::new(),
             },
             selection_set: NormalizedSelectionSet::normalize_and_expand_fragments(
                 &fragment.selection_set,
@@ -674,6 +803,13 @@ impl NormalizedFragmentSpreadSelection {
 }
 
 impl NormalizedInlineFragmentSelection {
+    /// Copies inline fragment selection and assigns it a new unique selection ID.
+    pub(crate) fn with_unique_id(&self) -> Self {
+        let mut copy = self.clone();
+        copy.inline_fragment.selection_id = SelectionId::new();
+        copy
+    }
+
     /// Normalize this inline fragment selection (merging selections with the same keys), with the
     /// following additional transformations:
     /// - Expand fragment spreads into inline fragments.
@@ -699,6 +835,7 @@ impl NormalizedInlineFragmentSelection {
                 parent_type_position: parent_type_position.clone(),
                 type_condition_position,
                 directives: Arc::new(inline_fragment.directives.clone()),
+                selection_id: SelectionId::new(),
             },
             selection_set: NormalizedSelectionSet::normalize_and_expand_fragments(
                 &inline_fragment.selection_set,
@@ -857,41 +994,6 @@ impl From<&NormalizedFragmentSpreadSelection> for FragmentSpread {
     }
 }
 
-impl NormalizedSelectionKey {
-    /// Generate new key by incrementing unique label value
-    fn next_key(self) -> Self {
-        match self {
-            Self::Field {
-                response_name,
-                directives,
-                label,
-            } => Self::Field {
-                response_name: response_name.clone(),
-                directives: directives.clone(),
-                label: label + 1,
-            },
-            Self::FragmentSpread {
-                name,
-                directives,
-                label,
-            } => Self::FragmentSpread {
-                name: name.clone(),
-                directives: directives.clone(),
-                label: label + 1,
-            },
-            Self::InlineFragment {
-                type_condition,
-                directives,
-                label,
-            } => Self::InlineFragment {
-                type_condition: type_condition.clone(),
-                directives: directives.clone(),
-                label: label + 1,
-            },
-        }
-    }
-}
-
 impl From<&NormalizedSelection> for NormalizedSelectionKey {
     fn from(value: &NormalizedSelection) -> Self {
         match value {
@@ -908,49 +1010,61 @@ impl From<&NormalizedSelection> for NormalizedSelectionKey {
 
 impl From<&NormalizedFieldSelection> for NormalizedSelectionKey {
     fn from(field_selection: &NormalizedFieldSelection) -> Self {
-        (&field_selection.field).into()
-    }
-}
-
-impl From<&NormalizedField> for NormalizedSelectionKey {
-    fn from(field: &NormalizedField) -> Self {
+        let deferred_id = if is_deferred_selection(&field_selection.field.directives) {
+            Some(field_selection.field.selection_id.clone())
+        } else {
+            None
+        };
         Self::Field {
-            response_name: field.response_name(),
-            directives: Arc::new(directives_with_sorted_arguments(&field.directives)),
-            label: 0,
+            response_name: field_selection.field.response_name(),
+            directives: Arc::new(directives_with_sorted_arguments(
+                &field_selection.field.directives,
+            )),
+            deferred_id,
         }
     }
 }
 
 impl From<&NormalizedFragmentSpreadSelection> for NormalizedSelectionKey {
     fn from(fragment_spread_selection: &NormalizedFragmentSpreadSelection) -> Self {
+        let deferred_id = if is_deferred_selection(&fragment_spread_selection.directives) {
+            Some(fragment_spread_selection.selection_id.clone())
+        } else {
+            None
+        };
         Self::FragmentSpread {
             name: fragment_spread_selection.fragment_name.clone(),
             directives: Arc::new(directives_with_sorted_arguments(
                 &fragment_spread_selection.directives,
             )),
-            label: 0,
+            deferred_id,
         }
     }
 }
 
 impl From<&NormalizedInlineFragmentSelection> for NormalizedSelectionKey {
     fn from(inline_fragment_selection: &NormalizedInlineFragmentSelection) -> Self {
-        (&inline_fragment_selection.inline_fragment).into()
-    }
-}
-
-impl From<&NormalizedInlineFragment> for NormalizedSelectionKey {
-    fn from(inline_fragment: &NormalizedInlineFragment) -> Self {
+        let deferred_id: Option<SelectionId> =
+            if is_deferred_selection(&inline_fragment_selection.inline_fragment.directives) {
+                Some(
+                    inline_fragment_selection
+                        .inline_fragment
+                        .selection_id
+                        .clone(),
+                )
+            } else {
+                None
+            };
         Self::InlineFragment {
-            type_condition: inline_fragment
+            type_condition: inline_fragment_selection
+                .inline_fragment
                 .type_condition_position
                 .as_ref()
                 .map(|pos| pos.type_name().clone()),
             directives: Arc::new(directives_with_sorted_arguments(
-                &inline_fragment.directives,
+                &inline_fragment_selection.inline_fragment.directives,
             )),
-            label: 0,
+            deferred_id,
         }
     }
 }
@@ -967,7 +1081,7 @@ fn directives_with_sorted_arguments(directives: &DirectiveList) -> DirectiveList
 }
 
 fn is_deferred_selection(directives: &DirectiveList) -> bool {
-    directives.iter().any(|d| d.name == "defer")
+    directives.has("defer")
 }
 
 /// Normalizes the selection set of the specified operation.
@@ -979,16 +1093,18 @@ fn is_deferred_selection(directives: &DirectiveList) -> bool {
 ///   handled by query planning.
 /// - Hoist fragment spreads/inline fragments into their parents if they have no directives and
 ///   their parent type matches.
-pub fn normalize_operation(
+pub(crate) fn normalize_operation(
     operation: &mut Operation,
     fragments: &IndexMap<Name, Node<Fragment>>,
     schema: &ValidFederationSchema,
+    interface_types_with_interface_objects: &IndexSet<InterfaceTypeDefinitionPosition>,
 ) -> Result<(), FederationError> {
-    let normalized_selection_set = NormalizedSelectionSet::normalize_and_expand_fragments(
+    let mut normalized_selection_set = NormalizedSelectionSet::normalize_and_expand_fragments(
         &operation.selection_set,
         fragments,
         schema,
     )?;
+    normalized_selection_set.optimize_sibling_typenames(interface_types_with_interface_objects)?;
 
     // Flatten it back into a `SelectionSet`.
     operation.selection_set = (&normalized_selection_set).try_into()?;
@@ -998,8 +1114,10 @@ pub fn normalize_operation(
 #[cfg(test)]
 mod tests {
     use crate::query_plan::operation::normalize_operation;
+    use crate::schema::position::InterfaceTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
-    use apollo_compiler::ExecutableDocument;
+    use apollo_compiler::{name, ExecutableDocument};
+    use indexmap::IndexSet;
 
     fn parse_schema_and_operation(
         schema_and_operation: &str,
@@ -1044,7 +1162,13 @@ type Foo {
             .get_mut("NamedFragmentQuery")
         {
             let operation = operation.make_mut();
-            normalize_operation(operation, &executable_document.fragments, &schema).unwrap();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
 
             let expected = r#"query NamedFragmentQuery {
   foo {
@@ -1093,7 +1217,13 @@ type Foo {
             parse_schema_and_operation(operation_with_named_fragment);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(operation, &executable_document.fragments, &schema).unwrap();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
 
             let expected = r#"query NestedFragmentQuery {
   foo {
@@ -1129,9 +1259,869 @@ type Query {
             .get_mut("TestIntrospectionQuery")
         {
             let operation = operation.make_mut();
-            normalize_operation(operation, &executable_document.fragments, &schema).unwrap();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
 
             assert!(operation.selection_set.selections.is_empty());
+        }
+    }
+
+    #[test]
+    fn merge_same_fields_without_directives() {
+        let operation_string = r#"
+query Test {
+  t {
+    v1
+  }
+  t {
+    v2
+ }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) = parse_schema_and_operation(operation_string);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test {
+  t {
+    v1
+    v2
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    #[test]
+    fn merge_same_fields_with_same_directive() {
+        let operation_with_directives = r#"
+query Test($skipIf: Boolean!) {
+  t @skip(if: $skipIf) {
+    v1
+  }
+  t @skip(if: $skipIf) {
+    v2
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_with_directives);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test($skipIf: Boolean!) {
+  t @skip(if: $skipIf) {
+    v1
+    v2
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    #[test]
+    fn merge_same_fields_with_same_directive_but_different_arg_order() {
+        let operation_with_directives_different_arg_order = r#"
+query Test($skipIf: Boolean!) {
+  t @customSkip(if: $skipIf, label: "foo") {
+    v1
+  }
+  t @customSkip(label: "foo", if: $skipIf) {
+    v2
+  }
+}
+
+directive @customSkip(if: Boolean!, label: String!) on FIELD | INLINE_FRAGMENT
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_with_directives_different_arg_order);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test($skipIf: Boolean!) {
+  t @customSkip(if: $skipIf, label: "foo") {
+    v1
+    v2
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    #[test]
+    fn do_not_merge_when_only_one_field_specifies_directive() {
+        let operation_one_field_with_directives = r#"
+query Test($skipIf: Boolean!) {
+  t {
+    v1
+  }
+  t @skip(if: $skipIf) {
+    v2
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_one_field_with_directives);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test($skipIf: Boolean!) {
+  t {
+    v1
+  }
+  t @skip(if: $skipIf) {
+    v2
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    #[test]
+    fn do_not_merge_when_fields_have_different_directives() {
+        let operation_different_directives = r#"
+query Test($skip1: Boolean!, $skip2: Boolean!) {
+  t @skip(if: $skip1) {
+    v1
+  }
+  t @skip(if: $skip2) {
+    v2
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_different_directives);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test($skip1: Boolean!, $skip2: Boolean!) {
+  t @skip(if: $skip1) {
+    v1
+  }
+  t @skip(if: $skip2) {
+    v2
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    // TODO enable when @defer is available in apollo-rs
+    #[ignore]
+    #[test]
+    fn do_not_merge_fields_with_defer_directive() {
+        let operation_defer_fields = r#"
+query Test {
+  t @defer {
+    v1
+  }
+  t @defer {
+    v2
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) = parse_schema_and_operation(operation_defer_fields);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test {
+  t @defer {
+    v1
+  }
+  t @defer {
+    v2
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    // TODO enable when @defer is available in apollo-rs
+    #[ignore]
+    #[test]
+    fn merge_nested_field_selections() {
+        let nested_operation = r#"
+query Test {
+  t {
+    t1
+    v @defer {
+      v1
+    }
+  }
+  t {
+    t1
+    t2
+    v @defer {
+      v2
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  t1: Int
+  t2: String
+  v: V
+}
+
+type V {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) = parse_schema_and_operation(nested_operation);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test {
+  t {
+    t1
+    v @defer {
+      v1
+    }
+    t2
+    v @defer {
+      v2
+    }
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    //
+    // inline fragments
+    //
+
+    #[test]
+    fn merge_same_fragment_without_directives() {
+        let operation_with_fragments = r#"
+query Test {
+  t {
+    ... on T {
+      v1
+    }
+    ... on T {
+      v2
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_with_fragments);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test {
+  t {
+    v1
+    v2
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    #[test]
+    fn merge_same_fragments_with_same_directives() {
+        let operation_fragments_with_directives = r#"
+query Test($skipIf: Boolean!) {
+  t {
+    ... on T @skip(if: $skipIf) {
+      v1
+    }
+    ... on T @skip(if: $skipIf) {
+      v2
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_fragments_with_directives);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test($skipIf: Boolean!) {
+  t {
+    ... on T @skip(if: $skipIf) {
+      v1
+      v2
+    }
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    #[test]
+    fn merge_same_fragments_with_same_directive_but_different_arg_order() {
+        let operation_fragments_with_directives_args_order = r#"
+query Test($skipIf: Boolean!) {
+  t {
+    ... on T @customSkip(if: $skipIf, label: "foo") {
+      v1
+    }
+    ... on T @customSkip(label: "foo", if: $skipIf) {
+      v2
+    }
+  }
+}
+
+directive @customSkip(if: Boolean!, label: String!) on FIELD | INLINE_FRAGMENT
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_fragments_with_directives_args_order);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test($skipIf: Boolean!) {
+  t {
+    ... on T @customSkip(if: $skipIf, label: "foo") {
+      v1
+      v2
+    }
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    #[test]
+    fn do_not_merge_when_only_one_fragment_specifies_directive() {
+        let operation_one_fragment_with_directive = r#"
+query Test($skipIf: Boolean!) {
+  t {
+    ... on T {
+      v1
+    }
+    ... on T @skip(if: $skipIf) {
+      v2
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_one_fragment_with_directive);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test($skipIf: Boolean!) {
+  t {
+    v1
+    ... on T @skip(if: $skipIf) {
+      v2
+    }
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    #[test]
+    fn do_not_merge_when_fragments_have_different_directives() {
+        let operation_fragments_with_different_directive = r#"
+query Test($skip1: Boolean!, $skip2: Boolean!) {
+  t {
+    ... on T @skip(if: $skip1) {
+      v1
+    }
+    ... on T @skip(if: $skip2) {
+      v2
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_fragments_with_different_directive);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test($skip1: Boolean!, $skip2: Boolean!) {
+  t {
+    ... on T @skip(if: $skip1) {
+      v1
+    }
+    ... on T @skip(if: $skip2) {
+      v2
+    }
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    // TODO enable when @defer is available in apollo-rs
+    #[ignore]
+    #[test]
+    fn do_not_merge_fragments_with_defer_directive() {
+        let operation_fragments_with_defer = r#"
+query Test {
+  t {
+    ... on T @defer {
+      v1
+    }
+    ... on T @defer {
+      v2
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_fragments_with_defer);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test {
+  t {
+    ... on T @defer {
+      v1
+    }
+    ... on T @defer {
+      v2
+    }
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    // TODO enable when @defer is available in apollo-rs
+    #[ignore]
+    #[test]
+    fn merge_nested_fragments() {
+        let operation_nested_fragments = r#"
+query Test {
+  t {
+    ... on T {
+      t1
+    }
+    ... on T {
+      v @defer {
+        v1
+      }
+    }
+  }
+  t {
+    ... on T {
+      t1
+      t2
+    }
+    ... on T {
+      v @defer {
+        v2
+      }
+    }
+  }
+}
+
+type Query {
+  t: T
+}
+
+type T {
+  t1: Int
+  t2: String
+  v: V
+}
+
+type V {
+  v1: Int
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_nested_fragments);
+        if let Some((_, operation)) = executable_document.named_operations.first_mut() {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query Test {
+  t {
+    t1
+    v @defer {
+      v1
+    }
+    t2
+    v @defer {
+      v2
+    }
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        } else {
+            panic!("unable to parse document")
+        }
+    }
+
+    #[test]
+    fn removes_sibling_typename() {
+        let operation_with_typename = r#"
+query TestQuery {
+  foo {
+    __typename
+    v1
+    v2
+  }
+}
+
+type Query {
+  foo: Foo
+}
+
+type Foo {
+  v1: ID!
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) = parse_schema_and_operation(operation_with_typename);
+        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query TestQuery {
+  foo {
+    v1
+    v2
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        }
+    }
+
+    #[test]
+    fn keeps_typename_if_no_other_selection() {
+        let operation_with_single_typename = r#"
+query TestQuery {
+  foo {
+    __typename
+  }
+}
+
+type Query {
+  foo: Foo
+}
+
+type Foo {
+  v1: ID!
+  v2: String
+}
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_with_single_typename);
+        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &IndexSet::new(),
+            )
+            .unwrap();
+            let expected = r#"query TestQuery {
+  foo {
+    __typename
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
+        }
+    }
+
+    #[test]
+    fn keeps_typename_for_interface_object() {
+        let operation_with_intf_object_typename = r#"
+query TestQuery {
+  foo {
+    __typename
+    v1
+    v2
+  }
+}
+
+directive @interfaceObject on OBJECT
+directive @key(fields: FieldSet!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
+
+type Query {
+  foo: Foo
+}
+
+type Foo @interfaceObject @key(fields: "id") {
+  v1: ID!
+  v2: String
+}
+
+scalar FieldSet
+"#;
+        let (schema, mut executable_document) =
+            parse_schema_and_operation(operation_with_intf_object_typename);
+        if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
+            let mut interface_objects: IndexSet<InterfaceTypeDefinitionPosition> = IndexSet::new();
+            interface_objects.insert(InterfaceTypeDefinitionPosition {
+                type_name: name!("Foo"),
+            });
+
+            let operation = operation.make_mut();
+            normalize_operation(
+                operation,
+                &executable_document.fragments,
+                &schema,
+                &interface_objects,
+            )
+            .unwrap();
+            let expected = r#"query TestQuery {
+  foo {
+    __typename
+    v1
+    v2
+  }
+}"#;
+            let actual = format!("{}", operation);
+            assert_eq!(expected, actual);
         }
     }
 }
