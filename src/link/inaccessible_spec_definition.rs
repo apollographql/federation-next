@@ -394,24 +394,6 @@ fn validate_inaccessible_in_fields(
                 );
             }
         } else {
-            // When an argument is hidden (but its ancestors aren't), we
-            // check that it isn't a required argument of any implementing
-            // fields in the API schema. This is because the GraphQL spec
-            // requires that any arguments of an implementing field that
-            // aren't in its implemented field are optional.
-            //
-            // You might be thinking that a required argument in an
-            // implementing field would necessitate that the implemented
-            // field would also require that argument (and thus the check
-            // above would also always error, removing the need for this
-            // one), but the GraphQL spec does not enforce this. E.g. it's
-            // valid GraphQL for the implementing and implemented arguments
-            // to be both non-nullable, but for just the implemented
-            // argument to have a default value. Not providing a value for
-            // the argument when querying the implemented type succeeds
-            // GraphQL operation validation, but results in input coercion
-            // failure for the field at runtime.
-
             // Arguments can be "referenced" by the corresponding arguments
             // of any interfaces their parent type implements. When an
             // argument is hidden (but its ancestors aren't), we check that
@@ -446,17 +428,49 @@ fn validate_inaccessible_in_fields(
                             message: format!("Argument `{type_position}.{field_name}({arg_name}:)` is @inaccessible but implements the interface argument `{accessible_reference}` which is in the API schema."),
                         }.into());
                     }
-                }
+                } else if arg.is_required() {
+                    // When an argument is accessible and required, we check that
+                    // it isn't marked inaccessible in any interface implemented by
+                    // the argument's field. This is because the GraphQL spec
+                    // requires that any arguments of an implementing field that
+                    // aren't in its implemented field are optional.
+                    //
+                    // You might be thinking that a required argument in an
+                    // implementing field would necessitate that the implemented
+                    // field would also require that argument (and thus the check
+                    // in `validate_inaccessible_in_arguments` would also always
+                    // error, removing the need for this one), but the GraphQL spec
+                    // does not enforce this. E.g. it's valid GraphQL for the
+                    // implementing and implemented arguments to be both
+                    // non-nullable, but for just the implemented argument to have
+                    // a default value. Not providing a value for the argument when
+                    // querying the implemented type succeeds GraphQL operation
+                    // validation, but results in input coercion failure for the
+                    // field at runtime.
+                    let inaccessible_super_references =
+                        implements.iter().filter_map(|interface_name| {
+                            let super_type = schema.schema().get_interface(interface_name)?;
+                            if super_type.directives.has(inaccessible_directive) {
+                                return None;
+                            }
+                            let super_field = super_type.fields.get(field_name)?;
+                            if super_field.directives.has(inaccessible_directive) {
+                                return None;
+                            }
+                            let super_argument = super_field.argument_by_name(arg_name)?;
+                            if !super_argument.directives.has(inaccessible_directive) {
+                                return None;
+                            }
+                            Some(InterfaceFieldArgumentDefinitionPosition {
+                                type_name: super_type.name.clone(),
+                                field_name: super_field.name.clone(),
+                                argument_name: super_argument.name.clone(),
+                            })
+                        });
 
-                for (interface_name, super_field) in super_fields.iter() {
-                    let Some(super_arg) = super_field.argument_by_name(arg_name) else {
-                        continue;
-                    };
-
-                    let super_field_name = &super_field.name;
-                    if !arg_inaccessible && super_arg.directives.has(inaccessible_directive) {
+                    for accessible_reference in inaccessible_super_references {
                         errors.push(SingleFederationError::RequiredInaccessible {
-                            message: format!("Argument `{interface_name}.{super_field_name}({arg_name}:)` is @inaccessible but is implemented by the argument `{type_position}.{field_name}({arg_name}:)` which is in the API schema."),
+                            message: format!("Argument `{accessible_reference}` is @inaccessible but is implemented by the argument `{type_position}.{field_name}({arg_name}:)` which is in the API schema."),
                         }.into());
                     }
                 }
