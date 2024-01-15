@@ -96,17 +96,17 @@ where
     TTrigger: Eq + Hash,
     TEdge: Copy + PartialEq + Into<Option<EdgeIndex>>,
 {
-    fn from_paths<'paths>(
+    fn from_paths<'inputs>(
         graph: Arc<QueryGraph>,
         node: NodeIndex,
         paths: Vec<(
-            impl Iterator<Item = GraphPathItem<'paths, TTrigger, TEdge>>,
-            &'paths Arc<NormalizedSelectionSet>,
+            impl Iterator<Item = GraphPathItem<'inputs, TTrigger, TEdge>>,
+            &'inputs Arc<NormalizedSelectionSet>,
         )>,
     ) -> Result<Self, FederationError>
     where
-        TTrigger: 'paths,
-        TEdge: 'paths,
+        TTrigger: 'inputs,
+        TEdge: 'inputs,
     {
         // Map `EdgeIndex` IDs within the graph for edges going out of `node`
         // to consecutive positions/indices within `Vec`s we’re about to create.
@@ -117,25 +117,15 @@ where
             .collect();
         let edge_count = edges_positions.len();
 
+        type PathTreeChildData<'inputs, GraphPathIter> = (
+            Option<Arc<OpPathTree>>,
+            Vec<(GraphPathIter, &'inputs Arc<NormalizedSelectionSet>)>,
+        );
         // We store "null" edges at `edge_count` index
-        //
-        // `impl Trait` in `type` alias is not stable,
-        // so the alternative to a complex type annotation is no type annotation:
-        #[allow(clippy::type_complexity)]
-        let mut for_edge_position: Vec<
-            IndexMap<
-                &Arc<TTrigger>,
-                (
-                    Option<Arc<OpPathTree>>,
-                    Vec<(
-                        /* impl Iterator<Item = GraphPathItem<…>> */ _,
-                        &'paths Arc<NormalizedSelectionSet>,
-                    )>,
-                ),
-            >,
-        > = std::iter::repeat_with(IndexMap::new)
-            .take(edge_count + 1)
-            .collect();
+        let mut for_edge_position: Vec<IndexMap<&Arc<TTrigger>, PathTreeChildData<'_, _>>> =
+            std::iter::repeat_with(IndexMap::new)
+                .take(edge_count + 1)
+                .collect();
 
         let mut order = Vec::with_capacity(edge_count + 1);
         let mut total_childs = 0;
