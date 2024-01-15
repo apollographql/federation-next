@@ -313,13 +313,6 @@ impl QueryGraph {
         })
     }
 
-    pub(crate) fn edges(
-        &self,
-        node: NodeIndex,
-    ) -> petgraph::graph::Edges<'_, QueryGraphEdge, petgraph::Directed> {
-        self.graph.edges(node)
-    }
-
     pub(crate) fn schema(&self) -> Result<&ValidFederationSchema, FederationError> {
         self.schema_by_source(&self.current_source)
     }
