@@ -4,6 +4,8 @@ use crate::query_graph::graph_path::OpGraphPath;
 use crate::query_graph::graph_path::OpGraphPathTrigger;
 use crate::query_graph::QueryGraph;
 use crate::query_plan::operation::NormalizedSelectionSet;
+use indexmap::map::Entry;
+use indexmap::IndexMap;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
@@ -121,15 +123,17 @@ where
         // so the alternative to a complex type annotation is no type annotation:
         #[allow(clippy::type_complexity)]
         let mut for_edge_position: Vec<
-            Vec<(
+            IndexMap<
                 &Arc<TTrigger>,
-                Option<Arc<OpPathTree>>,
-                Vec<(
-                    /* impl Iterator<Item = GraphPathItem<…>> */ _,
-                    &'paths Arc<NormalizedSelectionSet>,
-                )>,
-            )>,
-        > = std::iter::repeat_with(Vec::new)
+                (
+                    Option<Arc<OpPathTree>>,
+                    Vec<(
+                        /* impl Iterator<Item = GraphPathItem<…>> */ _,
+                        &'paths Arc<NormalizedSelectionSet>,
+                    )>,
+                ),
+            >,
+        > = std::iter::repeat_with(IndexMap::new)
             .take(edge_count + 1)
             .collect();
 
@@ -152,11 +156,13 @@ where
                 new_node = node;
             };
             let for_position = &mut for_edge_position[position];
-            if !for_position.is_empty() {
-                if let Some((_, existing_conditions, new_paths)) = for_position
-                    .iter_mut()
-                    .find(|(existing_trigger, _, _)| *existing_trigger == trigger)
-                {
+            if for_position.is_empty() {
+                // First time we see someone from that position, record the order
+                order.push((position, generic_edge, new_node));
+            }
+            match for_position.entry(trigger) {
+                Entry::Occupied(entry) => {
+                    let (existing_conditions, new_paths) = entry.into_mut();
                     if let Some(existing) = existing_conditions {
                         if let Some(cond) = &conditions {
                             *existing = existing.merge_if_not_equal(cond)
@@ -166,22 +172,17 @@ where
                     }
                     new_paths.push((path_iter, selection))
                     // Note that as we merge, we don't create a new child
-                } else {
-                    for_position.push((trigger, conditions.cloned(), vec![(path_iter, selection)]));
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert((conditions.cloned(), vec![(path_iter, selection)]));
                     total_childs += 1;
                 }
-            } else {
-                // First time we see someone from that position, record the order
-                order.push((position, generic_edge, new_node));
-                for_edge_position[position] =
-                    vec![(trigger, conditions.cloned(), vec![(path_iter, selection)])];
-                total_childs += 1;
             }
         }
 
         let mut childs = Vec::with_capacity(total_childs);
         for (position, generic_edge, new_node) in order {
-            for (trigger, conditions, sub_path_and_selections) in
+            for (trigger, (conditions, sub_path_and_selections)) in
                 std::mem::take(&mut for_edge_position[position])
             {
                 childs.push(Arc::new(PathTreeChild {
