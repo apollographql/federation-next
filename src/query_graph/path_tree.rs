@@ -7,8 +7,6 @@ use crate::query_plan::operation::NormalizedSelectionSet;
 use indexmap::map::Entry;
 use indexmap::IndexMap;
 use petgraph::graph::{EdgeIndex, NodeIndex};
-use petgraph::visit::EdgeRef;
-use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -94,12 +92,12 @@ impl OpPathTree {
 impl<TTrigger, TEdge> PathTree<TTrigger, TEdge>
 where
     TTrigger: Eq + Hash,
-    TEdge: Copy + PartialEq + Into<Option<EdgeIndex>>,
+    TEdge: Copy + Hash + Eq + Into<Option<EdgeIndex>>,
 {
     fn from_paths<'inputs>(
         graph: Arc<QueryGraph>,
         node: NodeIndex,
-        paths: Vec<(
+        graph_paths_and_selections: Vec<(
             impl Iterator<Item = GraphPathItem<'inputs, TTrigger, TEdge>>,
             &'inputs Arc<NormalizedSelectionSet>,
         )>,
@@ -108,80 +106,71 @@ where
         TTrigger: 'inputs,
         TEdge: 'inputs,
     {
-        // Map `EdgeIndex` IDs within the graph for edges going out of `node`
-        // to consecutive positions/indices within `Vec`s we’re about to create.
-        let edges_positions: HashMap<EdgeIndex, usize> = graph
-            .edges(node)
-            .enumerate()
-            .map(|(position, edge)| (edge.id(), position))
-            .collect();
-        let edge_count = edges_positions.len();
+        type MergeBy<'inputs, TEdge, TTrigger> = (TEdge, &'inputs Arc<TTrigger>);
 
-        type PathTreeChildData<'inputs, GraphPathIter> = (
-            Option<Arc<OpPathTree>>,
-            Vec<(GraphPathIter, &'inputs Arc<NormalizedSelectionSet>)>,
-        );
-        // We store "null" edges at `edge_count` index
-        let mut for_edge_position: Vec<IndexMap<&Arc<TTrigger>, PathTreeChildData<'_, _>>> =
-            std::iter::repeat_with(IndexMap::new)
-                .take(edge_count + 1)
-                .collect();
+        /// `GraphPathIter` is a partly-consumed
+        /// `impl Iterator<Item = GraphPathItem<'_, TTrigger, TEdge>>`
+        struct Merged<'inputs, GraphPathIter> {
+            target_node: NodeIndex,
+            conditions: Option<Arc<OpPathTree>>,
+            sub_paths_and_selections: Vec<(GraphPathIter, &'inputs Arc<NormalizedSelectionSet>)>,
+        }
 
-        let mut order = Vec::with_capacity(edge_count + 1);
-        let mut total_childs = 0;
+        let mut merged = IndexMap::<MergeBy<_, _>, Merged<_>>::new();
         let mut local_selection_sets = Vec::new();
-        for (mut path_iter, selection) in paths {
-            let Some((generic_edge, trigger, conditions)) = path_iter.next() else {
+
+        for (mut graph_path_iter, selection) in graph_paths_and_selections {
+            let Some((generic_edge, trigger, conditions)) = graph_path_iter.next() else {
+                // End of an input `GraphPath`
                 local_selection_sets.push(selection.clone());
                 continue;
             };
-            let position;
-            let new_node;
-            if let Some(edge) = generic_edge.into() {
-                position = edges_positions[&edge];
-                let (_source, target) = graph.edge_endpoints(edge)?;
-                new_node = target;
-            } else {
-                position = edge_count;
-                new_node = node;
-            };
-            let for_position = &mut for_edge_position[position];
-            if for_position.is_empty() {
-                // First time we see someone from that position, record the order
-                order.push((position, generic_edge, new_node));
-            }
-            match for_position.entry(trigger) {
+            match merged.entry((generic_edge, trigger)) {
                 Entry::Occupied(entry) => {
-                    let (existing_conditions, new_paths) = entry.into_mut();
-                    *existing_conditions = merge_conditions(existing_conditions, conditions);
-                    new_paths.push((path_iter, selection))
+                    let existing = entry.into_mut();
+                    existing.conditions = merge_conditions(&existing.conditions, conditions);
+                    existing
+                        .sub_paths_and_selections
+                        .push((graph_path_iter, selection))
                     // Note that as we merge, we don't create a new child
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert((conditions.clone(), vec![(path_iter, selection)]));
-                    total_childs += 1;
+                    entry.insert(Merged {
+                        target_node: if let Some(edge) = generic_edge.into() {
+                            let (_source, target) = graph.edge_endpoints(edge)?;
+                            target
+                        } else {
+                            // For a "None" edge, stay on the same node
+                            node
+                        },
+                        conditions: conditions.clone(),
+                        sub_paths_and_selections: vec![(graph_path_iter, selection)],
+                    });
                 }
             }
         }
 
-        let mut childs = Vec::with_capacity(total_childs);
-        for (position, generic_edge, new_node) in order {
-            for (trigger, (conditions, sub_path_and_selections)) in
-                std::mem::take(&mut for_edge_position[position])
-            {
-                childs.push(Arc::new(PathTreeChild {
-                    edge: generic_edge,
-                    trigger: (*trigger).clone(),
+        let childs = merged
+            .into_iter()
+            .map(|(key, value)| {
+                let (edge, trigger) = key;
+                let Merged {
+                    target_node,
+                    conditions,
+                    sub_paths_and_selections: sub_path_and_selections,
+                } = value;
+                Ok(Arc::new(PathTreeChild {
+                    edge,
+                    trigger: trigger.clone(),
                     conditions: conditions.clone(),
                     tree: Arc::new(Self::from_paths(
                         graph.clone(),
-                        new_node,
+                        target_node,
                         sub_path_and_selections,
                     )?),
                 }))
-            }
-        }
-        assert_eq!(childs.len(), total_childs);
+            })
+            .collect::<Result<_, FederationError>>()?;
         Ok(Self {
             graph,
             node,
