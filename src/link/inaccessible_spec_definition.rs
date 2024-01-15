@@ -312,11 +312,7 @@ fn validate_inaccessible_in_arguments(
 
         // When an argument is hidden (but its parent isn't), we check that it
         // isn't a required argument.
-        if arg_inaccessible
-            && arg.is_required()
-            // TODO remove after update to apollo-compiler 1.0.0-beta.12
-            && arg.default_value.is_none()
-        {
+        if arg_inaccessible && arg.is_required() {
             let kind = match usage_position {
                 HasArgumentDefinitionsPosition::DirectiveDefinition(_) => "directive",
                 _ => "field",
@@ -900,11 +896,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                         has_inaccessible_field |= field_inaccessible;
                         has_accessible_field |= !field_inaccessible;
 
-                        if field_inaccessible
-                            && field.is_required()
-                            // TODO remove after update to apollo-compiler 1.0.0-beta.12
-                            && field.default_value.is_none()
-                        {
+                        if field_inaccessible && field.is_required() {
                             errors.push(SingleFederationError::RequiredInaccessible{
                                 message: format!("Input field `{position}` is @inaccessible but is a required input field of its type."),
                             }.into());
