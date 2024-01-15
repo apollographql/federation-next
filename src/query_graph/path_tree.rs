@@ -163,18 +163,12 @@ where
             match for_position.entry(trigger) {
                 Entry::Occupied(entry) => {
                     let (existing_conditions, new_paths) = entry.into_mut();
-                    if let Some(existing) = existing_conditions {
-                        if let Some(cond) = &conditions {
-                            *existing = existing.merge_if_not_equal(cond)
-                        }
-                    } else {
-                        *existing_conditions = conditions.cloned()
-                    }
+                    *existing_conditions = merge_conditions(existing_conditions, conditions);
                     new_paths.push((path_iter, selection))
                     // Note that as we merge, we don't create a new child
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert((conditions.cloned(), vec![(path_iter, selection)]));
+                    entry.insert((conditions.clone(), vec![(path_iter, selection)]));
                     total_childs += 1;
                 }
             }
@@ -274,12 +268,7 @@ where
                 *child = Arc::new(PathTreeChild {
                     edge: child.edge,
                     trigger: child.trigger.clone(),
-                    conditions: match (&child.conditions, &other_child.conditions) {
-                        (Some(a), Some(b)) => Some(a.merge_if_not_equal(b)),
-                        (Some(a), None) => Some(a.clone()),
-                        (None, Some(b)) => Some(b.clone()),
-                        (None, None) => None,
-                    },
+                    conditions: merge_conditions(&child.conditions, &other_child.conditions),
                     tree: child.tree.merge(&other_child.tree),
                 })
             } else {
@@ -299,5 +288,17 @@ where
                 .collect(),
             childs,
         })
+    }
+}
+
+fn merge_conditions(
+    a: &Option<Arc<OpPathTree>>,
+    b: &Option<Arc<OpPathTree>>,
+) -> Option<Arc<OpPathTree>> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.merge_if_not_equal(b)),
+        (Some(a), None) => Some(a.clone()),
+        (None, Some(b)) => Some(b.clone()),
+        (None, None) => None,
     }
 }

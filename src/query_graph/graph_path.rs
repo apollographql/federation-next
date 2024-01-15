@@ -116,7 +116,7 @@ pub(crate) struct SubgraphEnteringEdgeInfo {
 
 /// The item type for [`GraphPath::iter`]
 pub(crate) type GraphPathItem<'path, TTrigger, TEdge> =
-    (TEdge, &'path Arc<TTrigger>, Option<&'path Arc<OpPathTree>>);
+    (TEdge, &'path Arc<TTrigger>, &'path Option<Arc<OpPathTree>>);
 
 /// A `GraphPath` whose triggers are operation elements (essentially meaning that the path has been
 /// guided by a GraphQL operation).
@@ -205,7 +205,7 @@ where
             .copied()
             .zip(&self.edge_triggers)
             .zip(&self.edge_conditions)
-            .map(|((edge, trigger), condition)| (edge, trigger, condition.as_ref()))
+            .map(|((edge, trigger), condition)| (edge, trigger, condition))
     }
 }
 
