@@ -1,27 +1,9 @@
+use apollo_compiler::coord;
 use apollo_compiler::schema::ExtendedType;
-use apollo_compiler::schema::InputValueDefinition;
 use apollo_compiler::validation::Valid;
-use apollo_compiler::Node;
 use apollo_compiler::Schema;
 use apollo_federation::error::FederationError;
 use apollo_federation::Supergraph;
-
-// TODO replace by `coord!().lookup()` after apollo-compiler 1.0.0-beta.12
-fn field_argument(
-    schema: &Valid<Schema>,
-    ty: &str,
-    field: &str,
-    argument: &str,
-) -> Option<Node<InputValueDefinition>> {
-    schema
-        .type_field(ty, field)
-        .ok()?
-        .arguments
-        .iter()
-        .find(|arg| arg.name == *argument)
-        .cloned()
-        .clone()
-}
 
 const INACCESSIBLE_V02_HEADER: &str = r#"
     directive @link(url: String!, as: String, import: [link__Import], for: link__Purpose) repeatable on SCHEMA
@@ -163,14 +145,14 @@ fn removes_inaccessible_object_types() {
     assert!(!api_schema.types.contains_key("Mutation"));
     assert!(!api_schema.types.contains_key("Subscription"));
     assert!(!api_schema.types.contains_key("Object"));
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer1", "privatefield")
+    assert!(coord!(Referencer1.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer1.privatefield)
+        .lookup(&api_schema)
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer2"));
-    assert!(api_schema.type_field("Referencer3", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer3", "privatefield")
+    assert!(coord!(Referencer3.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer3.privatefield)
+        .lookup(&api_schema)
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer4"));
 
@@ -521,22 +503,26 @@ fn removes_inaccessible_input_object_types() {
 
     assert!(api_schema.types.contains_key("VisibleInputObject"));
     assert!(!api_schema.types.contains_key("InputObject"));
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer2", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer2", "privateField")
+    assert!(coord!(Referencer1.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer1.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer2.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer2.privateField)
+        .lookup(&api_schema)
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer3"));
-    assert!(api_schema.type_field("Referencer4", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer4", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer4", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer4", "privatefield")
+    assert!(coord!(Referencer4.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer4.someField(privateArg:))
+        .lookup(&api_schema)
         .is_err());
-    assert!(api_schema.type_field("Referencer5", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer5", "privateField")
+    assert!(coord!(Referencer4.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer4.privatefield)
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer5.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer5.privateField)
+        .lookup(&api_schema)
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer6"));
     let ExtendedType::InputObject(input_object) = &api_schema.types["Referencer7"] else {
@@ -545,12 +531,10 @@ fn removes_inaccessible_input_object_types() {
     assert!(input_object.fields.contains_key("someField"));
     assert!(!input_object.fields.contains_key("privatefield"));
     assert!(!api_schema.types.contains_key("Referencer8"));
-    assert!(api_schema.directive_definitions.contains_key("referencer9"));
-    assert!(api_schema.directive_definitions["referencer9"]
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
+    assert!(coord!(@referencer9).lookup(&api_schema).is_ok());
+    assert!(coord!(@referencer9(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
 }
 
 #[test]
@@ -719,34 +703,34 @@ fn removes_inaccessible_enum_types() {
 
     assert!(api_schema.types.contains_key("VisibleEnum"));
     assert!(!api_schema.types.contains_key("Enum"));
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer1", "privatefield")
+    assert!(coord!(Referencer1.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer1.privatefield)
+        .lookup(&api_schema)
         .is_err());
-    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
+    assert!(coord!(Referencer1.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
     assert!(!api_schema.types.contains_key("Referencer2"));
-    assert!(api_schema.type_field("Referencer3", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer3", "privatefield")
+    assert!(coord!(Referencer3.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer3.privatefield)
+        .lookup(&api_schema)
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer4"));
-    assert!(api_schema.type_field("Referencer5", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer5", "someField")
-        .unwrap()
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
-    assert!(api_schema.type_field("Referencer6", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer6", "privateField")
+    assert!(coord!(Referencer5.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer5.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer6.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer6.privateField)
+        .lookup(&api_schema)
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer7"));
-    assert!(api_schema.type_field("Referencer8", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer8", "someField", "privateArg").is_none());
-    assert!(api_schema
-        .type_field("Referencer9", "privateField")
+    assert!(coord!(Referencer8.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer8.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer9.privateField)
+        .lookup(&api_schema)
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer10"));
     let ExtendedType::InputObject(input_object) = &api_schema.types["Referencer11"] else {
@@ -758,11 +742,9 @@ fn removes_inaccessible_enum_types() {
     assert!(api_schema
         .directive_definitions
         .contains_key("referencer13"));
-    assert!(api_schema.directive_definitions["referencer13"]
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
+    assert!(coord!(@referencer13(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
 }
 
 #[test]
@@ -924,46 +906,46 @@ fn removes_inaccessible_scalar_types() {
     )
     .expect("should succeed");
 
-    assert!(api_schema.types.contains_key("VisibleScalar"));
-    assert!(!api_schema.types.contains_key("Scalar"));
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer1", "privatefield")
+    assert!(coord!(VisibleScalar).lookup(&api_schema).is_ok());
+    assert!(coord!(Scalar).lookup(&api_schema).is_err());
+    assert!(coord!(Referencer1.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer1.privatefield)
+        .lookup(&api_schema)
         .is_err());
-    assert!(!api_schema.types.contains_key("Referencer2"));
-    assert!(api_schema.type_field("Referencer3", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer3", "privatefield")
+    assert!(coord!(Referencer2).lookup(&api_schema).is_err());
+    assert!(coord!(Referencer3.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer3.privatefield)
+        .lookup(&api_schema)
         .is_err());
-    assert!(!api_schema.types.contains_key("Referencer4"));
-    assert!(api_schema.type_field("Referencer5", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer5", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer6", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer6", "privateField")
+    assert!(coord!(Referencer4).lookup(&api_schema).is_err());
+    assert!(coord!(Referencer5.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer5.someField(privateArg:))
+        .lookup(&api_schema)
         .is_err());
-    assert!(!api_schema.types.contains_key("Referencer7"));
-    assert!(api_schema.type_field("Referencer8", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer8", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer9", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer9", "privateField")
+    assert!(coord!(Referencer6.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer6.privateField)
+        .lookup(&api_schema)
         .is_err());
-    assert!(!api_schema.types.contains_key("Referencer10"));
-    let ExtendedType::InputObject(input_object) = &api_schema.types["Referencer11"] else {
-        panic!("expected input object");
-    };
-    assert!(input_object.fields.contains_key("someField"));
-    assert!(!input_object.fields.contains_key("privatefield"));
-    assert!(!api_schema.types.contains_key("Referencer12"));
-    assert!(api_schema
-        .directive_definitions
-        .contains_key("referencer13"));
-    assert!(api_schema.directive_definitions["referencer13"]
-        .arguments
-        .iter()
-        .find(|argument| argument.name == "privateArg")
-        .is_none());
+    assert!(coord!(Referencer7).lookup(&api_schema).is_err());
+    assert!(coord!(Referencer8.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer8.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer9.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer9.privateField)
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer10).lookup(&api_schema).is_err());
+    assert!(coord!(Referencer11).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer11.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer11.privatefield)
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer12).lookup(&api_schema).is_err());
+    assert!(coord!(@referencer13).lookup(&api_schema).is_ok());
+    assert!(coord!(@referencer13(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
 }
 
 #[test]
@@ -1088,24 +1070,24 @@ fn removes_inaccessible_object_fields() {
     )
     .expect("should succeed");
 
-    assert!(api_schema.type_field("Query", "someField").is_ok());
-    assert!(api_schema.type_field("Query", "privateField").is_err());
-    assert!(api_schema.type_field("Mutation", "someField").is_ok());
-    assert!(api_schema.type_field("Mutation", "privateField").is_err());
-    assert!(api_schema.type_field("Subscription", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Subscription", "privateField")
+    assert!(coord!(Query.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Query.privateField).lookup(&api_schema).is_err());
+    assert!(coord!(Mutation.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Mutation.privateField).lookup(&api_schema).is_err());
+    assert!(coord!(Subscription.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Subscription.privateField)
+        .lookup(&api_schema)
         .is_err());
     let ExtendedType::Object(object_type) = &api_schema.types["Object"] else {
         panic!("should be object");
     };
     assert!(object_type.implements_interfaces.contains("Referencer1"));
     assert!(!object_type.implements_interfaces.contains("Referencer2"));
-    assert!(api_schema.type_field("Object", "someField").is_ok());
-    assert!(api_schema.type_field("Object", "privateField").is_err());
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer1", "privatefield")
+    assert!(coord!(Object.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Object.privateField).lookup(&api_schema).is_err());
+    assert!(coord!(Referencer1.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer1.privatefield)
+        .lookup(&api_schema)
         .is_err());
     assert!(api_schema.types.get("Referencer2").is_none());
     assert!(api_schema.types.get("Referencer3").is_none());
@@ -1191,11 +1173,11 @@ fn removes_inaccessible_interface_fields() {
     };
     assert!(interface_type.implements_interfaces.contains("Referencer1"));
     assert!(!interface_type.implements_interfaces.contains("Referencer2"));
-    assert!(api_schema.type_field("Interface", "someField").is_ok());
-    assert!(api_schema.type_field("Interface", "privateField").is_err());
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer1", "privatefield")
+    assert!(coord!(Interface.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Interface.privateField).lookup(&api_schema).is_err());
+    assert!(coord!(Referencer1.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer1.privatefield)
+        .lookup(&api_schema)
         .is_err());
     assert!(api_schema.types.get("Referencer2").is_none());
     assert!(api_schema.types.get("Referencer3").is_none());
@@ -1301,27 +1283,41 @@ fn removes_inaccessible_object_field_arguments() {
     )
     .expect("should succeed");
 
-    assert!(api_schema.type_field("Query", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Query", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Mutation", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Mutation", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Subscription", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Subscription", "someField", "privateArg").is_none());
+    assert!(coord!(Query.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Query.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Mutation.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Mutation.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Subscription.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Subscription.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
     let ExtendedType::Object(object_type) = &api_schema.types["Object"] else {
         panic!("expected object");
     };
     assert!(object_type.implements_interfaces.contains("Referencer1"));
     assert!(object_type.implements_interfaces.contains("Referencer2"));
     assert!(!object_type.implements_interfaces.contains("Referencer3"));
-    assert!(field_argument(&api_schema, "Object", "someField", "someArg").is_some());
-    assert!(field_argument(&api_schema, "Object", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
-    assert!(api_schema.types.contains_key("Referencer2"));
-    assert!(api_schema.type_field("Referencer2", "someField").is_err());
+    assert!(coord!(Object.someField(someArg:))
+        .lookup(&api_schema)
+        .is_ok());
+    assert!(coord!(Object.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer1.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer1.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer2).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer2.someField).lookup(&api_schema).is_err());
     assert!(!api_schema.types.contains_key("Referencer3"));
-    assert!(api_schema.type_field("ObjectDefault", "someField").is_ok());
-    assert!(field_argument(&api_schema, "ObjectDefault", "someField", "privateArg").is_none());
+    assert!(coord!(ObjectDefault.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(ObjectDefault.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
 }
 
 #[test]
@@ -1459,20 +1455,30 @@ fn removes_inaccessible_interface_field_arguments() {
     assert!(interface_type.implements_interfaces.contains("Referencer1"));
     assert!(interface_type.implements_interfaces.contains("Referencer2"));
     assert!(!interface_type.implements_interfaces.contains("Referencer3"));
-    assert!(field_argument(&api_schema, "Interface", "someField", "someArg").is_some());
-    assert!(field_argument(&api_schema, "Interface", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
+    assert!(coord!(Interface.someField(someArg:))
+        .lookup(&api_schema)
+        .is_ok());
+    assert!(coord!(Interface.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer1.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer1.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
     assert!(api_schema.types.contains_key("Referencer2"));
-    assert!(api_schema.type_field("Referencer2", "someField").is_err());
+    assert!(coord!(Referencer2.someField).lookup(&api_schema).is_err());
     assert!(!api_schema.types.contains_key("Referencer3"));
-    assert!(field_argument(&api_schema, "Interface", "someField", "privateArg").is_none());
-    let object_argument =
-        field_argument(&api_schema, "Referencer4", "someField", "privateArg").unwrap();
+    assert!(coord!(Interface.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    let object_argument = coord!(Referencer4.someField(privateArg:))
+        .lookup(&api_schema)
+        .unwrap();
     assert!(!object_argument.is_required());
     assert!(!api_schema.types.contains_key("Referencer5"));
-    let interface_argument =
-        field_argument(&api_schema, "Referencer4", "someField", "privateArg").unwrap();
+    let interface_argument = coord!(Referencer4.someField(privateArg:))
+        .lookup(&api_schema)
+        .unwrap();
     assert!(!interface_argument.is_required());
     assert!(!api_schema.types.contains_key("Referencer7"));
 }
@@ -1550,7 +1556,7 @@ fn inaccessible_input_object_fields_with_accessible_references() {
 
 #[test]
 fn removes_inaccessible_input_object_fields() {
-    let api_schema = inaccessible_to_api_schema(
+    let schema = inaccessible_to_api_schema(
         r#"
       type Query {
         someField: String
@@ -1649,58 +1655,49 @@ fn removes_inaccessible_input_object_fields() {
     )
     .expect("should succeed");
 
-    assert!(api_schema
-        .get_input_object("InputObject")
-        .unwrap()
-        .fields
-        .contains_key("someField"));
-    assert!(!api_schema
-        .get_input_object("InputObject")
-        .unwrap()
-        .fields
-        .contains_key("privateField"));
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer2", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer2", "privateField")
+    assert!(coord!(InputObject.someField)
+        .lookup_input_field(&schema)
+        .is_ok());
+    assert!(coord!(InputObject.privateField)
+        .lookup_input_field(&schema)
         .is_err());
-    assert!(!api_schema.types.contains_key("Referencer3"));
-    assert!(api_schema.type_field("Referencer4", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer4", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer5", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer5", "privateField")
+    assert!(coord!(Referencer1.someField).lookup(&schema).is_ok());
+    assert!(coord!(Referencer1.someField(privateArg:))
+        .lookup(&schema)
         .is_err());
-    assert!(!api_schema.types.contains_key("Referencer6"));
-    assert!(api_schema
+    assert!(coord!(Referencer2.someField).lookup(&schema).is_ok());
+    assert!(coord!(Referencer2.privateField).lookup(&schema).is_err());
+    assert!(!schema.types.contains_key("Referencer3"));
+    assert!(coord!(Referencer4.someField).lookup(&schema).is_ok());
+    assert!(coord!(Referencer4.someField(privateArg:))
+        .lookup(&schema)
+        .is_err());
+    assert!(coord!(Referencer5.someField).lookup(&schema).is_ok());
+    assert!(coord!(Referencer5.privateField).lookup(&schema).is_err());
+    assert!(!schema.types.contains_key("Referencer6"));
+    assert!(schema
         .get_input_object("Referencer7")
         .unwrap()
         .fields
         .contains_key("someField"));
-    assert!(!api_schema
+    assert!(!schema
         .get_input_object("Referencer7")
         .unwrap()
         .fields
         .contains_key("privatefield"));
-    assert!(!api_schema.types.contains_key("Referencer8"));
-    assert!(api_schema.directive_definitions.contains_key("referencer9"));
-    assert!(api_schema.directive_definitions["referencer9"]
-        .arguments
-        .iter()
-        .all(|arg| arg.name != "privateArg"));
-    assert!(field_argument(&api_schema, "Referencer10", "someField", "privateArg").is_some());
-    assert!(!api_schema.types.contains_key("Referencer11"));
-    assert!(api_schema
-        .get_input_object("InputObjectDefault")
-        .unwrap()
-        .fields
-        .contains_key("someField"));
-    assert!(!api_schema
-        .get_input_object("InputObjectDefault")
-        .unwrap()
-        .fields
-        .contains_key("privatefield"));
+    assert!(!schema.types.contains_key("Referencer8"));
+    assert!(schema.directive_definitions.contains_key("referencer9"));
+    assert!(coord!(@referencer9(privateArg:)).lookup(&schema).is_err());
+    assert!(coord!(Referencer10.someField(privateArg:))
+        .lookup(&schema)
+        .is_ok());
+    assert!(!schema.types.contains_key("Referencer11"));
+    assert!(coord!(InputObjectDefault.someField)
+        .lookup_input_field(&schema)
+        .is_ok());
+    assert!(coord!(InputObjectDefault.privatefield)
+        .lookup_input_field(&schema)
+        .is_err());
 }
 
 #[test]
@@ -1859,47 +1856,44 @@ fn removes_inaccessible_enum_values() {
     )
     .expect("should succeed");
 
-    assert!(api_schema
-        .get_enum("Enum")
-        .unwrap()
-        .values
-        .contains_key("SOME_VALUE"));
-    assert!(!api_schema
-        .get_enum("Enum")
-        .unwrap()
-        .values
-        .contains_key("PRIVATE_VALUE"));
-    assert!(api_schema.type_field("Referencer1", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer1", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer2", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer2", "privateField")
+    assert!(coord!(Enum.SOME_VALUE)
+        .lookup_enum_value(&api_schema)
+        .is_ok());
+    assert!(coord!(Enum.PRIVATE_VALUE)
+        .lookup_enum_value(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer1.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer1.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer2.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer2.privateField)
+        .lookup(&api_schema)
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer3"));
-    assert!(api_schema.type_field("Referencer4", "someField").is_ok());
-    assert!(field_argument(&api_schema, "Referencer4", "someField", "privateArg").is_none());
-    assert!(api_schema.type_field("Referencer5", "someField").is_ok());
-    assert!(api_schema
-        .type_field("Referencer5", "privateField")
+    assert!(coord!(Referencer4.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer4.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer5.someField).lookup(&api_schema).is_ok());
+    assert!(coord!(Referencer5.privateField)
+        .lookup(&api_schema)
         .is_err());
     assert!(!api_schema.types.contains_key("Referencer6"));
-    assert!(api_schema
-        .get_input_object("Referencer7")
-        .unwrap()
-        .fields
-        .contains_key("someField"));
-    assert!(!api_schema
-        .get_input_object("Referencer7")
-        .unwrap()
-        .fields
-        .contains_key("privatefield"));
+    assert!(coord!(Referencer7.someField)
+        .lookup_input_field(&api_schema)
+        .is_ok());
+    assert!(coord!(Referencer7.privatefield)
+        .lookup_input_field(&api_schema)
+        .is_err());
     assert!(!api_schema.types.contains_key("Referencer8"));
-    assert!(api_schema.directive_definitions.contains_key("referencer9"));
-    assert!(api_schema.directive_definitions["referencer9"]
-        .arguments
-        .iter()
-        .all(|arg| arg.name != "privateArg"));
-    assert!(field_argument(&api_schema, "Referencer10", "someField", "privateArg").is_some());
+    assert!(coord!(@referencer9).lookup(&api_schema).is_ok());
+    assert!(coord!(@referencer9(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
+    assert!(coord!(Referencer10.someField(privateArg:))
+        .lookup(&api_schema)
+        .is_ok());
     assert!(!api_schema.types.contains_key("Referencer11"));
 }
 
@@ -2036,26 +2030,14 @@ fn removes_inaccessible_directive_arguments() {
     )
     .expect("should succeed");
 
-    let directive = &api_schema.directive_definitions["directive"];
-
-    assert!(directive
-        .arguments
-        .iter()
-        .any(|argument| argument.name == "someArg"));
-    assert!(directive
-        .arguments
-        .iter()
-        .all(|argument| argument.name != "privateArg"));
-
-    let directive_default = &api_schema.directive_definitions["directiveDefault"];
-    assert!(directive_default
-        .arguments
-        .iter()
-        .any(|argument| argument.name == "someArg"));
-    assert!(directive_default
-        .arguments
-        .iter()
-        .all(|argument| argument.name != "privateArg"));
+    assert!(coord!(@directive(someArg:)).lookup(&api_schema).is_ok());
+    assert!(coord!(@directive(privateArg:)).lookup(&api_schema).is_err());
+    assert!(coord!(@directiveDefault(someArg:))
+        .lookup(&api_schema)
+        .is_ok());
+    assert!(coord!(@directiveDefault(privateArg:))
+        .lookup(&api_schema)
+        .is_err());
 }
 
 #[test]
