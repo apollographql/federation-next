@@ -55,7 +55,9 @@ impl From<Valid<Schema>> for Supergraph {
 }
 
 fn remove_core_feature_elements(schema: &mut FederationSchema) -> Result<(), FederationError> {
-    let metadata = schema.metadata().unwrap();
+    let Some(metadata) = schema.metadata() else {
+        return Ok(());
+    };
 
     // Remove federation types and directives
     let types_for_removal = schema
