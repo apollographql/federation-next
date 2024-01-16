@@ -122,6 +122,18 @@ impl FederationSchema {
             },
         ))))
     }
+
+    pub(crate) fn get_directive_definition(
+        &self,
+        name: &Name,
+    ) -> Option<DirectiveDefinitionPosition> {
+        self.schema
+            .directive_definitions
+            .get(name)
+            .map(|directive| DirectiveDefinitionPosition {
+                directive_name: name.clone(),
+            })
+    }
 }
 
 #[derive(Debug, Clone)]

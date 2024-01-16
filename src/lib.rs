@@ -7,6 +7,7 @@ use crate::merge::MergeFailure;
 use crate::schema::position;
 use crate::schema::FederationSchema;
 use crate::subgraph::ValidSubgraph;
+use apollo_compiler::name;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Schema;
 
@@ -38,6 +39,16 @@ impl Supergraph {
     /// Generates API schema from the supergraph schema.
     pub fn to_api_schema(&self) -> Result<Valid<Schema>, FederationError> {
         let mut api_schema = FederationSchema::new(self.schema.clone().into_inner())?;
+
+        // As we compute the API schema of a supergraph, we want to ignore explicit definitions of `@defer` and `@stream` because
+        // those correspond to the merging of potential definitions from the subgraphs, but whether the supergraph API schema
+        // supports defer or not is unrelated to whether subgraphs support it.
+        if let Some(defer) = api_schema.get_directive_definition(&name!("defer")) {
+            defer.remove(&mut api_schema)?;
+        }
+        if let Some(stream) = api_schema.get_directive_definition(&name!("stream")) {
+            stream.remove(&mut api_schema)?;
+        }
 
         validate_inaccessible(&api_schema)?;
         remove_inaccessible_elements(&mut api_schema)?;
