@@ -2,9 +2,9 @@ use crate::error::FederationError;
 use crate::link::graphql_definition::{DeferDirectiveArguments, OperationConditional};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
-use crate::query_plan::operation::{
-    NormalizedField, NormalizedInlineFragment, NormalizedSelectionSet,
-};
+use crate::query_plan::operation::normalized_field_selection::NormalizedField;
+use crate::query_plan::operation::normalized_inline_fragment_selection::NormalizedInlineFragment;
+use crate::query_plan::operation::NormalizedSelectionSet;
 use crate::query_plan::QueryPlanCost;
 use crate::schema::position::ObjectTypeDefinitionPosition;
 use indexmap::IndexSet;
