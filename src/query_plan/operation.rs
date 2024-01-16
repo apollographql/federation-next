@@ -5,7 +5,7 @@ use crate::schema::position::{
     SchemaRootDefinitionKind,
 };
 use crate::schema::ValidFederationSchema;
-use apollo_compiler::ast::{Argument, DirectiveList, Name};
+use apollo_compiler::ast::{Argument, DirectiveList, Name, OperationType};
 use apollo_compiler::executable::{
     Field, Fragment, FragmentSpread, InlineFragment, Operation, Selection, SelectionSet,
     VariableDefinition,
@@ -46,7 +46,7 @@ pub struct NormalizedOperation {
     pub(crate) variables: Arc<Vec<Node<VariableDefinition>>>,
     pub(crate) directives: Arc<DirectiveList>,
     pub(crate) selection_set: NormalizedSelectionSet,
-    pub(crate) fragments: Arc<IndexMap<Name, Node<Fragment>>>,
+    pub(crate) fragments: Arc<IndexMap<Name, Node<NormalizedFragment>>>,
 }
 
 /// An analogue of the apollo-compiler type `SelectionSet` with these changes:
@@ -232,6 +232,7 @@ impl NormalizedSelectionSet {
         selection_set: &SelectionSet,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
+        inline_fragment_spreads: bool,
     ) -> Result<NormalizedSelectionSet, FederationError> {
         let type_position: CompositeTypeDefinitionPosition =
             schema.get_type(selection_set.ty.clone())?.try_into()?;
@@ -242,6 +243,7 @@ impl NormalizedSelectionSet {
             &mut normalized_selections,
             fragments,
             schema,
+            inline_fragment_spreads,
         )?;
         let mut merged = NormalizedSelectionSet {
             schema: schema.clone(),
@@ -259,6 +261,7 @@ impl NormalizedSelectionSet {
         destination: &mut Vec<(NormalizedSelectionKey, NormalizedSelection)>,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
+        inline_fragment_spreads: bool,
     ) -> Result<(), FederationError> {
         for selection in selections {
             match selection {
@@ -269,6 +272,7 @@ impl NormalizedSelectionSet {
                             parent_type_position,
                             fragments,
                             schema,
+                            inline_fragment_spreads,
                         )?
                     else {
                         continue;
@@ -290,32 +294,50 @@ impl NormalizedSelectionSet {
                         }
                         .into());
                     };
-                    // We can hoist/collapse named fragments if their type condition is on the
-                    // parent type and they don't have any directives.
-                    if fragment.type_condition() == parent_type_position.type_name()
-                        && fragment_spread_selection.directives.is_empty()
-                    {
-                        NormalizedSelectionSet::normalize_selections(
-                            &fragment.selection_set.selections,
-                            parent_type_position,
-                            destination,
-                            fragments,
-                            schema,
-                        )?;
-                    } else {
-                        let normalized_inline_fragment_selection =
-                            NormalizedFragmentSpreadSelection::normalize_and_expand_fragments(
-                                fragment_spread_selection,
+
+                    if inline_fragment_spreads {
+                        // We can hoist/collapse named fragments if their type condition is on the
+                        // parent type and they don't have any directives.
+                        if fragment.type_condition() == parent_type_position.type_name()
+                            && fragment_spread_selection.directives.is_empty()
+                        {
+                            NormalizedSelectionSet::normalize_selections(
+                                &fragment.selection_set.selections,
                                 parent_type_position,
+                                destination,
                                 fragments,
                                 schema,
+                                inline_fragment_spreads,
                             )?;
-                        let key: NormalizedSelectionKey =
-                            (&normalized_inline_fragment_selection).into();
+                        } else {
+                            let normalized_inline_fragment_selection =
+                                NormalizedFragmentSpreadSelection::normalize_and_expand_fragments(
+                                    fragment_spread_selection,
+                                    parent_type_position,
+                                    fragments,
+                                    schema,
+                                )?;
+                            let key: NormalizedSelectionKey =
+                                (&normalized_inline_fragment_selection).into();
+                            destination.push((
+                                key,
+                                NormalizedSelection::InlineFragment(Arc::new(
+                                    normalized_inline_fragment_selection,
+                                )),
+                            ));
+                        }
+                    } else {
+                        // if we don't expand fragments, we just convert FragmentSpread to NormalizedFragmentSpreadSelection
+                        let normalized_fragment_spread =
+                            NormalizedFragmentSpreadSelection::normalize(
+                                fragment_spread_selection,
+                                schema,
+                            );
+                        let key: NormalizedSelectionKey = (&normalized_fragment_spread).into();
                         destination.push((
                             key,
-                            NormalizedSelection::InlineFragment(Arc::new(
-                                normalized_inline_fragment_selection,
+                            NormalizedSelection::FragmentSpread(Arc::new(
+                                normalized_fragment_spread,
                             )),
                         ));
                     }
@@ -343,6 +365,7 @@ impl NormalizedSelectionSet {
                             destination,
                             fragments,
                             schema,
+                            inline_fragment_spreads,
                         )?;
                     } else {
                         let normalized_inline_fragment_selection =
@@ -351,6 +374,7 @@ impl NormalizedSelectionSet {
                                 parent_type_position,
                                 fragments,
                                 schema,
+                                inline_fragment_spreads,
                             )?;
                         let key: NormalizedSelectionKey =
                             (&normalized_inline_fragment_selection).into();
@@ -631,6 +655,7 @@ impl NormalizedFieldSelection {
         parent_type_position: &CompositeTypeDefinitionPosition,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
+        inline_fragment_spreads: bool,
     ) -> Result<Option<NormalizedFieldSelection>, FederationError> {
         // Skip __schema/__type introspection fields as router takes care of those, and they do not
         // need to be query planned.
@@ -660,6 +685,7 @@ impl NormalizedFieldSelection {
                     &field.selection_set,
                     fragments,
                     schema,
+                    inline_fragment_spreads,
                 )?)
             } else {
                 None
@@ -731,6 +757,23 @@ impl NormalizedFragmentSpreadSelection {
         copy
     }
 
+    /// Normalize this fragment spread into a "normalized" spread representation with following
+    /// modifications
+    /// - Stores the schema (may be useful for directives).
+    /// - Encloses list of directives in `Arc`s to facilitate cheaper cloning.
+    /// - Stores unique selection ID (used for deferred fragments)
+    pub(crate) fn normalize(
+        fragment_spread: &FragmentSpread,
+        schema: &ValidFederationSchema,
+    ) -> NormalizedFragmentSpreadSelection {
+        NormalizedFragmentSpreadSelection {
+            schema: schema.clone(),
+            fragment_name: fragment_spread.fragment_name.clone(),
+            directives: Arc::new(fragment_spread.directives.clone()),
+            selection_id: SelectionId::new(),
+        }
+    }
+
     /// Normalize this fragment spread (merging selections with the same keys), with the following
     /// additional transformations:
     /// - Expand fragment spreads into inline fragments.
@@ -773,6 +816,7 @@ impl NormalizedFragmentSpreadSelection {
                 &fragment.selection_set,
                 fragments,
                 schema,
+                true,
             )?,
         })
     }
@@ -822,6 +866,7 @@ impl NormalizedInlineFragmentSelection {
         parent_type_position: &CompositeTypeDefinitionPosition,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
+        inline_fragment_spreads: bool,
     ) -> Result<NormalizedInlineFragmentSelection, FederationError> {
         let type_condition_position: Option<CompositeTypeDefinitionPosition> =
             if let Some(type_condition) = &inline_fragment.type_condition {
@@ -841,6 +886,7 @@ impl NormalizedInlineFragmentSelection {
                 &inline_fragment.selection_set,
                 fragments,
                 schema,
+                inline_fragment_spreads,
             )?,
         })
     }
@@ -878,6 +924,28 @@ impl NormalizedInlineFragmentSelection {
             self.selection_set.merge_into(selection_sets)?;
         }
         Ok(())
+    }
+}
+
+impl NormalizedFragment {
+    fn normalize(
+        fragment: &Fragment,
+        schema: &ValidFederationSchema,
+    ) -> Result<Self, FederationError> {
+        Ok(Self {
+            schema: schema.clone(),
+            name: fragment.name.clone(),
+            type_condition_position: schema
+                .get_type(fragment.type_condition().clone())?
+                .try_into()?,
+            directives: Arc::new(fragment.directives.clone()),
+            selection_set: NormalizedSelectionSet::normalize_and_expand_fragments(
+                &fragment.selection_set,
+                &IndexMap::new(),
+                schema,
+                false,
+            )?,
+        })
     }
 }
 
@@ -1040,6 +1108,25 @@ impl From<&NormalizedInlineFragmentSelection> for NormalizedSelectionKey {
     }
 }
 
+impl TryFrom<&NormalizedOperation> for Operation {
+    type Error = FederationError;
+
+    fn try_from(normalized_operation: &NormalizedOperation) -> Result<Self, Self::Error> {
+        let operation_type = match normalized_operation.root_kind {
+            SchemaRootDefinitionKind::Query => OperationType::Query,
+            SchemaRootDefinitionKind::Mutation => OperationType::Mutation,
+            SchemaRootDefinitionKind::Subscription => OperationType::Subscription,
+        };
+        Ok(Self {
+            operation_type,
+            name: normalized_operation.name.clone(),
+            variables: normalized_operation.variables.deref().clone(),
+            directives: normalized_operation.directives.deref().clone(),
+            selection_set: (&normalized_operation.selection_set).try_into()?,
+        })
+    }
+}
+
 fn directives_with_sorted_arguments(directives: &DirectiveList) -> DirectiveList {
     let mut directives = directives.clone();
     for directive in &mut directives {
@@ -1065,21 +1152,44 @@ fn is_deferred_selection(directives: &DirectiveList) -> bool {
 /// - Hoist fragment spreads/inline fragments into their parents if they have no directives and
 ///   their parent type matches.
 pub(crate) fn normalize_operation(
-    operation: &mut Operation,
+    operation: &Operation,
     fragments: &IndexMap<Name, Node<Fragment>>,
     schema: &ValidFederationSchema,
     interface_types_with_interface_objects: &IndexSet<InterfaceTypeDefinitionPosition>,
-) -> Result<(), FederationError> {
+) -> Result<NormalizedOperation, FederationError> {
     let mut normalized_selection_set = NormalizedSelectionSet::normalize_and_expand_fragments(
         &operation.selection_set,
         fragments,
         schema,
+        true,
     )?;
     normalized_selection_set.optimize_sibling_typenames(interface_types_with_interface_objects)?;
 
-    // Flatten it back into a `SelectionSet`.
-    operation.selection_set = (&normalized_selection_set).try_into()?;
-    Ok(())
+    let normalized_fragments: IndexMap<Name, Node<NormalizedFragment>> = fragments
+        .iter()
+        .map(|(name, fragment)| {
+            (
+                name.clone(),
+                Node::new(NormalizedFragment::normalize(fragment, schema).unwrap()),
+            )
+        })
+        .collect();
+
+    let schema_definition_root_kind = match operation.operation_type {
+        OperationType::Query => SchemaRootDefinitionKind::Query,
+        OperationType::Mutation => SchemaRootDefinitionKind::Mutation,
+        OperationType::Subscription => SchemaRootDefinitionKind::Subscription,
+    };
+    let normalized_operation = NormalizedOperation {
+        schema: schema.clone(),
+        root_kind: schema_definition_root_kind,
+        name: operation.name.clone(),
+        variables: Arc::new(operation.variables.clone()),
+        directives: Arc::new(operation.directives.clone()),
+        selection_set: normalized_selection_set,
+        fragments: Arc::new(normalized_fragments),
+    };
+    Ok(normalized_operation)
 }
 
 #[cfg(test)]
@@ -1087,8 +1197,9 @@ mod tests {
     use crate::query_plan::operation::normalize_operation;
     use crate::schema::position::InterfaceTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
-    use apollo_compiler::{name, ExecutableDocument};
-    use indexmap::IndexSet;
+    use apollo_compiler::executable::{Fragment, Name, Operation};
+    use apollo_compiler::{name, ExecutableDocument, Node};
+    use indexmap::{IndexMap, IndexSet};
 
     fn parse_schema_and_operation(
         schema_and_operation: &str,
@@ -1099,6 +1210,24 @@ mod tests {
         let executable_document = executable_document.into_inner();
         let schema = ValidFederationSchema::new(schema).unwrap();
         (schema, executable_document)
+    }
+
+    fn normalize_and_update_operation(
+        operation: &mut Operation,
+        fragments: &IndexMap<Name, Node<Fragment>>,
+        schema: &ValidFederationSchema,
+        interface_types_with_interface_objects: &IndexSet<InterfaceTypeDefinitionPosition>,
+    ) {
+        let normalized_operation = normalize_operation(
+            operation,
+            fragments,
+            schema,
+            interface_types_with_interface_objects,
+        )
+        .unwrap();
+
+        // flatten normalized selection set back into a `SelectionSet`.
+        operation.selection_set = (&normalized_operation.selection_set).try_into().unwrap();
     }
 
     #[test]
@@ -1133,13 +1262,12 @@ type Foo {
             .get_mut("NamedFragmentQuery")
         {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
 
             let expected = r#"query NamedFragmentQuery {
   foo {
@@ -1188,13 +1316,12 @@ type Foo {
             parse_schema_and_operation(operation_with_named_fragment);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
 
             let expected = r#"query NestedFragmentQuery {
   foo {
@@ -1229,8 +1356,7 @@ type Query {
             .named_operations
             .get_mut("TestIntrospectionQuery")
         {
-            let operation = operation.make_mut();
-            normalize_operation(
+            let normalized_operation = normalize_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
@@ -1238,7 +1364,7 @@ type Query {
             )
             .unwrap();
 
-            assert!(operation.selection_set.selections.is_empty());
+            assert!(normalized_operation.selection_set.selections.is_empty());
         }
     }
 
@@ -1266,13 +1392,12 @@ type T {
         let (schema, mut executable_document) = parse_schema_and_operation(operation_string);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test {
   t {
     v1
@@ -1311,13 +1436,12 @@ type T {
             parse_schema_and_operation(operation_with_directives);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test($skipIf: Boolean!) {
   t @skip(if: $skipIf) {
     v1
@@ -1358,13 +1482,12 @@ type T {
             parse_schema_and_operation(operation_with_directives_different_arg_order);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test($skipIf: Boolean!) {
   t @customSkip(if: $skipIf, label: "foo") {
     v1
@@ -1403,13 +1526,12 @@ type T {
             parse_schema_and_operation(operation_one_field_with_directives);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test($skipIf: Boolean!) {
   t {
     v1
@@ -1450,13 +1572,12 @@ type T {
             parse_schema_and_operation(operation_different_directives);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test($skip1: Boolean!, $skip2: Boolean!) {
   t @skip(if: $skip1) {
     v1
@@ -1498,13 +1619,12 @@ type T {
         let (schema, mut executable_document) = parse_schema_and_operation(operation_defer_fields);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test {
   t @defer {
     v1
@@ -1559,13 +1679,12 @@ type V {
         let (schema, mut executable_document) = parse_schema_and_operation(nested_operation);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test {
   t {
     t1
@@ -1616,13 +1735,12 @@ type T {
             parse_schema_and_operation(operation_with_fragments);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test {
   t {
     v1
@@ -1663,13 +1781,12 @@ type T {
             parse_schema_and_operation(operation_fragments_with_directives);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test($skipIf: Boolean!) {
   t {
     ... on T @skip(if: $skipIf) {
@@ -1714,13 +1831,12 @@ type T {
             parse_schema_and_operation(operation_fragments_with_directives_args_order);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test($skipIf: Boolean!) {
   t {
     ... on T @customSkip(if: $skipIf, label: "foo") {
@@ -1763,13 +1879,12 @@ type T {
             parse_schema_and_operation(operation_one_fragment_with_directive);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test($skipIf: Boolean!) {
   t {
     v1
@@ -1812,13 +1927,12 @@ type T {
             parse_schema_and_operation(operation_fragments_with_different_directive);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test($skip1: Boolean!, $skip2: Boolean!) {
   t {
     ... on T @skip(if: $skip1) {
@@ -1865,13 +1979,12 @@ type T {
             parse_schema_and_operation(operation_fragments_with_defer);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test {
   t {
     ... on T @defer {
@@ -1937,13 +2050,12 @@ type V {
             parse_schema_and_operation(operation_nested_fragments);
         if let Some((_, operation)) = executable_document.named_operations.first_mut() {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query Test {
   t {
     t1
@@ -1986,13 +2098,12 @@ type Foo {
         let (schema, mut executable_document) = parse_schema_and_operation(operation_with_typename);
         if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query TestQuery {
   foo {
     v1
@@ -2026,13 +2137,12 @@ type Foo {
             parse_schema_and_operation(operation_with_single_typename);
         if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &IndexSet::new(),
-            )
-            .unwrap();
+            );
             let expected = r#"query TestQuery {
   foo {
     __typename
@@ -2077,13 +2187,12 @@ scalar FieldSet
             });
 
             let operation = operation.make_mut();
-            normalize_operation(
+            normalize_and_update_operation(
                 operation,
                 &executable_document.fragments,
                 &schema,
                 &interface_objects,
-            )
-            .unwrap();
+            );
             let expected = r#"query TestQuery {
   foo {
     __typename
