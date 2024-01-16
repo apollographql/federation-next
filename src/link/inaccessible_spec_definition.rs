@@ -351,25 +351,14 @@ fn validate_inaccessible_in_fields(
     let mut has_inaccessible_field = false;
     let mut has_accessible_field = false;
     for (field_name, field) in fields {
-        let super_fields = implements
-            .iter()
-            .filter_map(|interface_name| {
-                schema
-                    .schema()
-                    .type_field(interface_name, field_name)
-                    .ok()
-                    .map(|field| (interface_name, field))
-            })
-            .collect::<Vec<_>>();
-
-        // Fields can be "referenced" by the corresponding fields of any
-        // interfaces their parent type implements. When a field is hidden
-        // (but its parent isn't), we check that such implemented fields
-        // aren't in the API schema.
         let field_inaccessible = field.directives.has(inaccessible_directive);
         has_inaccessible_field |= field_inaccessible;
         has_accessible_field |= !field_inaccessible;
         if field_inaccessible {
+            // Fields can be "referenced" by the corresponding fields of any
+            // interfaces their parent type implements. When a field is hidden
+            // (but its parent isn't), we check that such implemented fields
+            // aren't in the API schema.
             let accessible_super_references = implements.iter().filter_map(|interface_name| {
                 let super_type = schema.schema().get_interface(interface_name)?;
                 if super_type.directives.has(inaccessible_directive) {
