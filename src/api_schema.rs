@@ -124,11 +124,11 @@ fn remove_core_feature_elements(schema: &mut FederationSchema) -> Result<(), Fed
 fn is_semantic_directive_application(directive: &Directive) -> bool {
     match directive.name.as_str() {
         "specifiedBy" => true,
-        // For @deprecated, explicitly writing `url: null` disables the directive,
+        // For @deprecated, explicitly writing `reason: null` disables the directive,
         // as `null` overrides the default string value.
         "deprecated"
             if directive
-                .argument_by_name("url")
+                .argument_by_name("reason")
                 .is_some_and(|value| value.is_null()) =>
         {
             false
