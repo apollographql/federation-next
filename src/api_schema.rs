@@ -237,6 +237,7 @@ fn propagate_default_input_fields_in_value(
                             // Not an input object type.
                             continue;
                         };
+
                         propagate_default_input_fields_in_value(
                             input_objects,
                             value.make_mut(),
@@ -245,9 +246,19 @@ fn propagate_default_input_fields_in_value(
                     }
                     None => {
                         if let Some(default_value) = &field_definition.default_value {
-                            object.push((field_name.clone(), default_value.clone()));
-                        } else {
-                            // Do nothing
+                            let mut value = default_value.clone();
+                            // If the default value is an input object we may need to fill in
+                            // its defaulted fields recursively.
+                            if let Some(input_object) =
+                                input_objects.get(field_definition.ty.inner_named_type())
+                            {
+                                propagate_default_input_fields_in_value(
+                                    input_objects,
+                                    value.make_mut(),
+                                    input_object,
+                                );
+                            }
+                            object.push((field_name.clone(), value));
                         }
                     }
                 }

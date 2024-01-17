@@ -2230,8 +2230,9 @@ fn propagates_default_input_values() {
             one: Int! = 1
             two: Int! = 2
             three: Int! = 3
-            object: InputObject = { value: 2 },
+            object: InputObject = { value: 2 }
             nested: Nested
+            nestedWithDefault: Nested! = {}
         }
         input InputObject {
             value: Int
@@ -2259,7 +2260,7 @@ fn propagates_default_input_values() {
     }
 
     type Query {
-      field(input: Input = {one: 0, nested: {one: 2, two: 2, default: "default"}, two: 2, three: 3, object: {value: 2}}): Int
+      field(input: Input = {one: 0, nested: {one: 2, two: 2, default: "default"}, two: 2, three: 3, object: {value: 2}, nestedWithDefault: {one: 1, two: 2, default: "default"}}): Int
     }
 
     input Input {
@@ -2270,6 +2271,11 @@ fn propagates_default_input_values() {
         value: 2,
       }
       nested: Nested
+      nestedWithDefault: Nested! = {
+        one: 1,
+        two: 2,
+        default: "default",
+      }
     }
     "###);
 }
