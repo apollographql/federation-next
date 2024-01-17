@@ -9,6 +9,7 @@ use apollo_compiler::validation::Valid;
 use apollo_compiler::Schema;
 
 mod api_schema;
+mod compat;
 pub mod database;
 pub mod error;
 pub mod link;
