@@ -199,7 +199,7 @@ fn corce_arguments_default_values(
             continue;
         };
 
-        coerce_value(&input_objects, default_value, &arg.ty);
+        coerce_value(input_objects, default_value, &arg.ty);
     }
 }
 
