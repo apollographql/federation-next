@@ -7,7 +7,10 @@ use crate::query_plan::operation::normalized_fragment_spread_selection::Normaliz
 use crate::query_plan::operation::normalized_inline_fragment_selection::{
     NormalizedInlineFragment, NormalizedInlineFragmentData, NormalizedInlineFragmentSelection,
 };
-use crate::query_plan::operation::normalized_selection_map::NormalizedSelectionMap;
+use crate::query_plan::operation::normalized_selection_map::{
+    Entry, NormalizedFieldSelectionValue, NormalizedFragmentSpreadSelectionValue,
+    NormalizedInlineFragmentSelectionValue, NormalizedSelectionMap, NormalizedSelectionValue,
+};
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, InterfaceTypeDefinitionPosition, SchemaRootDefinitionKind,
 };
@@ -19,7 +22,6 @@ use apollo_compiler::executable::{
 };
 use apollo_compiler::{name, Node};
 use indexmap::{IndexMap, IndexSet};
-use linked_hash_map::Entry;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
@@ -69,13 +71,22 @@ pub(crate) struct NormalizedSelectionSet {
 }
 
 pub(crate) mod normalized_selection_map {
+    use crate::error::FederationError;
+    use crate::error::SingleFederationError::Internal;
+    use crate::query_plan::operation::normalized_field_selection::NormalizedFieldSelection;
+    use crate::query_plan::operation::normalized_fragment_spread_selection::NormalizedFragmentSpreadSelection;
+    use crate::query_plan::operation::normalized_inline_fragment_selection::NormalizedInlineFragmentSelection;
     use crate::query_plan::operation::{
         HasNormalizedSelectionKey, NormalizedSelection, NormalizedSelectionKey,
+        NormalizedSelectionSet,
     };
+    use apollo_compiler::ast::Name;
     use linked_hash_map::LinkedHashMap;
     use std::borrow::Borrow;
     use std::hash::Hash;
+    use std::iter::Map;
     use std::ops::Deref;
+    use std::sync::Arc;
 
     /// A "normalized" selection map is an optimized representation of a selection set which does
     /// not contain selections with the same selection "key". Selections that do have the same key
@@ -112,53 +123,189 @@ pub(crate) mod normalized_selection_map {
         }
 
         pub(crate) fn insert(&mut self, value: NormalizedSelection) -> Option<NormalizedSelection> {
-            self.insert_with_key(value.key(), value)
+            self.0.insert(value.key(), value)
         }
 
-        pub(crate) fn remove(&mut self, value: NormalizedSelection) -> Option<NormalizedSelection> {
-            self.remove_with_key(&value.key())
-        }
-    }
-
-    /// These methods should only be used by algorithms that are meant to be key-aware (which is why
-    /// they have "pub(super)" instead of "pub(crate)").
-    // TODO: See if we can restructure logic that uses these methods to use non-key-aware functions
-    // instead, although it may be unavoidable in some cases.
-    impl NormalizedSelectionMap {
-        pub(super) fn insert_with_key(
-            &mut self,
-            key: NormalizedSelectionKey,
-            value: NormalizedSelection,
-        ) -> Option<NormalizedSelection> {
-            self.0.insert(key, value)
-        }
-
-        pub(super) fn remove_with_key(
-            &mut self,
-            key: &NormalizedSelectionKey,
-        ) -> Option<NormalizedSelection> {
-            self.0.remove(key)
-        }
-
-        pub(super) fn iter_mut(
-            &mut self,
-        ) -> linked_hash_map::IterMut<NormalizedSelectionKey, NormalizedSelection> {
-            self.0.iter_mut()
-        }
-
-        pub(super) fn entry(
-            &mut self,
-            key: NormalizedSelectionKey,
-        ) -> linked_hash_map::Entry<NormalizedSelectionKey, NormalizedSelection> {
-            self.0.entry(key)
-        }
-
-        pub(super) fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut NormalizedSelection>
+        pub(crate) fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<NormalizedSelection>
         where
             NormalizedSelectionKey: Borrow<Q>,
             Q: Eq + Hash,
         {
-            self.0.get_mut(key)
+            self.0.remove(key)
+        }
+
+        pub(crate) fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<NormalizedSelectionValue>
+        where
+            NormalizedSelectionKey: Borrow<Q>,
+            Q: Eq + Hash,
+        {
+            self.0.get_mut(key).map(NormalizedSelectionValue::new)
+        }
+
+        pub(crate) fn iter_mut(&mut self) -> IterMut {
+            self.0
+                .iter_mut()
+                .map(|(k, v)| (k, NormalizedSelectionValue::new(v)))
+        }
+
+        pub(super) fn entry(&mut self, key: NormalizedSelectionKey) -> Entry {
+            match self.0.entry(key) {
+                linked_hash_map::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry(entry)),
+                linked_hash_map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(entry)),
+            }
+        }
+    }
+
+    type IterMut<'a> = Map<
+        linked_hash_map::IterMut<'a, NormalizedSelectionKey, NormalizedSelection>,
+        fn(
+            (&'a NormalizedSelectionKey, &'a mut NormalizedSelection),
+        ) -> (&'a NormalizedSelectionKey, NormalizedSelectionValue<'a>),
+    >;
+
+    /// A mutable reference to a `NormalizedSelection` value in a `NormalizedSelectionMap`, which
+    /// also disallows changing key-related data (to maintain the invariant that a value's key is
+    /// the same as it's map entry's key).
+    #[derive(Debug)]
+    pub(crate) enum NormalizedSelectionValue<'a> {
+        Field(NormalizedFieldSelectionValue<'a>),
+        FragmentSpread(NormalizedFragmentSpreadSelectionValue<'a>),
+        InlineFragment(NormalizedInlineFragmentSelectionValue<'a>),
+    }
+
+    impl<'a> NormalizedSelectionValue<'a> {
+        pub(crate) fn new(selection: &'a mut NormalizedSelection) -> Self {
+            match selection {
+                NormalizedSelection::Field(field_selection) => NormalizedSelectionValue::Field(
+                    NormalizedFieldSelectionValue::new(field_selection),
+                ),
+                NormalizedSelection::FragmentSpread(fragment_spread_selection) => {
+                    NormalizedSelectionValue::FragmentSpread(
+                        NormalizedFragmentSpreadSelectionValue::new(fragment_spread_selection),
+                    )
+                }
+                NormalizedSelection::InlineFragment(inline_fragment_selection) => {
+                    NormalizedSelectionValue::InlineFragment(
+                        NormalizedInlineFragmentSelectionValue::new(inline_fragment_selection),
+                    )
+                }
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct NormalizedFieldSelectionValue<'a>(&'a mut Arc<NormalizedFieldSelection>);
+
+    impl<'a> NormalizedFieldSelectionValue<'a> {
+        pub(crate) fn new(field_selection: &'a mut Arc<NormalizedFieldSelection>) -> Self {
+            Self(field_selection)
+        }
+
+        pub(crate) fn get(&self) -> &Arc<NormalizedFieldSelection> {
+            self.0
+        }
+
+        pub(crate) fn get_selection_set_mut(&mut self) -> &mut Option<NormalizedSelectionSet> {
+            &mut Arc::make_mut(self.0).selection_set
+        }
+
+        pub(crate) fn get_sibling_typename_mut(&mut self) -> &mut Option<Name> {
+            &mut Arc::make_mut(self.0).sibling_typename
+        }
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct NormalizedFragmentSpreadSelectionValue<'a>(
+        &'a mut Arc<NormalizedFragmentSpreadSelection>,
+    );
+
+    impl<'a> NormalizedFragmentSpreadSelectionValue<'a> {
+        pub(crate) fn new(
+            fragment_spread_selection: &'a mut Arc<NormalizedFragmentSpreadSelection>,
+        ) -> Self {
+            Self(fragment_spread_selection)
+        }
+
+        pub(crate) fn get(&self) -> &Arc<NormalizedFragmentSpreadSelection> {
+            self.0
+        }
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct NormalizedInlineFragmentSelectionValue<'a>(
+        &'a mut Arc<NormalizedInlineFragmentSelection>,
+    );
+
+    impl<'a> NormalizedInlineFragmentSelectionValue<'a> {
+        pub(crate) fn new(
+            inline_fragment_selection: &'a mut Arc<NormalizedInlineFragmentSelection>,
+        ) -> Self {
+            Self(inline_fragment_selection)
+        }
+
+        pub(crate) fn get(&self) -> &Arc<NormalizedInlineFragmentSelection> {
+            self.0
+        }
+
+        pub(crate) fn get_selection_set_mut(&mut self) -> &mut NormalizedSelectionSet {
+            &mut Arc::make_mut(self.0).selection_set
+        }
+    }
+
+    pub(crate) enum Entry<'a> {
+        Occupied(OccupiedEntry<'a>),
+        Vacant(VacantEntry<'a>),
+    }
+
+    pub(crate) struct OccupiedEntry<'a>(
+        linked_hash_map::OccupiedEntry<'a, NormalizedSelectionKey, NormalizedSelection>,
+    );
+
+    impl<'a> OccupiedEntry<'a> {
+        pub(crate) fn get(&self) -> &NormalizedSelection {
+            self.0.get()
+        }
+
+        pub(crate) fn get_mut(&mut self) -> NormalizedSelectionValue {
+            NormalizedSelectionValue::new(self.0.get_mut())
+        }
+
+        pub(crate) fn into_mut(self) -> NormalizedSelectionValue<'a> {
+            NormalizedSelectionValue::new(self.0.into_mut())
+        }
+
+        pub(crate) fn key(&self) -> &NormalizedSelectionKey {
+            self.0.key()
+        }
+
+        pub(crate) fn remove(self) -> NormalizedSelection {
+            self.0.remove()
+        }
+    }
+
+    pub(crate) struct VacantEntry<'a>(
+        linked_hash_map::VacantEntry<'a, NormalizedSelectionKey, NormalizedSelection>,
+    );
+
+    impl<'a> VacantEntry<'a> {
+        pub(crate) fn key(&self) -> &NormalizedSelectionKey {
+            self.0.key()
+        }
+
+        pub(crate) fn insert(
+            self,
+            value: NormalizedSelection,
+        ) -> Result<NormalizedSelectionValue<'a>, FederationError> {
+            if *self.key() != value.key() {
+                return Err(Internal {
+                    message: format!(
+                        "Key mismatch when inserting selection {} into vacant entry ",
+                        value
+                    ),
+                }
+                .into());
+            }
+            Ok(NormalizedSelectionValue::new(self.0.insert(value)))
         }
     }
 
@@ -537,7 +684,7 @@ impl NormalizedSelectionSet {
             type_position,
             selections: Arc::new(NormalizedSelectionMap::new()),
         };
-        merged.merge_pairs_into(normalized_selections)?;
+        merged.merge_selections_into(normalized_selections.into_iter())?;
         Ok(merged)
     }
 
@@ -545,7 +692,7 @@ impl NormalizedSelectionSet {
     fn normalize_selections(
         selections: &[Selection],
         parent_type_position: &CompositeTypeDefinitionPosition,
-        destination: &mut Vec<(NormalizedSelectionKey, NormalizedSelection)>,
+        destination: &mut Vec<NormalizedSelection>,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
     ) -> Result<(), FederationError> {
@@ -562,10 +709,9 @@ impl NormalizedSelectionSet {
                     else {
                         continue;
                     };
-                    destination.push((
-                        normalized_field_selection.key(),
-                        NormalizedSelection::Field(Arc::new(normalized_field_selection)),
-                    ));
+                    destination.push(NormalizedSelection::Field(Arc::new(
+                        normalized_field_selection,
+                    )));
                 }
                 Selection::FragmentSpread(fragment_spread_selection) => {
                     let Some(fragment) = fragments.get(&fragment_spread_selection.fragment_name)
@@ -598,12 +744,9 @@ impl NormalizedSelectionSet {
                                 fragments,
                                 schema,
                             )?;
-                        destination.push((
-                            normalized_inline_fragment_selection.key(),
-                            NormalizedSelection::InlineFragment(Arc::new(
-                                normalized_inline_fragment_selection,
-                            )),
-                        ));
+                        destination.push(NormalizedSelection::InlineFragment(Arc::new(
+                            normalized_inline_fragment_selection,
+                        )));
                     }
                 }
                 Selection::InlineFragment(inline_fragment_selection) => {
@@ -638,12 +781,9 @@ impl NormalizedSelectionSet {
                                 fragments,
                                 schema,
                             )?;
-                        destination.push((
-                            normalized_inline_fragment_selection.key(),
-                            NormalizedSelection::InlineFragment(Arc::new(
-                                normalized_inline_fragment_selection,
-                            )),
-                        ));
+                        destination.push(NormalizedSelection::InlineFragment(Arc::new(
+                            normalized_inline_fragment_selection,
+                        )));
                     }
                 }
             }
@@ -657,7 +797,7 @@ impl NormalizedSelectionSet {
         others: impl Iterator<Item = NormalizedSelectionSet> + ExactSizeIterator,
     ) -> Result<(), FederationError> {
         if others.len() > 0 {
-            let mut pairs = vec![];
+            let mut selections_to_merge = vec![];
             for other in others {
                 if other.schema != self.schema {
                     return Err(Internal {
@@ -676,25 +816,26 @@ impl NormalizedSelectionSet {
                 }
                 let selections = Arc::try_unwrap(other.selections)
                     .unwrap_or_else(|selections| selections.deref().clone());
-                for pair in selections {
-                    pairs.push(pair);
+                for (_, value) in selections {
+                    selections_to_merge.push(value);
                 }
             }
-            self.merge_pairs_into(pairs)?;
+            self.merge_selections_into(selections_to_merge.into_iter())?;
         }
         Ok(())
     }
 
-    /// A helper function for merging a vector of (key, selection) pairs into this one.
-    fn merge_pairs_into(
+    /// A helper function for merging the given selections into this one.
+    fn merge_selections_into(
         &mut self,
-        others: Vec<(NormalizedSelectionKey, NormalizedSelection)>,
+        others: impl Iterator<Item = NormalizedSelection> + ExactSizeIterator,
     ) -> Result<(), FederationError> {
-        if !others.is_empty() {
+        if others.len() > 0 {
             let mut fields = IndexMap::new();
             let mut fragment_spreads = IndexMap::new();
             let mut inline_fragments = IndexMap::new();
-            for (other_key, other_selection) in others {
+            for other_selection in others {
+                let other_key = other_selection.key();
                 match Arc::make_mut(&mut self.selections).entry(other_key.clone()) {
                     Entry::Occupied(existing) => match existing.get() {
                         NormalizedSelection::Field(self_field_selection) => {
@@ -761,29 +902,32 @@ impl NormalizedSelectionSet {
                         }
                     },
                     Entry::Vacant(vacant) => {
-                        vacant.insert(other_selection);
+                        vacant.insert(other_selection)?;
                     }
                 }
             }
             for (key, self_selection) in Arc::make_mut(&mut self.selections).iter_mut() {
                 match self_selection {
-                    NormalizedSelection::Field(self_field_selection) => {
+                    NormalizedSelectionValue::Field(mut self_field_selection) => {
                         if let Some(other_field_selections) = fields.remove(key) {
-                            Arc::make_mut(self_field_selection)
-                                .merge_into(other_field_selections.into_iter())?;
+                            self_field_selection.merge_into(other_field_selections.into_iter())?;
                         }
                     }
-                    NormalizedSelection::FragmentSpread(self_fragment_spread_selection) => {
+                    NormalizedSelectionValue::FragmentSpread(
+                        mut self_fragment_spread_selection,
+                    ) => {
                         if let Some(other_fragment_spread_selections) = fragment_spreads.remove(key)
                         {
-                            Arc::make_mut(self_fragment_spread_selection)
+                            self_fragment_spread_selection
                                 .merge_into(other_fragment_spread_selections.into_iter())?;
                         }
                     }
-                    NormalizedSelection::InlineFragment(self_inline_fragment_selection) => {
+                    NormalizedSelectionValue::InlineFragment(
+                        mut self_inline_fragment_selection,
+                    ) => {
                         if let Some(other_inline_fragment_selections) = inline_fragments.remove(key)
                         {
-                            Arc::make_mut(self_inline_fragment_selection)
+                            self_inline_fragment_selection
                                 .merge_into(other_inline_fragment_selections.into_iter())?;
                         }
                     }
@@ -837,8 +981,8 @@ impl NormalizedSelectionSet {
         let mutable_selection_map = Arc::make_mut(&mut self.selections);
         for (key, entry) in mutable_selection_map.iter_mut() {
             match entry {
-                NormalizedSelection::Field(field_selection) => {
-                    if field_selection.field.data().name() == &TYPENAME_FIELD
+                NormalizedSelectionValue::Field(mut field_selection) => {
+                    if field_selection.get().field.data().name() == &TYPENAME_FIELD
                         && !is_interface_object
                         && typename_field_key.is_none()
                     {
@@ -847,28 +991,22 @@ impl NormalizedSelectionSet {
                         sibling_field_key = Some(key.clone());
                     }
 
-                    let mutable_field_selection = Arc::make_mut(field_selection);
-                    if let Some(field_selection_set) =
-                        mutable_field_selection.selection_set.as_mut()
-                    {
+                    if let Some(field_selection_set) = field_selection.get_selection_set_mut() {
                         field_selection_set
                             .optimize_sibling_typenames(interface_types_with_interface_objects)?;
-                    } else {
-                        continue;
                     }
                 }
-                NormalizedSelection::InlineFragment(inline_fragment) => {
-                    let mutable_inline_fragment = Arc::make_mut(inline_fragment);
-                    mutable_inline_fragment
-                        .selection_set
+                NormalizedSelectionValue::InlineFragment(mut inline_fragment) => {
+                    inline_fragment
+                        .get_selection_set_mut()
                         .optimize_sibling_typenames(interface_types_with_interface_objects)?;
                 }
-                NormalizedSelection::FragmentSpread(fragment_spread) => {
+                NormalizedSelectionValue::FragmentSpread(fragment_spread) => {
                     // at this point in time all fragment spreads should have been converted into inline fragments
                     return Err(FederationError::SingleFederationError(Internal {
                         message: format!(
                             "Error while optimizing sibling typename information, selection set contains {} named fragment",
-                            fragment_spread.data().fragment_name
+                            fragment_spread.get().data().fragment_name
                         ),
                     }));
                 }
@@ -880,13 +1018,12 @@ impl NormalizedSelectionSet {
         {
             if let (
                 Some(NormalizedSelection::Field(typename_field)),
-                Some(NormalizedSelection::Field(sibling_field)),
+                Some(NormalizedSelectionValue::Field(mut sibling_field)),
             ) = (
-                mutable_selection_map.remove_with_key(&typename_key),
+                mutable_selection_map.remove(&typename_key),
                 mutable_selection_map.get_mut(&sibling_field_key),
             ) {
-                let mutable_sibling_field = Arc::make_mut(sibling_field);
-                mutable_sibling_field.sibling_typename =
+                *sibling_field.get_sibling_typename_mut() =
                     Some(typename_field.field.data().response_name());
             } else {
                 unreachable!("typename and sibling fields must both exist at this point")
@@ -944,7 +1081,9 @@ impl NormalizedFieldSelection {
             sibling_typename: None,
         }))
     }
+}
 
+impl<'a> NormalizedFieldSelectionValue<'a> {
     /// Merges the given normalized field selections into this one (this method assumes the keys
     /// already match).
     pub(crate) fn merge_into(
@@ -952,7 +1091,7 @@ impl NormalizedFieldSelection {
         others: impl Iterator<Item = NormalizedFieldSelection> + ExactSizeIterator,
     ) -> Result<(), FederationError> {
         if others.len() > 0 {
-            let self_field = &self.field;
+            let self_field = &self.get().field;
             let mut selection_sets = vec![];
             for other in others {
                 let other_field = &other.field;
@@ -971,7 +1110,7 @@ impl NormalizedFieldSelection {
                         ),
                     }.into());
                 }
-                if self.selection_set.is_some() {
+                if self.get().selection_set.is_some() {
                     let Some(other_selection_set) = other.selection_set else {
                         return Err(Internal {
                             message: format!(
@@ -992,7 +1131,7 @@ impl NormalizedFieldSelection {
                     .into());
                 }
             }
-            if let Some(self_selection_set) = &mut self.selection_set {
+            if let Some(self_selection_set) = self.get_selection_set_mut() {
                 self_selection_set.merge_into(selection_sets.into_iter())?;
             }
         }
@@ -1053,7 +1192,9 @@ impl NormalizedFragmentSpreadSelection {
             )?,
         })
     }
+}
 
+impl<'a> NormalizedFragmentSpreadSelectionValue<'a> {
     /// Merges the given normalized fragment spread selections into this one (this method assumes
     /// the keys already match).
     pub(crate) fn merge_into(
@@ -1062,7 +1203,7 @@ impl NormalizedFragmentSpreadSelection {
     ) -> Result<(), FederationError> {
         if others.len() > 0 {
             for other in others {
-                if other.data().schema != self.data().schema {
+                if other.data().schema != self.get().data().schema {
                     return Err(Internal {
                         message: "Cannot merge fragment spread from different schemas".to_owned(),
                     }
@@ -1124,7 +1265,9 @@ impl NormalizedInlineFragmentSelection {
             )?,
         })
     }
+}
 
+impl<'a> NormalizedInlineFragmentSelectionValue<'a> {
     /// Merges the given normalized inline fragment selections into this one (this method assumes
     /// the keys already match).
     pub(crate) fn merge_into(
@@ -1132,7 +1275,7 @@ impl NormalizedInlineFragmentSelection {
         others: impl Iterator<Item = NormalizedInlineFragmentSelection> + ExactSizeIterator,
     ) -> Result<(), FederationError> {
         if others.len() > 0 {
-            let self_inline_fragment = &self.inline_fragment;
+            let self_inline_fragment = &self.get().inline_fragment;
             let mut selection_sets = vec![];
             for other in others {
                 let other_inline_fragment = &other.inline_fragment;
@@ -1155,7 +1298,8 @@ impl NormalizedInlineFragmentSelection {
                 }
                 selection_sets.push(other.selection_set);
             }
-            self.selection_set.merge_into(selection_sets.into_iter())?;
+            self.get_selection_set_mut()
+                .merge_into(selection_sets.into_iter())?;
         }
         Ok(())
     }
