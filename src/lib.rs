@@ -8,6 +8,8 @@ use crate::schema::position;
 use crate::schema::FederationSchema;
 use crate::subgraph::ValidSubgraph;
 use apollo_compiler::name;
+use apollo_compiler::schema::Directive;
+use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Schema;
 
@@ -55,7 +57,10 @@ impl Supergraph {
 
         remove_core_feature_elements(&mut api_schema)?;
 
-        Ok(api_schema.schema().clone().validate()?)
+        let mut api_schema = api_schema.into_inner();
+        remove_non_semantic_directives(&mut api_schema)?;
+
+        Ok(api_schema.validate()?)
     }
 }
 
@@ -65,6 +70,7 @@ impl From<Valid<Schema>> for Supergraph {
     }
 }
 
+/// Remove types and directives imported by `@link`.
 fn remove_core_feature_elements(schema: &mut FederationSchema) -> Result<(), FederationError> {
     let Some(metadata) = schema.metadata() else {
         return Ok(());
@@ -162,6 +168,108 @@ fn remove_core_feature_elements(schema: &mut FederationSchema) -> Result<(), Fed
             position::TypeDefinitionPosition::Union(position) => {
                 position.remove(schema)?;
             }
+        }
+    }
+
+    Ok(())
+}
+
+/// Return true if a directive application is "semantic", meaning it's observable in introspection.
+fn is_semantic_directive_application(directive: &Directive) -> bool {
+    match directive.name.as_str() {
+        "specifiedBy" => true,
+        // For @deprecated, explicitly writing `url: null` disables the directive,
+        // as `null` overrides the default string value.
+        "deprecated"
+            if directive
+                .argument_by_name("url")
+                .is_some_and(|value| value.is_null()) =>
+        {
+            false
+        }
+        "deprecated" => true,
+        _ => false,
+    }
+}
+
+/// Retain only semantic directives in a directive list from the high-level schema representation.
+fn retain_semantic_directives(directives: &mut apollo_compiler::schema::DirectiveList) {
+    directives
+        .0
+        .retain(|directive| is_semantic_directive_application(directive));
+}
+
+/// Retain only semantic directives in a directive list from the AST-level schema representation.
+fn retain_semantic_directives_ast(directives: &mut apollo_compiler::ast::DirectiveList) {
+    directives
+        .0
+        .retain(|directive| is_semantic_directive_application(directive));
+}
+
+/// Remove directive applications from the schema representation. After doing this,
+/// serializing the schema will have the same result as introspecting the schema.
+fn remove_non_semantic_directives(schema: &mut Schema) -> Result<(), FederationError> {
+    let root_definitions = schema.schema_definition.make_mut();
+    retain_semantic_directives(&mut root_definitions.directives);
+
+    for ty in schema.types.values_mut() {
+        match ty {
+            ExtendedType::Object(object) => {
+                let object = object.make_mut();
+                retain_semantic_directives(&mut object.directives);
+                for field in object.fields.values_mut() {
+                    let field = field.make_mut();
+                    retain_semantic_directives_ast(&mut field.directives);
+                    for arg in &mut field.arguments {
+                        let arg = arg.make_mut();
+                        retain_semantic_directives_ast(&mut arg.directives);
+                    }
+                }
+            }
+            ExtendedType::Interface(interface) => {
+                let interface = interface.make_mut();
+                retain_semantic_directives(&mut interface.directives);
+                for field in interface.fields.values_mut() {
+                    let field = field.make_mut();
+                    retain_semantic_directives_ast(&mut field.directives);
+                    for arg in &mut field.arguments {
+                        let arg = arg.make_mut();
+                        retain_semantic_directives_ast(&mut arg.directives);
+                    }
+                }
+            }
+            ExtendedType::InputObject(input_object) => {
+                let input_object = input_object.make_mut();
+                retain_semantic_directives(&mut input_object.directives);
+                for field in input_object.fields.values_mut() {
+                    let field = field.make_mut();
+                    retain_semantic_directives_ast(&mut field.directives);
+                }
+            }
+            ExtendedType::Union(union_) => {
+                let union_ = union_.make_mut();
+                retain_semantic_directives(&mut union_.directives);
+            }
+            ExtendedType::Scalar(scalar) => {
+                let scalar = scalar.make_mut();
+                retain_semantic_directives(&mut scalar.directives);
+            }
+            ExtendedType::Enum(enum_) => {
+                let enum_ = enum_.make_mut();
+                retain_semantic_directives(&mut enum_.directives);
+                for value in enum_.values.values_mut() {
+                    let value = value.make_mut();
+                    retain_semantic_directives_ast(&mut value.directives);
+                }
+            }
+        }
+    }
+
+    for directive in schema.directive_definitions.values_mut() {
+        let directive = directive.make_mut();
+        for arg in &mut directive.arguments {
+            let arg = arg.make_mut();
+            retain_semantic_directives_ast(&mut arg.directives);
         }
     }
 

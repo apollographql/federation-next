@@ -30,6 +30,11 @@ impl FederationSchema {
         &self.schema
     }
 
+    /// Discard the Federation metadata and return the apollo-compiler schema.
+    pub fn into_inner(self) -> Schema {
+        self.schema
+    }
+
     pub(crate) fn metadata(&self) -> Option<&LinksMetadata> {
         self.metadata.as_ref()
     }
@@ -129,8 +134,8 @@ impl FederationSchema {
     ) -> Option<DirectiveDefinitionPosition> {
         self.schema
             .directive_definitions
-            .get(name)
-            .map(|directive| DirectiveDefinitionPosition {
+            .contains_key(name)
+            .then(|| DirectiveDefinitionPosition {
                 directive_name: name.clone(),
             })
     }
