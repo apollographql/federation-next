@@ -139,11 +139,27 @@ fn is_semantic_directive_application(directive: &Directive) -> bool {
     }
 }
 
+/// Remove `reason` argument from a `@deprecated` directive if it has the default value, just to match graphql-js output.
+fn standardize_deprecated(directive: &mut Directive) {
+    if directive.name == "deprecated"
+        && directive
+            .argument_by_name("reason")
+            .and_then(|value| value.as_str())
+            .is_some_and(|reason| reason == "No longer supported")
+    {
+        directive.arguments.clear();
+    }
+}
+
 /// Retain only semantic directives in a directive list from the high-level schema representation.
 fn retain_semantic_directives(directives: &mut apollo_compiler::schema::DirectiveList) {
     directives
         .0
         .retain(|directive| is_semantic_directive_application(directive));
+
+    for directive in directives {
+        standardize_deprecated(directive.make_mut());
+    }
 }
 
 /// Retain only semantic directives in a directive list from the AST-level schema representation.
@@ -151,6 +167,10 @@ fn retain_semantic_directives_ast(directives: &mut apollo_compiler::ast::Directi
     directives
         .0
         .retain(|directive| is_semantic_directive_application(directive));
+
+    for directive in directives {
+        standardize_deprecated(directive.make_mut());
+    }
 }
 
 /// Remove non-semantic directive applications from the schema representation.

@@ -2279,3 +2279,27 @@ fn propagates_default_input_values() {
     }
     "###);
 }
+
+#[test]
+fn matches_graphql_js_directive_applications() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+        type Query {
+            a: Int @deprecated
+            b: Int @deprecated(reason: null)
+            c: Int @deprecated(reason: "Reason")
+            d: Int @deprecated(reason: "No longer supported")
+        }
+        "#,
+    )
+    .expect("should succeed");
+
+    insta::assert_display_snapshot!(api_schema, @r###"
+        type Query {
+          a: Int @deprecated
+          b: Int
+          c: Int @deprecated(reason: "Reason")
+          d: Int @deprecated
+        }
+    "###);
+}
