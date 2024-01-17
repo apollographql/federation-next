@@ -11,6 +11,7 @@ use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::schema::InputObjectType;
 use apollo_compiler::schema::InputValueDefinition;
 use apollo_compiler::schema::Name;
+use apollo_compiler::schema::Type;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Node;
 use apollo_compiler::Schema;
@@ -221,43 +222,27 @@ fn remove_non_semantic_directives(schema: &mut Schema) {
 }
 
 /// Recursively assign default values in input object values.
-fn propagate_default_input_fields_in_value(
+fn coerce_value(
     input_objects: &HashMap<Name, Node<InputObjectType>>,
-    target: &mut Value,
-    definition: &InputObjectType,
+    target: &mut Node<Value>,
+    ty: &Type,
 ) {
-    match target {
-        Value::Object(object) => {
+    match target.make_mut() {
+        Value::Object(object) if ty.is_named() => {
+            let Some(definition) = input_objects.get(ty.inner_named_type()) else {
+                unreachable!("Found an object value where a {ty} was expected, this should have been caught by validation");
+            };
             for (field_name, field_definition) in definition.fields.iter() {
                 match object.iter_mut().find(|(key, _value)| key == field_name) {
                     Some((_name, value)) => {
-                        let Some(input_object) =
-                            input_objects.get(field_definition.ty.inner_named_type())
-                        else {
-                            // Not an input object type.
-                            continue;
-                        };
-
-                        propagate_default_input_fields_in_value(
-                            input_objects,
-                            value.make_mut(),
-                            input_object,
-                        );
+                        coerce_value(input_objects, value, &field_definition.ty);
                     }
                     None => {
                         if let Some(default_value) = &field_definition.default_value {
                             let mut value = default_value.clone();
                             // If the default value is an input object we may need to fill in
                             // its defaulted fields recursively.
-                            if let Some(input_object) =
-                                input_objects.get(field_definition.ty.inner_named_type())
-                            {
-                                propagate_default_input_fields_in_value(
-                                    input_objects,
-                                    value.make_mut(),
-                                    input_object,
-                                );
-                            }
+                            coerce_value(input_objects, &mut value, &field_definition.ty);
                             object.push((field_name.clone(), value));
                         }
                     }
@@ -266,18 +251,28 @@ fn propagate_default_input_fields_in_value(
         }
         Value::List(list) => {
             for element in list {
-                propagate_default_input_fields_in_value(
-                    input_objects,
-                    element.make_mut(),
-                    definition,
-                );
+                coerce_value(input_objects, element, ty.item_type());
             }
         }
+        // Coerce single values (except null) to a list.
+        Value::Object(_)
+        | Value::String(_)
+        | Value::Enum(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::Boolean(_)
+            if ty.is_list() =>
+        {
+            coerce_value(input_objects, target, ty.item_type());
+            *target.make_mut() = Value::List(vec![target.clone()]);
+        }
+        // Other types are either totally invalid (and rejected by validation), or do not need
+        // coercion
         _ => {}
     }
 }
 
-fn propagate_default_input_fields_in_arguments(
+fn corce_arguments_default_values(
     input_objects: &HashMap<Name, Node<InputObjectType>>,
     arguments: &mut Vec<Node<InputValueDefinition>>,
 ) {
@@ -287,16 +282,7 @@ fn propagate_default_input_fields_in_arguments(
             continue;
         };
 
-        let ty = arg.ty.inner_named_type();
-        let Some(input_object) = input_objects.get(ty) else {
-            continue;
-        };
-
-        propagate_default_input_fields_in_value(
-            &input_objects,
-            default_value.make_mut(),
-            input_object,
-        );
+        coerce_value(&input_objects, default_value, &arg.ty);
     }
 }
 
@@ -306,7 +292,7 @@ fn propagate_default_input_fields_in_arguments(
 /// This does not affect the functionality of the schema, but it matches a behaviour in graphql-js
 /// so we can compare API schema results between federation-next and JS federation. We can consider
 /// removing this when we no longer rely on JS federation.
-fn propagate_default_input_fields(schema: &mut Schema) {
+fn coerce_schema_default_values(schema: &mut Schema) {
     // Keep a copy of the input objects so we can mutate the schema while walking it.
     let input_objects = schema
         .types
@@ -326,20 +312,14 @@ fn propagate_default_input_fields(schema: &mut Schema) {
                 let object = object.make_mut();
                 for field in object.fields.values_mut() {
                     let field = field.make_mut();
-                    propagate_default_input_fields_in_arguments(
-                        &input_objects,
-                        &mut field.arguments,
-                    );
+                    corce_arguments_default_values(&input_objects, &mut field.arguments);
                 }
             }
             ExtendedType::Interface(interface) => {
                 let interface = interface.make_mut();
                 for field in interface.fields.values_mut() {
                     let field = field.make_mut();
-                    propagate_default_input_fields_in_arguments(
-                        &input_objects,
-                        &mut field.arguments,
-                    );
+                    corce_arguments_default_values(&input_objects, &mut field.arguments);
                 }
             }
             ExtendedType::InputObject(input_object) => {
@@ -350,16 +330,7 @@ fn propagate_default_input_fields(schema: &mut Schema) {
                         continue;
                     };
 
-                    let ty = field.ty.inner_named_type();
-                    let Some(input_object) = input_objects.get(ty) else {
-                        continue;
-                    };
-
-                    propagate_default_input_fields_in_value(
-                        &input_objects,
-                        default_value.make_mut(),
-                        input_object,
-                    );
+                    coerce_value(&input_objects, default_value, &field.ty);
                 }
             }
             ExtendedType::Union(_) | ExtendedType::Scalar(_) | ExtendedType::Enum(_) => {
@@ -370,7 +341,7 @@ fn propagate_default_input_fields(schema: &mut Schema) {
 
     for directive in schema.directive_definitions.values_mut() {
         let directive = directive.make_mut();
-        propagate_default_input_fields_in_arguments(&input_objects, &mut directive.arguments);
+        corce_arguments_default_values(&input_objects, &mut directive.arguments);
     }
 }
 
@@ -396,7 +367,7 @@ pub fn to_api_schema(schema: FederationSchema) -> Result<Valid<Schema>, Federati
     remove_non_semantic_directives(&mut api_schema);
     // To match the graphql-js output, we propagate default values declared on fields in
     // input object definitions to their usage sites.
-    propagate_default_input_fields(&mut api_schema);
+    coerce_schema_default_values(&mut api_schema);
 
     Ok(api_schema.validate()?)
 }
