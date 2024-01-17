@@ -14,7 +14,8 @@ fn remove_core_feature_elements(schema: &mut FederationSchema) -> Result<(), Fed
         return Ok(());
     };
 
-    // Remove federation types and directives
+    // First collect the things to be removed so we do not hold any immutable references
+    // to the schema while mutating it below.
     let types_for_removal = schema
         .get_types()
         .filter(|position| metadata.source_link_of_type(position.type_name()).is_some())
@@ -81,7 +82,7 @@ fn remove_core_feature_elements(schema: &mut FederationSchema) -> Result<(), Fed
         }
     }
 
-    // TODO remove arguments first
+    // TODO is it necessary to remove arguments first?
     for position in &directives_for_removal {
         position.remove(schema)?;
     }
