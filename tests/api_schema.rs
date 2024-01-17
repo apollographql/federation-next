@@ -2218,3 +2218,58 @@ fn inaccessible_on_imported_elements() {
       - Core feature directive `@foo` cannot use @inaccessible.
     "###);
 }
+
+#[test]
+fn propagates_default_input_values() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+        type Query {
+            field(input: Input = { one: 0, nested: { one: 2 } }): Int
+        }
+        input Input {
+            one: Int! = 1
+            two: Int! = 2
+            three: Int! = 3
+            object: InputObject = { value: 2 },
+            nested: Nested
+        }
+        input InputObject {
+            value: Int
+        }
+        input Nested {
+            noDefault: String
+            one: Int! = 1
+            two: Int! = 2
+            default: String = "default"
+        }
+        "#,
+    )
+    .expect("should succeed");
+
+    insta::assert_display_snapshot!(api_schema, @r###"
+    input Nested {
+      noDefault: String
+      one: Int! = 1
+      two: Int! = 2
+      default: String = "default"
+    }
+
+    input InputObject {
+      value: Int
+    }
+
+    type Query {
+      field(input: Input = {one: 0, nested: {one: 2, two: 2, default: "default"}, two: 2, three: 3, object: {value: 2}}): Int
+    }
+
+    input Input {
+      one: Int! = 1
+      two: Int! = 2
+      three: Int! = 3
+      object: InputObject = {
+        value: 2,
+      }
+      nested: Nested
+    }
+    "###);
+}

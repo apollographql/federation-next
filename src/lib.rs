@@ -1,4 +1,5 @@
 #![allow(dead_code)] // TODO: This is fine while we're iterating, but should be removed later.
+
 use crate::error::FederationError;
 use crate::link::inaccessible_spec_definition::remove_inaccessible_elements;
 use crate::link::inaccessible_spec_definition::validate_inaccessible;
@@ -10,8 +11,13 @@ use crate::subgraph::ValidSubgraph;
 use apollo_compiler::name;
 use apollo_compiler::schema::Directive;
 use apollo_compiler::schema::ExtendedType;
+use apollo_compiler::schema::InputObjectType;
+use apollo_compiler::schema::InputValueDefinition;
+use apollo_compiler::schema::Name;
 use apollo_compiler::validation::Valid;
+use apollo_compiler::Node;
 use apollo_compiler::Schema;
+use std::collections::HashMap;
 
 pub mod database;
 pub mod error;
@@ -58,7 +64,10 @@ impl Supergraph {
         remove_core_feature_elements(&mut api_schema)?;
 
         let mut api_schema = api_schema.into_inner();
-        remove_non_semantic_directives(&mut api_schema)?;
+        remove_non_semantic_directives(&mut api_schema);
+        // To match the graphql-js output, we propagate default values declared on fields in
+        // input object definitions to their usage sites.
+        propagate_default_input_fields(&mut api_schema);
 
         Ok(api_schema.validate()?)
     }
@@ -208,7 +217,7 @@ fn retain_semantic_directives_ast(directives: &mut apollo_compiler::ast::Directi
 
 /// Remove directive applications from the schema representation. After doing this,
 /// serializing the schema will have the same result as introspecting the schema.
-fn remove_non_semantic_directives(schema: &mut Schema) -> Result<(), FederationError> {
+fn remove_non_semantic_directives(schema: &mut Schema) {
     let root_definitions = schema.schema_definition.make_mut();
     retain_semantic_directives(&mut root_definitions.directives);
 
@@ -272,8 +281,129 @@ fn remove_non_semantic_directives(schema: &mut Schema) -> Result<(), FederationE
             retain_semantic_directives_ast(&mut arg.directives);
         }
     }
+}
 
-    Ok(())
+/// Recursively assign default values in input object values.
+fn assign_default_values(
+    input_objects: &HashMap<Name, Node<InputObjectType>>,
+    target: &mut apollo_compiler::ast::Value,
+    definition: &InputObjectType,
+) {
+    use apollo_compiler::ast::Value;
+
+    match target {
+        Value::Object(object) => {
+            for (field_name, field_definition) in definition.fields.iter() {
+                match object.iter_mut().find(|(key, _value)| key == field_name) {
+                    Some((_name, value)) => {
+                        let Some(input_object) =
+                            input_objects.get(field_definition.ty.inner_named_type())
+                        else {
+                            // Not an input object type.
+                            continue;
+                        };
+                        assign_default_values(input_objects, value.make_mut(), input_object);
+                    }
+                    None => {
+                        if let Some(default_value) = &field_definition.default_value {
+                            object.push((field_name.clone(), default_value.clone()));
+                        } else {
+                            // Do nothing
+                        }
+                    }
+                }
+            }
+        }
+        Value::List(list) => {
+            for element in list {
+                assign_default_values(input_objects, element.make_mut(), definition);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn propagate_default_input_fields_in_arguments(
+    input_objects: &HashMap<Name, Node<InputObjectType>>,
+    arguments: &mut Vec<Node<InputValueDefinition>>,
+) {
+    for arg in arguments {
+        let arg = arg.make_mut();
+        let Some(default_value) = &mut arg.default_value else {
+            continue;
+        };
+
+        let ty = arg.ty.inner_named_type();
+        let Some(input_object) = input_objects.get(ty) else {
+            continue;
+        };
+
+        assign_default_values(&input_objects, default_value.make_mut(), input_object);
+    }
+}
+
+fn propagate_default_input_fields(schema: &mut Schema) {
+    // Keep a copy of the input objects so we can mutate the schema while walking it.
+    let input_objects = schema
+        .types
+        .iter()
+        .filter_map(|(name, ty)| {
+            if let ExtendedType::InputObject(input_object) = ty {
+                Some((name.clone(), input_object.clone()))
+            } else {
+                None
+            }
+        })
+        .collect::<HashMap<_, _>>();
+
+    for ty in schema.types.values_mut() {
+        match ty {
+            ExtendedType::Object(object) => {
+                let object = object.make_mut();
+                for field in object.fields.values_mut() {
+                    let field = field.make_mut();
+                    propagate_default_input_fields_in_arguments(
+                        &input_objects,
+                        &mut field.arguments,
+                    );
+                }
+            }
+            ExtendedType::Interface(interface) => {
+                let interface = interface.make_mut();
+                for field in interface.fields.values_mut() {
+                    let field = field.make_mut();
+                    propagate_default_input_fields_in_arguments(
+                        &input_objects,
+                        &mut field.arguments,
+                    );
+                }
+            }
+            ExtendedType::InputObject(input_object) => {
+                let input_object = input_object.make_mut();
+                for field in input_object.fields.values_mut() {
+                    let field = field.make_mut();
+                    let Some(default_value) = &mut field.default_value else {
+                        continue;
+                    };
+
+                    let ty = field.ty.inner_named_type();
+                    let Some(input_object) = input_objects.get(ty) else {
+                        continue;
+                    };
+
+                    assign_default_values(&input_objects, default_value.make_mut(), input_object);
+                }
+            }
+            ExtendedType::Union(_) | ExtendedType::Scalar(_) | ExtendedType::Enum(_) => {
+                // Nothing to do
+            }
+        }
+    }
+
+    for directive in schema.directive_definitions.values_mut() {
+        let directive = directive.make_mut();
+        propagate_default_input_fields_in_arguments(&input_objects, &mut directive.arguments);
+    }
 }
 
 #[cfg(test)]
