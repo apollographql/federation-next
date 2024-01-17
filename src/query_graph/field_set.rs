@@ -1,4 +1,4 @@
-use crate::error::{FederationError, SingleFederationError};
+use crate::error::FederationError;
 use crate::query_plan::operation::NormalizedSelectionSet;
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::executable::{FieldSet, SelectionSet};
@@ -48,32 +48,4 @@ pub(super) fn parse_field_set_without_normalization(
         "field_set.graphql",
     )?;
     Ok(field_set.into_inner().selection_set)
-}
-
-pub(super) fn merge_selection_sets(
-    mut selection_sets: impl Iterator<Item = NormalizedSelectionSet> + ExactSizeIterator,
-) -> Result<NormalizedSelectionSet, FederationError> {
-    let Some(mut first) = selection_sets.next() else {
-        return Err(SingleFederationError::Internal {
-            message: "".to_owned(),
-        }
-        .into());
-    };
-    first.merge_into(selection_sets)?;
-    Ok(first)
-}
-
-pub(super) fn equal_selection_sets(
-    _a: &NormalizedSelectionSet,
-    _b: &NormalizedSelectionSet,
-) -> Result<bool, FederationError> {
-    // TODO: Once operation processing is done, we should be able to call into that logic here.
-    // We're specifically wanting the equivalent of something like
-    // ```
-    // selectionSetOfNode(...).equals(selectionSetOfNode(...));
-    // ```
-    // from the JS codebase. It may be more performant for federation-next to use its own
-    // representation instead of repeatedly inter-converting between its representation and the
-    // apollo-rs one, but we'll cross that bridge if we come to it.
-    todo!();
 }
