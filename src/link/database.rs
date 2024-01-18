@@ -70,12 +70,14 @@ pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkErro
                 // directive of the same name. So one cannot import a direcitive with the
                 // same name than a linked spec.
                 if let Some(other) = by_name_in_schema.get(imported_name) {
-                    Err(LinkError::BootstrapError(format!(
-                        "import for '{}' of {} conflicts with spec {}",
-                        import.imported_display_name(),
-                        link.url,
-                        other.url
-                    )))?
+                    if !Arc::ptr_eq(other, link) {
+                        return Err(LinkError::BootstrapError(format!(
+                            "import for '{}' of {} conflicts with spec {}",
+                            import.imported_display_name(),
+                            link.url,
+                            other.url
+                        )));
+                    }
                 }
                 &mut directives_by_imported_name
             } else {
@@ -85,12 +87,12 @@ pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkErro
                 imported_name.clone(),
                 (Arc::clone(link), Arc::clone(import)),
             ) {
-                Err(LinkError::BootstrapError(format!(
+                return Err(LinkError::BootstrapError(format!(
                     "name conflict: both {} and {} import {}",
                     link.url,
                     other_link.url,
                     import.imported_display_name()
-                )))?
+                )));
             }
         }
     }
@@ -157,6 +159,37 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn explicit_root_directive_import() -> Result<(), LinkError> {
+        let schema = r#"
+          extend schema
+            @link(url: "https://specs.apollo.dev/link/v1.0", import: ["Import"])
+            @link(url: "https://specs.apollo.dev/inaccessible/v0.2", import: ["@inaccessible"])
+
+          type Query { x: Int }
+
+          enum link__Purpose {
+            SECURITY
+            EXECUTION
+          }
+
+          scalar Import
+
+          directive @link(url: String, as: String, import: [Import], for: link__Purpose) repeatable on SCHEMA
+        "#;
+
+        let schema = Schema::parse(schema, "root_directive.graphqls").unwrap();
+
+        let meta = links_metadata(&schema)?;
+        let meta = meta.expect("should have metadata");
+
+        assert!(meta
+            .source_link_of_directive(&name!("inaccessible"))
+            .is_some());
+
+        Ok(())
+    }
 
     #[test]
     fn computes_link_metadata() {
