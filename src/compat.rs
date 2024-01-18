@@ -138,12 +138,16 @@ pub fn remove_non_semantic_directives(schema: &mut Schema) {
     }
 }
 
-/// Recursively assign default values in input object values.
+// Just a boolean with a `?` operator
+type CoerceResult = Result<(), ()>;
+
+/// Recursively assign default values in input object values, mutating the value.
+/// If the default value is invalid, returns `Err(())`.
 fn coerce_value(
     input_objects: &HashMap<Name, Node<InputObjectType>>,
     target: &mut Node<Value>,
     ty: &Type,
-) {
+) -> CoerceResult {
     match target.make_mut() {
         Value::Object(object) if ty.is_named() => {
             let Some(definition) = input_objects.get(ty.inner_named_type()) else {
@@ -152,15 +156,17 @@ fn coerce_value(
             for (field_name, field_definition) in definition.fields.iter() {
                 match object.iter_mut().find(|(key, _value)| key == field_name) {
                     Some((_name, value)) => {
-                        coerce_value(input_objects, value, &field_definition.ty);
+                        coerce_value(input_objects, value, &field_definition.ty)?;
                     }
                     None => {
                         if let Some(default_value) = &field_definition.default_value {
                             let mut value = default_value.clone();
                             // If the default value is an input object we may need to fill in
                             // its defaulted fields recursively.
-                            coerce_value(input_objects, &mut value, &field_definition.ty);
+                            coerce_value(input_objects, &mut value, &field_definition.ty)?;
                             object.push((field_name.clone(), value));
+                        } else if field_definition.is_required() {
+                            return Err(());
                         }
                     }
                 }
@@ -168,7 +174,7 @@ fn coerce_value(
         }
         Value::List(list) => {
             for element in list {
-                coerce_value(input_objects, element, ty.item_type());
+                coerce_value(input_objects, element, ty.item_type())?;
             }
         }
         // Coerce single values (except null) to a list.
@@ -180,16 +186,19 @@ fn coerce_value(
         | Value::Boolean(_)
             if ty.is_list() =>
         {
-            coerce_value(input_objects, target, ty.item_type());
+            coerce_value(input_objects, target, ty.item_type())?;
             *target.make_mut() = Value::List(vec![target.clone()]);
         }
         // Other types are either totally invalid (and rejected by validation), or do not need
         // coercion
         _ => {}
     }
+    Ok(())
 }
 
-fn corce_arguments_default_values(
+/// Coerce default values in all the given arguments, mutating the arguments.
+/// If a default value is invalid, the whole default value is removed silently.
+fn coerce_arguments_default_values(
     input_objects: &HashMap<Name, Node<InputObjectType>>,
     arguments: &mut Vec<Node<InputValueDefinition>>,
 ) {
@@ -199,16 +208,18 @@ fn corce_arguments_default_values(
             continue;
         };
 
-        coerce_value(input_objects, default_value, &arg.ty);
+        if coerce_value(input_objects, default_value, &arg.ty).is_err() {
+            arg.default_value = None;
+        }
     }
 }
 
-/// For all object values written in the SDL, where the input object definition has default values,
-/// add those default values to the object.
+/// Do graphql-js-style input coercion on default values. Invalid default values are silently
+/// removed from the schema.
 ///
-/// This does not affect the functionality of the schema, but it matches a behaviour in graphql-js
-/// so we can compare API schema results between federation-next and JS federation. We can consider
-/// removing this when we no longer rely on JS federation.
+/// This is not what we would want to do for coercion in a real execution scenario, but it matches
+/// a behaviour in graphql-js so we can compare API schema results between federation-next and JS
+/// federation. We can consider removing this when we no longer rely on JS federation.
 pub fn coerce_schema_default_values(schema: &mut Schema) {
     // Keep a copy of the input objects so we can mutate the schema while walking it.
     let input_objects = schema
@@ -229,14 +240,14 @@ pub fn coerce_schema_default_values(schema: &mut Schema) {
                 let object = object.make_mut();
                 for field in object.fields.values_mut() {
                     let field = field.make_mut();
-                    corce_arguments_default_values(&input_objects, &mut field.arguments);
+                    coerce_arguments_default_values(&input_objects, &mut field.arguments);
                 }
             }
             ExtendedType::Interface(interface) => {
                 let interface = interface.make_mut();
                 for field in interface.fields.values_mut() {
                     let field = field.make_mut();
-                    corce_arguments_default_values(&input_objects, &mut field.arguments);
+                    coerce_arguments_default_values(&input_objects, &mut field.arguments);
                 }
             }
             ExtendedType::InputObject(input_object) => {
@@ -247,7 +258,9 @@ pub fn coerce_schema_default_values(schema: &mut Schema) {
                         continue;
                     };
 
-                    coerce_value(&input_objects, default_value, &field.ty);
+                    if coerce_value(&input_objects, default_value, &field.ty).is_err() {
+                        field.default_value = None;
+                    }
                 }
             }
             ExtendedType::Union(_) | ExtendedType::Scalar(_) | ExtendedType::Enum(_) => {
@@ -258,7 +271,7 @@ pub fn coerce_schema_default_values(schema: &mut Schema) {
 
     for directive in schema.directive_definitions.values_mut() {
         let directive = directive.make_mut();
-        corce_arguments_default_values(&input_objects, &mut directive.arguments);
+        coerce_arguments_default_values(&input_objects, &mut directive.arguments);
     }
 }
 

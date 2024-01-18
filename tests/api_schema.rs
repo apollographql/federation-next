@@ -2303,3 +2303,43 @@ fn matches_graphql_js_directive_applications() {
         }
     "###);
 }
+
+#[test]
+fn matches_graphql_js_default_value_propagation() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+        type Query {
+          defaultShouldBeRemoved(arg: OneRequiredOneDefault = {}): Int
+          defaultShouldHavePropagatedValues(arg: OneOptionalOneDefault = {}): Int
+        }
+
+        input OneOptionalOneDefault {
+          notDefaulted: Int
+          defaulted: Boolean = false
+        }
+
+        input OneRequiredOneDefault {
+          notDefaulted: Int!
+          defaulted: Boolean = false
+        }
+        "#,
+    )
+    .expect("should succeed");
+
+    insta::assert_display_snapshot!(api_schema, @r###"
+        input OneRequiredOneDefault {
+          notDefaulted: Int!
+          defaulted: Boolean = false
+        }
+
+        input OneOptionalOneDefault {
+          notDefaulted: Int
+          defaulted: Boolean = false
+        }
+
+        type Query {
+          defaultShouldBeRemoved(arg: OneRequiredOneDefault): Int
+          defaultShouldHavePropagatedValues(arg: OneOptionalOneDefault = {defaulted: false}): Int
+        }
+    "###);
+}
