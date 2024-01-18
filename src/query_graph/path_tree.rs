@@ -109,10 +109,10 @@ where
         // Group by and order by unique edge ID, and among those by unique trigger
         let mut merged = IndexMap::<TEdge, ByUniqueEdge<TTrigger, /* impl Iterator */ _>>::new();
 
-        struct ByUniqueEdge<'inputs, TTriger, GraphPathIter> {
+        struct ByUniqueEdge<'inputs, TTrigger, GraphPathIter> {
             target_node: NodeIndex,
             by_unique_trigger:
-                IndexMap<&'inputs Arc<TTriger>, PathTreeChildInputs<'inputs, GraphPathIter>>,
+                IndexMap<&'inputs Arc<TTrigger>, PathTreeChildInputs<'inputs, GraphPathIter>>,
         }
 
         struct PathTreeChildInputs<'inputs, GraphPathIter> {
