@@ -199,7 +199,8 @@ where
     TEdge: Copy + Into<Option<EdgeIndex>>,
 {
     pub(crate) fn iter(&self) -> impl Iterator<Item = GraphPathItem<'_, TTrigger, TEdge>> {
-        // FIXME: are these 3 `Vec`s expected to always have the same length?
+        debug_assert_eq!(self.edges.len(), self.edge_triggers.len());
+        debug_assert_eq!(self.edges.len(), self.edge_conditions.len());
         self.edges
             .iter()
             .copied()
