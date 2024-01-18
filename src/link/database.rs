@@ -192,6 +192,45 @@ mod tests {
     }
 
     #[test]
+    fn url_syntax() -> Result<(), LinkError> {
+        let schema = r#"
+            extend schema
+              @link(url: "https://specs.apollo.dev/link/v1.0")
+              @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
+              @link(url: "https://example.com/my-directive/v1.0", import: ["@myDirective"])
+
+          type Query { x: Int }
+
+            directive @myDirective on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
+            directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+            directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+            directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+            directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+            directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+            directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+            directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+        "#;
+
+        let schema = Schema::parse(schema, "url_dash.graphqls").unwrap();
+
+        let meta = links_metadata(&schema)?;
+        let meta = meta.expect("should have metadata");
+
+        assert!(meta
+            .source_link_of_directive(&name!("myDirective"))
+            .is_some());
+
+        Ok(())
+    }
+
+    #[test]
     fn computes_link_metadata() {
         let schema = r#"
           extend schema
