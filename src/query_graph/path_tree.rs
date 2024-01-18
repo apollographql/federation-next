@@ -76,7 +76,7 @@ impl OpPathTree {
     ) -> Result<Self, FederationError> {
         assert!(
             !paths.is_empty(),
-            "Should compute on empty paths" // FIXME: what does this mean?
+            "OpPathTree cannot be created from an empty set of paths"
         );
         Self::from_paths(
             graph,
@@ -106,17 +106,20 @@ where
         TTrigger: 'inputs,
         TEdge: 'inputs,
     {
-        type MergeBy<'inputs, TEdge, TTrigger> = (TEdge, &'inputs Arc<TTrigger>);
+        // Group by and order by unique edge ID, and among those by unique trigger
+        let mut merged = IndexMap::<TEdge, ByUniqueEdge<TTrigger, /* impl Iterator */ _>>::new();
 
-        /// `GraphPathIter` is a partly-consumed
-        /// `impl Iterator<Item = GraphPathItem<'_, TTrigger, TEdge>>`
-        struct Merged<'inputs, GraphPathIter> {
+        struct ByUniqueEdge<'inputs, TTriger, GraphPathIter> {
             target_node: NodeIndex,
+            by_unique_trigger:
+                IndexMap<&'inputs Arc<TTriger>, PathTreeChildInputs<'inputs, GraphPathIter>>,
+        }
+
+        struct PathTreeChildInputs<'inputs, GraphPathIter> {
             conditions: Option<Arc<OpPathTree>>,
             sub_paths_and_selections: Vec<(GraphPathIter, &'inputs Arc<NormalizedSelectionSet>)>,
         }
 
-        let mut merged = IndexMap::<MergeBy<_, _>, Merged<_>>::new();
         let mut local_selection_sets = Vec::new();
 
         for (mut graph_path_iter, selection) in graph_paths_and_selections {
@@ -125,7 +128,22 @@ where
                 local_selection_sets.push(selection.clone());
                 continue;
             };
-            match merged.entry((generic_edge, trigger)) {
+            let for_edge = match merged.entry(generic_edge) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    entry.insert(ByUniqueEdge {
+                        target_node: if let Some(edge) = generic_edge.into() {
+                            let (_source, target) = graph.edge_endpoints(edge)?;
+                            target
+                        } else {
+                            // For a "None" edge, stay on the same node
+                            node
+                        },
+                        by_unique_trigger: IndexMap::new(),
+                    })
+                }
+            };
+            match for_edge.by_unique_trigger.entry(trigger) {
                 Entry::Occupied(entry) => {
                     let existing = entry.into_mut();
                     existing.conditions = merge_conditions(&existing.conditions, conditions);
@@ -135,14 +153,7 @@ where
                     // Note that as we merge, we don't create a new child
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(Merged {
-                        target_node: if let Some(edge) = generic_edge.into() {
-                            let (_source, target) = graph.edge_endpoints(edge)?;
-                            target
-                        } else {
-                            // For a "None" edge, stay on the same node
-                            node
-                        },
+                    entry.insert(PathTreeChildInputs {
                         conditions: conditions.clone(),
                         sub_paths_and_selections: vec![(graph_path_iter, selection)],
                     });
@@ -150,27 +161,21 @@ where
             }
         }
 
-        let childs = merged
-            .into_iter()
-            .map(|(key, value)| {
-                let (edge, trigger) = key;
-                let Merged {
-                    target_node,
-                    conditions,
-                    sub_paths_and_selections: sub_path_and_selections,
-                } = value;
-                Ok(Arc::new(PathTreeChild {
+        let mut childs = Vec::new();
+        for (edge, by_unique_edge) in merged {
+            for (trigger, child) in by_unique_edge.by_unique_trigger {
+                childs.push(Arc::new(PathTreeChild {
                     edge,
                     trigger: trigger.clone(),
-                    conditions: conditions.clone(),
+                    conditions: child.conditions.clone(),
                     tree: Arc::new(Self::from_paths(
                         graph.clone(),
-                        target_node,
-                        sub_path_and_selections,
+                        by_unique_edge.target_node,
+                        child.sub_paths_and_selections,
                     )?),
                 }))
-            })
-            .collect::<Result<_, FederationError>>()?;
+            }
+        }
         Ok(Self {
             graph,
             node,
