@@ -324,10 +324,6 @@ impl QueryPlanningTraversal {
                 let (_source_node, target_node) = path_tree.graph.edge_endpoints(edge)?;
                 let target_node = path_tree.graph.node_weight(target_node)?;
                 let subgraph_name = &target_node.source;
-                let subgraph_schema = self
-                    .parameters
-                    .federated_query_graph
-                    .schema_by_source(subgraph_name)?;
                 let root_type = match &target_node.type_ {
                     QueryGraphNodeType::SchemaType(OutputTypeDefinitionPosition::Object(
                         object,
@@ -340,10 +336,9 @@ impl QueryPlanningTraversal {
                 };
                 let fetch_dependency_node = dependency_graph.get_or_create_root_node(
                     subgraph_name,
-                    subgraph_schema,
                     self.root_kind,
                     root_type,
-                );
+                )?;
                 compute_nodes_for_tree(
                     dependency_graph,
                     &child.tree,
@@ -356,10 +351,6 @@ impl QueryPlanningTraversal {
         } else {
             let query_graph_node = path_tree.graph.node_weight(path_tree.node)?;
             let subgraph_name = &query_graph_node.source;
-            let subgraph_schema = self
-                .parameters
-                .federated_query_graph
-                .schema_by_source(subgraph_name)?;
             let root_type = match &query_graph_node.type_ {
                 QueryGraphNodeType::SchemaType(position) => position.clone().try_into()?,
                 QueryGraphNodeType::FederatedRootType(_) => {
@@ -370,10 +361,9 @@ impl QueryPlanningTraversal {
             };
             let fetch_dependency_node = dependency_graph.get_or_create_root_node(
                 subgraph_name,
-                subgraph_schema,
                 self.root_kind,
                 root_type,
-            );
+            )?;
             compute_nodes_for_tree(
                 dependency_graph,
                 path_tree,

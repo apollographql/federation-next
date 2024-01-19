@@ -1,3 +1,4 @@
+use crate::error::FederationError;
 use crate::query_graph::graph_path::{OpGraphPathContext, OpPath};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
@@ -203,42 +204,41 @@ impl FetchDependencyGraph {
     pub(crate) fn get_or_create_root_node(
         &mut self,
         subgraph_name: &NodeStr,
-        subgraph_schema: &ValidFederationSchema,
         root_kind: SchemaRootDefinitionKind,
         parent_type: CompositeTypeDefinitionPosition,
-    ) -> NodeIndex {
+    ) -> Result<NodeIndex, FederationError> {
+        if let Some(node) = self.root_nodes_by_subgraph.get(subgraph_name) {
+            return Ok(*node);
+        }
+        let node = self.new_node(
+            subgraph_name.clone(),
+            parent_type,
+            /* has_inputs: */ false,
+            root_kind,
+        )?;
         self.root_nodes_by_subgraph
-            .get(subgraph_name)
-            .copied()
-            .unwrap_or_else(|| {
-                let node = self.new_node(
-                    subgraph_name.clone(),
-                    subgraph_schema.clone(),
-                    parent_type,
-                    /* has_inputs: */ false,
-                    root_kind,
-                );
-                self.root_nodes_by_subgraph
-                    .insert(subgraph_name.clone(), node);
-                node
-            })
+            .insert(subgraph_name.clone(), node);
+        Ok(node)
     }
 
     pub(crate) fn new_node(
         &mut self,
         subgraph_name: NodeStr,
-        subgraph_schema: ValidFederationSchema,
         parent_type: CompositeTypeDefinitionPosition,
         has_inputs: bool,
         root_kind: SchemaRootDefinitionKind,
         // merge_at: Option<Vec<ResponsePathElement>>,
         // defer_ref: Option<NodeStr>,
-    ) -> NodeIndex {
+    ) -> Result<NodeIndex, FederationError> {
+        let subgraph_schema = self
+            .federated_query_graph
+            .schema_by_source(&subgraph_name)?
+            .clone();
         self.on_modification();
-        self.graph.add_node(Arc::new(FetchDependencyGraphNode {
+        Ok(self.graph.add_node(Arc::new(FetchDependencyGraphNode {
             subgraph_name: subgraph_name.clone(),
             root_kind,
-            selection_set: FetchSelectionSet::empty(subgraph_schema, parent_type.clone()),
+            selection_set: FetchSelectionSet::empty(subgraph_schema, parent_type.clone())?,
             parent_type,
             is_entity_fetch: has_inputs,
             inputs: has_inputs
@@ -250,7 +250,7 @@ impl FetchDependencyGraph {
             cached_cost: None,
             must_preserve_selection_set: false,
             is_known_useful: false,
-        }))
+        })))
     }
 }
 
@@ -258,14 +258,13 @@ impl FetchSelectionSet {
     pub(crate) fn empty(
         schema: ValidFederationSchema,
         type_position: CompositeTypeDefinitionPosition,
-    ) -> Self {
+    ) -> Result<Self, FederationError> {
         let selection_set = Arc::new(NormalizedSelectionSet::empty(schema, type_position));
-        // unwrap: the "unexpected fragment spread" error won’t happen in an empty selection set
-        let conditions = selection_set.conditions().unwrap();
-        Self {
+        let conditions = selection_set.conditions()?;
+        Ok(Self {
             conditions,
             selection_set,
-        }
+        })
     }
 }
 
