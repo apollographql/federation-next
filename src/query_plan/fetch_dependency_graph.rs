@@ -1,4 +1,4 @@
-use crate::query_graph::graph_path::OpPath;
+use crate::query_graph::graph_path::{OpGraphPathContext, OpPath};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
 use crate::query_plan::conditions::Conditions;
@@ -148,7 +148,7 @@ pub(crate) struct FetchDependencyGraphPath {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct NodePath {
+pub(crate) struct FetchDependencyGraphNodePath {
     full_path: Vec<QueryPathElement>,
     path_in_group: Vec<QueryPathElement>,
     response_path: Vec<FetchDataPathElement>,
@@ -259,9 +259,12 @@ impl FetchSelectionSet {
         schema: ValidFederationSchema,
         type_position: CompositeTypeDefinitionPosition,
     ) -> Self {
+        let selection_set = Arc::new(NormalizedSelectionSet::empty(schema, type_position));
+        // unwrap: the "unexpected fragment spread" error won’t happen in an empty selection set
+        let conditions = selection_set.conditions().unwrap();
         Self {
-            selection_set: Arc::new(NormalizedSelectionSet::empty(schema, type_position)),
-            conditions: Conditions::TRUE,
+            conditions,
+            selection_set,
         }
     }
 }
@@ -298,9 +301,9 @@ pub(crate) fn compute_nodes_for_tree(
     _dependency_graph: &mut FetchDependencyGraph,
     _tree: &OpPathTree,
     _start_node: NodeIndex,
-    _initial_node_path: NodePath,
+    _initial_node_path: FetchDependencyGraphNodePath,
     _initial_defer_context: DeferContext,
-    _initial_conditions: Conditions,
+    _initial_conditions: OpGraphPathContext,
 ) -> Vec<NodeIndex> {
     // TODO: port `computeGroupsForTree` in `query-planner-js/src/buildPlan.ts`
     todo!()

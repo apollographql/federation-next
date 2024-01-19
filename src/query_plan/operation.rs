@@ -1,5 +1,6 @@
 use crate::error::FederationError;
 use crate::error::SingleFederationError::Internal;
+use crate::query_plan::conditions::Conditions;
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, FieldDefinitionPosition, InterfaceTypeDefinitionPosition,
     SchemaRootDefinitionKind,
@@ -124,6 +125,27 @@ impl NormalizedSelection {
             }
             NormalizedSelection::InlineFragment(inline_fragment_selection) => {
                 &inline_fragment_selection.inline_fragment.directives
+            }
+        }
+    }
+
+    pub(crate) fn conditions(&self) -> Result<Conditions, FederationError> {
+        let self_conditions = Conditions::from_directives(self.directives())?;
+        if let Conditions::Boolean(false) = self_conditions {
+            // Never included, there is no point recuring
+            Ok(Conditions::Boolean(false))
+        } else {
+            match self {
+                NormalizedSelection::Field(_) => {
+                    // We want this field regardless of whether sub-selections are included
+                    Ok(self_conditions)
+                }
+                NormalizedSelection::InlineFragment(inline) => {
+                    Ok(self_conditions.merge(inline.selection_set.conditions()?))
+                }
+                NormalizedSelection::FragmentSpread(_x) => Err(FederationError::internal(
+                    "unexpected fragment spread in NormalizedSelection::conditions()",
+                )),
             }
         }
     }
@@ -619,6 +641,32 @@ impl NormalizedSelectionSet {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn conditions(&self) -> Result<Conditions, FederationError> {
+        // If the conditions of all the selections within the set are the same,
+        // then those are conditions of the whole set and we return it.
+        // Otherwise, we just return `true`
+        // (which essentially translate to "that selection always need to be queried").
+        // Note that for the case where the set has only 1 selection,
+        // then this just mean we return the condition of that one selection.
+        // Also note that in theory we could be a tad more precise,
+        // and when all the selections have variable conditions,
+        // we could return the intersection of all of them,
+        // but we don't bother for now as that has probably extremely rarely an impact in practice.
+        let mut selections = self.selections.values();
+        let Some(first_selection) = selections.next() else {
+            // we shouldn't really get here for well-formed selection, so whether we return true or false doesn't matter
+            // too much, but in principle, if there is no selection, we should be cool not including it.
+            return Ok(Conditions::Boolean(false));
+        };
+        let conditions = first_selection.conditions()?;
+        for selection in selections {
+            if selection.conditions()? != conditions {
+                return Ok(Conditions::Boolean(true));
+            }
+        }
+        Ok(conditions)
     }
 }
 

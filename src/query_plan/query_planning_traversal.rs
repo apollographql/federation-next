@@ -2,7 +2,6 @@ use crate::error::FederationError;
 use crate::query_graph::graph_path::{ClosedBranch, OpenBranch, SimultaneousPaths};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::{QueryGraph, QueryGraphNodeType};
-use crate::query_plan::conditions::Conditions;
 use crate::query_plan::fetch_dependency_graph::{compute_nodes_for_tree, FetchDependencyGraph};
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToCostProcessor;
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToQueryPlanProcessor;
@@ -351,7 +350,7 @@ impl QueryPlanningTraversal {
                     fetch_dependency_node,
                     Default::default(),
                     Default::default(),
-                    Conditions::TRUE,
+                    Default::default(),
                 );
             }
         } else {
@@ -381,7 +380,7 @@ impl QueryPlanningTraversal {
                 fetch_dependency_node,
                 Default::default(),
                 Default::default(),
-                Conditions::TRUE,
+                Default::default(),
             );
         }
         Ok(())
