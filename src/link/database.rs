@@ -257,8 +257,8 @@ mod tests {
 
         let meta = links_metadata(&schema)
             // TODO: error handling?
-            .unwrap_or_default()
-            .unwrap_or_default();
+            .unwrap()
+            .unwrap();
         let names_in_schema = meta
             .all_links()
             .iter()
@@ -344,5 +344,86 @@ mod tests {
             tag_source.import.as_ref().unwrap().alias,
             Some(name!("myTag"))
         );
+    }
+
+    mod link_import {
+        use super::*;
+
+        #[test]
+        fn errors_on_malformed_values() {
+            let schema = r#"
+                extend schema @link(url: "https://specs.apollo.dev/link/v1.0")
+                extend schema @link(
+                  url: "https://specs.apollo.dev/federation/v2.0",
+                  import: [
+                    2,
+                    { foo: "bar" },
+                    { name: "@key", badName: "foo"},
+                    { name: 42 },
+                    { as: "bar" },
+                   ]
+                )
+
+                type Query {
+                  q: Int
+                }
+
+                directive @link(url: String, as: String, import: [Import], for: link__Purpose) repeatable on SCHEMA
+            "#;
+
+            let schema = Schema::parse(schema, "testSchema").unwrap();
+            let errors = links_metadata(&schema).expect_err("should error");
+            // TODO Multiple errors
+            insta::assert_display_snapshot!(errors, @r###"Invalid use of @link in schema: invalid sub-value for @link(import:) argument: values should be either strings or input object values of the form { name: "<importedElement>", as: "<alias>" }."###);
+        }
+
+        #[test]
+        fn errors_on_mismatch_between_name_and_alias() {
+            let schema = r#"
+                extend schema @link(url: "https://specs.apollo.dev/link/v1.0")
+                extend schema @link(
+                  url: "https://specs.apollo.dev/federation/v2.0",
+                  import: [
+                    { name: "@key", as: "myKey" },
+                    { name: "FieldSet", as: "@fieldSet" },
+                  ]
+                )
+
+                type Query {
+                  q: Int
+                }
+
+                directive @link(url: String, as: String, import: [Import], for: link__Purpose) repeatable on SCHEMA
+            "#;
+
+            let schema = Schema::parse(schema, "testSchema").unwrap();
+            let errors = links_metadata(&schema).expect_err("should error");
+            // TODO Multiple errors
+            insta::assert_display_snapshot!(errors, @"Invalid use of @link in schema: invalid alias 'myKey' for import name '@key': should start with '@' since the imported name does");
+        }
+
+        // TODO Implement
+        /*
+        #[test]
+        fn errors_on_importing_unknown_elements_for_known_features() {
+            let schema = r#"
+                extend schema @link(url: "https://specs.apollo.dev/link/v1.0")
+                extend schema @link(
+                  url: "https://specs.apollo.dev/federation/v2.0",
+                  import: [ "@foo", "key", { name: "@sharable" } ]
+                )
+
+                type Query {
+                  q: Int
+                }
+
+                directive @link(url: String, as: String, import: [Import], for: link__Purpose) repeatable on SCHEMA
+            "#;
+
+            let schema = Schema::parse(schema, "testSchema").unwrap();
+            let errors = links_metadata(&schema).expect_err("should error");
+            insta::assert_display_snapshot!(errors, @"");
+        }
+        */
     }
 }
