@@ -81,7 +81,7 @@ pub(crate) mod normalized_selection_map {
         NormalizedSelectionSet,
     };
     use apollo_compiler::ast::Name;
-    use linked_hash_map::LinkedHashMap;
+    use indexmap::IndexMap;
     use std::borrow::Borrow;
     use std::hash::Hash;
     use std::iter::Map;
@@ -99,14 +99,12 @@ pub(crate) mod normalized_selection_map {
     /// module to prevent code from accidentally mutating the underlying map outside the mutation
     /// API.
     ///
-    /// Note that this must be a `LinkedHashMap` so that removals don't change the order.
+
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub(crate) struct NormalizedSelectionMap(
-        LinkedHashMap<NormalizedSelectionKey, NormalizedSelection>,
-    );
+    pub(crate) struct NormalizedSelectionMap(IndexMap<NormalizedSelectionKey, NormalizedSelection>);
 
     impl Deref for NormalizedSelectionMap {
-        type Target = LinkedHashMap<NormalizedSelectionKey, NormalizedSelection>;
+        type Target = IndexMap<NormalizedSelectionKey, NormalizedSelection>;
 
         fn deref(&self) -> &Self::Target {
             &self.0
@@ -115,7 +113,7 @@ pub(crate) mod normalized_selection_map {
 
     impl NormalizedSelectionMap {
         pub(crate) fn new() -> Self {
-            NormalizedSelectionMap(LinkedHashMap::new())
+            NormalizedSelectionMap(IndexMap::new())
         }
 
         pub(crate) fn clear(&mut self) {
@@ -131,7 +129,8 @@ pub(crate) mod normalized_selection_map {
             NormalizedSelectionKey: Borrow<Q>,
             Q: Eq + Hash,
         {
-            self.0.remove(key)
+            // We specifically use shift_remove() instead of swap_remove() to maintain order.
+            self.0.shift_remove(key)
         }
 
         pub(crate) fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<NormalizedSelectionValue>
@@ -150,14 +149,14 @@ pub(crate) mod normalized_selection_map {
 
         pub(super) fn entry(&mut self, key: NormalizedSelectionKey) -> Entry {
             match self.0.entry(key) {
-                linked_hash_map::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry(entry)),
-                linked_hash_map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(entry)),
+                indexmap::map::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry(entry)),
+                indexmap::map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(entry)),
             }
         }
     }
 
     type IterMut<'a> = Map<
-        linked_hash_map::IterMut<'a, NormalizedSelectionKey, NormalizedSelection>,
+        indexmap::map::IterMut<'a, NormalizedSelectionKey, NormalizedSelection>,
         fn(
             (&'a NormalizedSelectionKey, &'a mut NormalizedSelection),
         ) -> (&'a NormalizedSelectionKey, NormalizedSelectionValue<'a>),
@@ -258,7 +257,7 @@ pub(crate) mod normalized_selection_map {
     }
 
     pub(crate) struct OccupiedEntry<'a>(
-        linked_hash_map::OccupiedEntry<'a, NormalizedSelectionKey, NormalizedSelection>,
+        indexmap::map::OccupiedEntry<'a, NormalizedSelectionKey, NormalizedSelection>,
     );
 
     impl<'a> OccupiedEntry<'a> {
@@ -279,12 +278,13 @@ pub(crate) mod normalized_selection_map {
         }
 
         pub(crate) fn remove(self) -> NormalizedSelection {
-            self.0.remove()
+            // We specifically use shift_remove() instead of swap_remove() to maintain order.
+            self.0.shift_remove()
         }
     }
 
     pub(crate) struct VacantEntry<'a>(
-        linked_hash_map::VacantEntry<'a, NormalizedSelectionKey, NormalizedSelection>,
+        indexmap::map::VacantEntry<'a, NormalizedSelectionKey, NormalizedSelection>,
     );
 
     impl<'a> VacantEntry<'a> {
@@ -310,13 +310,12 @@ pub(crate) mod normalized_selection_map {
     }
 
     impl IntoIterator for NormalizedSelectionMap {
-        type Item =
-            <LinkedHashMap<NormalizedSelectionKey, NormalizedSelection> as IntoIterator>::Item;
+        type Item = <IndexMap<NormalizedSelectionKey, NormalizedSelection> as IntoIterator>::Item;
         type IntoIter =
-            <LinkedHashMap<NormalizedSelectionKey, NormalizedSelection> as IntoIterator>::IntoIter;
+            <IndexMap<NormalizedSelectionKey, NormalizedSelection> as IntoIterator>::IntoIter;
 
         fn into_iter(self) -> Self::IntoIter {
-            <LinkedHashMap<NormalizedSelectionKey, NormalizedSelection> as IntoIterator>::into_iter(
+            <IndexMap<NormalizedSelectionKey, NormalizedSelection> as IntoIterator>::into_iter(
                 self.0,
             )
         }
