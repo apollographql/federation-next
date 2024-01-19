@@ -10,13 +10,12 @@
 use apollo_compiler::ast::Value;
 use apollo_compiler::schema::Directive;
 use apollo_compiler::schema::ExtendedType;
-use apollo_compiler::schema::InputObjectType;
 use apollo_compiler::schema::InputValueDefinition;
 use apollo_compiler::schema::Name;
 use apollo_compiler::schema::Type;
 use apollo_compiler::Node;
 use apollo_compiler::Schema;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 /// Return true if a directive application is "semantic", meaning it's observable in introspection.
 fn is_semantic_directive_application(directive: &Directive) -> bool {
@@ -144,26 +143,23 @@ type CoerceResult = Result<(), ()>;
 /// Recursively assign default values in input object values, mutating the value.
 /// If the default value is invalid, returns `Err(())`.
 fn coerce_value(
-    input_objects: &HashMap<Name, Node<InputObjectType>>,
+    types: &IndexMap<Name, ExtendedType>,
     target: &mut Node<Value>,
     ty: &Type,
 ) -> CoerceResult {
-    match target.make_mut() {
-        Value::Object(object) if ty.is_named() => {
-            let Some(definition) = input_objects.get(ty.inner_named_type()) else {
-                unreachable!("Found an object value where a {ty} was expected, this should have been caught by validation");
-            };
+    match (target.make_mut(), types.get(ty.inner_named_type())) {
+        (Value::Object(object), Some(ExtendedType::InputObject(definition))) if ty.is_named() => {
             for (field_name, field_definition) in definition.fields.iter() {
                 match object.iter_mut().find(|(key, _value)| key == field_name) {
                     Some((_name, value)) => {
-                        coerce_value(input_objects, value, &field_definition.ty)?;
+                        coerce_value(types, value, &field_definition.ty)?;
                     }
                     None => {
                         if let Some(default_value) = &field_definition.default_value {
                             let mut value = default_value.clone();
                             // If the default value is an input object we may need to fill in
                             // its defaulted fields recursively.
-                            coerce_value(input_objects, &mut value, &field_definition.ty)?;
+                            coerce_value(types, &mut value, &field_definition.ty)?;
                             object.push((field_name.clone(), value));
                         } else if field_definition.is_required() {
                             return Err(());
@@ -172,26 +168,46 @@ fn coerce_value(
                 }
             }
         }
-        Value::List(list) => {
+        (Value::List(list), Some(_)) if ty.is_list() => {
             for element in list {
-                coerce_value(input_objects, element, ty.item_type())?;
+                coerce_value(types, element, ty.item_type())?;
             }
         }
         // Coerce single values (except null) to a list.
-        Value::Object(_)
-        | Value::String(_)
-        | Value::Enum(_)
-        | Value::Int(_)
-        | Value::Float(_)
-        | Value::Boolean(_)
-            if ty.is_list() =>
-        {
-            coerce_value(input_objects, target, ty.item_type())?;
+        (
+            Value::Object(_)
+            | Value::String(_)
+            | Value::Enum(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::Boolean(_),
+            Some(_),
+        ) if ty.is_list() => {
+            coerce_value(types, target, ty.item_type())?;
             *target.make_mut() = Value::List(vec![target.clone()]);
         }
-        // Other types are either totally invalid (and rejected by validation), or do not need
-        // coercion
-        _ => {}
+
+        // Accept null for any nullable type.
+        (Value::Null, _) if !ty.is_non_null() => {}
+
+        // Accept non-composite values if they match the type.
+        (Value::String(_), Some(ExtendedType::Scalar(scalar)))
+            if !scalar.is_built_in() || matches!(scalar.name.as_str(), "ID" | "String") => {}
+        (Value::Boolean(_), Some(ExtendedType::Scalar(scalar)))
+            if !scalar.is_built_in() || scalar.name == "Boolean" => {}
+        (Value::Int(_), Some(ExtendedType::Scalar(scalar)))
+            if !scalar.is_built_in() || matches!(scalar.name.as_str(), "ID" | "Int" | "Float") => {}
+        (Value::Float(_), Some(ExtendedType::Scalar(scalar)))
+            if !scalar.is_built_in() || scalar.name == "Float" => {}
+        // Custom scalars accept any value, even objects and lists.
+        (Value::Object(_), Some(ExtendedType::Scalar(scalar))) if !scalar.is_built_in() => {}
+        (Value::List(_), Some(ExtendedType::Scalar(scalar))) if !scalar.is_built_in() => {}
+        // Enums must match the type.
+        (Value::Enum(value), Some(ExtendedType::Enum(enum_)))
+            if enum_.values.contains_key(value) => {}
+
+        // Other types are totally invalid (and should ideally be rejected by validation).
+        _ => return Err(()),
     }
     Ok(())
 }
@@ -199,7 +215,7 @@ fn coerce_value(
 /// Coerce default values in all the given arguments, mutating the arguments.
 /// If a default value is invalid, the whole default value is removed silently.
 fn coerce_arguments_default_values(
-    input_objects: &HashMap<Name, Node<InputObjectType>>,
+    types: &IndexMap<Name, ExtendedType>,
     arguments: &mut Vec<Node<InputValueDefinition>>,
 ) {
     for arg in arguments {
@@ -208,7 +224,7 @@ fn coerce_arguments_default_values(
             continue;
         };
 
-        if coerce_value(input_objects, default_value, &arg.ty).is_err() {
+        if coerce_value(types, default_value, &arg.ty).is_err() {
             arg.default_value = None;
         }
     }
@@ -221,18 +237,8 @@ fn coerce_arguments_default_values(
 /// a behaviour in graphql-js so we can compare API schema results between federation-next and JS
 /// federation. We can consider removing this when we no longer rely on JS federation.
 pub fn coerce_schema_default_values(schema: &mut Schema) {
-    // Keep a copy of the input objects so we can mutate the schema while walking it.
-    let input_objects = schema
-        .types
-        .iter()
-        .filter_map(|(name, ty)| {
-            if let ExtendedType::InputObject(input_object) = ty {
-                Some((name.clone(), input_object.clone()))
-            } else {
-                None
-            }
-        })
-        .collect::<HashMap<_, _>>();
+    // Keep a copy of the types in the schema so we can mutate the schema while walking it.
+    let types = schema.types.clone();
 
     for ty in schema.types.values_mut() {
         match ty {
@@ -240,14 +246,14 @@ pub fn coerce_schema_default_values(schema: &mut Schema) {
                 let object = object.make_mut();
                 for field in object.fields.values_mut() {
                     let field = field.make_mut();
-                    coerce_arguments_default_values(&input_objects, &mut field.arguments);
+                    coerce_arguments_default_values(&types, &mut field.arguments);
                 }
             }
             ExtendedType::Interface(interface) => {
                 let interface = interface.make_mut();
                 for field in interface.fields.values_mut() {
                     let field = field.make_mut();
-                    coerce_arguments_default_values(&input_objects, &mut field.arguments);
+                    coerce_arguments_default_values(&types, &mut field.arguments);
                 }
             }
             ExtendedType::InputObject(input_object) => {
@@ -258,7 +264,7 @@ pub fn coerce_schema_default_values(schema: &mut Schema) {
                         continue;
                     };
 
-                    if coerce_value(&input_objects, default_value, &field.ty).is_err() {
+                    if coerce_value(&types, default_value, &field.ty).is_err() {
                         field.default_value = None;
                     }
                 }
@@ -271,7 +277,7 @@ pub fn coerce_schema_default_values(schema: &mut Schema) {
 
     for directive in schema.directive_definitions.values_mut() {
         let directive = directive.make_mut();
-        coerce_arguments_default_values(&input_objects, &mut directive.arguments);
+        coerce_arguments_default_values(&types, &mut directive.arguments);
     }
 }
 
