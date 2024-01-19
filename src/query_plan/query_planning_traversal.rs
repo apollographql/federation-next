@@ -310,7 +310,7 @@ impl QueryPlanningTraversal {
     ) -> Result<(), FederationError> {
         let is_root_path_tree = matches!(
             path_tree.graph.node_weight(path_tree.node)?.type_,
-            QueryGraphNodeType::SchemaType(_)
+            QueryGraphNodeType::FederatedRootType(_)
         );
         if is_root_path_tree {
             // The root of the pathTree is one of the "fake" root of the subgraphs graph,
