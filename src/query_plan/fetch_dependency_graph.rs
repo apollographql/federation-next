@@ -3,7 +3,7 @@ use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
 use crate::query_plan::conditions::Conditions;
 use crate::query_plan::operation::NormalizedSelectionSet;
-use crate::query_plan::{FetchDataPathElement, QueryPathElement, ResponsePathElement};
+use crate::query_plan::{FetchDataPathElement, QueryPathElement};
 use crate::query_plan::{FetchDataRewrite, QueryPlanCost};
 use crate::schema::position::{CompositeTypeDefinitionPosition, SchemaRootDefinitionKind};
 use crate::schema::ValidFederationSchema;
@@ -39,7 +39,7 @@ pub(crate) struct FetchDependencyGraphNode {
     input_rewrites: Arc<Vec<Arc<FetchDataRewrite>>>,
     /// As query plan execution runs, it accumulates fetch data into a response object. This is the
     /// path at which to merge in the data for this particular fetch.
-    merge_at: Option<Vec<ResponsePathElement>>,
+    merge_at: Option<Vec<FetchDataPathElement>>,
     /// The fetch ID generation, if one is necessary (used when handling `@defer`).
     id: Option<u64>,
     /// The label of the `@defer` block this fetch appears in, if any.
@@ -151,7 +151,7 @@ pub(crate) struct FetchDependencyGraphPath {
 pub(crate) struct NodePath {
     full_path: Vec<QueryPathElement>,
     path_in_group: Vec<QueryPathElement>,
-    response_path: Vec<ResponsePathElement>,
+    response_path: Vec<FetchDataPathElement>,
 }
 
 #[derive(Debug)]

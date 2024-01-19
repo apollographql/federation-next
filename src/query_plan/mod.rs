@@ -225,9 +225,3 @@ pub enum QueryPathElement {
     Field(Field),
     InlineFragment(InlineFragment),
 }
-
-#[derive(Debug, Clone)]
-pub enum ResponsePathElement {
-    Field(Name),
-    ListIndex(usize),
-}
