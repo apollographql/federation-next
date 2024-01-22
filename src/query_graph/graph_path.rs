@@ -2,9 +2,9 @@ use crate::error::FederationError;
 use crate::link::graphql_definition::{DeferDirectiveArguments, OperationConditional};
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
-use crate::query_plan::operation::{
-    NormalizedField, NormalizedInlineFragment, NormalizedSelectionSet,
-};
+use crate::query_plan::operation::normalized_field_selection::NormalizedField;
+use crate::query_plan::operation::normalized_inline_fragment_selection::NormalizedInlineFragment;
+use crate::query_plan::operation::NormalizedSelectionSet;
 use crate::query_plan::QueryPlanCost;
 use crate::schema::position::ObjectTypeDefinitionPosition;
 use indexmap::IndexSet;
@@ -57,7 +57,7 @@ use std::sync::Arc;
 pub(crate) struct GraphPath<TTrigger, TEdge>
 where
     TTrigger: Eq + Hash,
-    TEdge: Into<Option<EdgeIndex>>,
+    TEdge: Copy + Into<Option<EdgeIndex>>,
 {
     /// The query graph of which this is a path.
     graph: Arc<QueryGraph>,
@@ -114,6 +114,10 @@ pub(crate) struct SubgraphEnteringEdgeInfo {
     conditions_cost: QueryPlanCost,
 }
 
+/// The item type for [`GraphPath::iter`]
+pub(crate) type GraphPathItem<'path, TTrigger, TEdge> =
+    (TEdge, &'path Arc<TTrigger>, &'path Option<Arc<OpPathTree>>);
+
 /// A `GraphPath` whose triggers are operation elements (essentially meaning that the path has been
 /// guided by a GraphQL operation).
 // PORT_NOTE: As noted in the docs for `GraphPath`, we omit a type parameter for the root node,
@@ -168,7 +172,12 @@ impl Hash for OpGraphPathContext {
 /// type (e.g. during type explosion).
 pub(crate) struct SimultaneousPaths(pub(crate) Vec<Arc<OpGraphPath>>);
 
-pub(crate) struct SimultaneousPathsWithLazyIndirectPaths;
+/// One of the options for an `OpenBranch` (see the documentation of that struct for details). This
+/// includes
+pub(crate) struct SimultaneousPathsWithLazyIndirectPaths {
+    paths: SimultaneousPaths,
+    context: OpGraphPathContext,
+}
 
 /// One of the options for a `ClosedBranch` (see the documentation of that struct for details). Note
 /// there is an optimization here, in that if some ending section of the path within the GraphQL
@@ -188,6 +197,23 @@ pub(crate) struct ClosedBranch(pub(crate) Vec<Arc<ClosedPath>>);
 /// A list of the options generated during query planning for a specific "open branch", which is a
 /// partial/open path in a GraphQL operation (i.e. one that does not end in a leaf field).
 pub(crate) struct OpenBranch(Vec<SimultaneousPathsWithLazyIndirectPaths>);
+
+impl<TTrigger, TEdge> GraphPath<TTrigger, TEdge>
+where
+    TTrigger: Eq + Hash,
+    TEdge: Copy + Into<Option<EdgeIndex>>,
+{
+    pub(crate) fn iter(&self) -> impl Iterator<Item = GraphPathItem<'_, TTrigger, TEdge>> {
+        debug_assert_eq!(self.edges.len(), self.edge_triggers.len());
+        debug_assert_eq!(self.edges.len(), self.edge_conditions.len());
+        self.edges
+            .iter()
+            .copied()
+            .zip(&self.edge_triggers)
+            .zip(&self.edge_conditions)
+            .map(|((edge, trigger), condition)| (edge, trigger, condition))
+    }
+}
 
 impl OpGraphPath {
     pub(crate) fn is_overridden_by(&self, other: &Self) -> bool {
