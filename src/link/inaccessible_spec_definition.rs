@@ -90,7 +90,7 @@ lazy_static! {
     };
 }
 
-pub(crate) fn get_inaccessible_spec_definition_from_subgraph(
+fn get_inaccessible_spec_from_schema(
     schema: &FederationSchema,
 ) -> Result<Option<&'static InaccessibleSpecDefinition>, FederationError> {
     let inaccessible_link = match schema
@@ -105,8 +105,7 @@ pub(crate) fn get_inaccessible_spec_definition_from_subgraph(
         INACCESSIBLE_VERSIONS
             .find(&inaccessible_link.url.version)
             .ok_or_else(|| SingleFederationError::Internal {
-                message: "Subgraph unexpectedly does not use a supported inaccessible spec version"
-                    .to_owned(),
+                message: format!("Cannot remove inaccessible elements: the schema uses unsupported inaccessible spec version {}", inaccessible_link.url.version),
             })?,
     ))
 }
@@ -820,7 +819,7 @@ fn validate_inaccessible_type(
 }
 
 pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), FederationError> {
-    let Some(inaccessible_spec) = get_inaccessible_spec_definition_from_subgraph(schema)? else {
+    let Some(inaccessible_spec) = get_inaccessible_spec_from_schema(schema)? else {
         return Ok(());
     };
     let inaccessible_directive = inaccessible_spec
@@ -1007,7 +1006,7 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
 }
 
 pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(), FederationError> {
-    let Some(inaccessible_spec) = get_inaccessible_spec_definition_from_subgraph(schema)? else {
+    let Some(inaccessible_spec) = get_inaccessible_spec_from_schema(schema)? else {
         return Ok(());
     };
     let directive_name = inaccessible_spec
