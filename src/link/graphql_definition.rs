@@ -9,13 +9,24 @@ pub(crate) struct DeferDirectiveArguments {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct OperationConditional {
-    kind: OperationConditionalKind,
-    value: BooleanOrVariable,
+    pub(crate) kind: OperationConditionalKind,
+    pub(crate) value: BooleanOrVariable,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    strum_macros::Display,
+    strum_macros::EnumIter,
+    strum_macros::IntoStaticStr,
+)]
 pub(crate) enum OperationConditionalKind {
+    #[strum(to_string = "include")]
     Include,
+    #[strum(to_string = "skip")]
     Skip,
 }
 
