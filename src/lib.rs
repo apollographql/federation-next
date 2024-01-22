@@ -35,7 +35,8 @@ impl Supergraph {
         Ok(Self { schema })
     }
 
-    /// Generates API schema from the supergraph schema.
+    /// Generates an API Schema from this supergraph schema. The API Schema represents the combined
+    /// API of the supergraph that's visible to end users.
     pub fn to_api_schema(&self) -> Result<Valid<Schema>, FederationError> {
         let api_schema = FederationSchema::new(self.schema.clone().into_inner())?;
         api_schema::to_api_schema(api_schema)
