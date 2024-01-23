@@ -456,9 +456,9 @@ fn validate_inaccessible_in_fields(
                             })
                         });
 
-                    for accessible_reference in inaccessible_super_references {
+                    for inaccessible_reference in inaccessible_super_references {
                         errors.push(SingleFederationError::RequiredInaccessible {
-                            message: format!("Argument `{accessible_reference}` is @inaccessible but is implemented by the argument `{type_position}.{field_name}({arg_name}:)` which is in the API schema."),
+                            message: format!("Argument `{inaccessible_reference}` is @inaccessible but is implemented by the argument `{type_position}.{field_name}({arg_name}:)` which is in the API schema."),
                         }.into());
                     }
                 }
