@@ -26,6 +26,7 @@ pub(super) fn parse_field_set(
         &field_set.selection_set,
         &IndexMap::new(),
         schema,
+        true,
     )
 }
 
