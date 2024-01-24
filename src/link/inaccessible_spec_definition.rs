@@ -727,12 +727,23 @@ fn validate_inaccessible_type(
         }
     }
 
+    macro_rules! missing_referencers_error {
+        ( $position:expr ) => {
+            SingleFederationError::Internal {
+                message: format!(
+                    "Type \"{}\" is marked inaccessible but does its referencers were not populated",
+                    $position,
+                ),
+            }
+        }
+    }
+
     match position {
         TypeDefinitionPosition::Scalar(scalar_position) => {
             let referencers = referencers
                 .scalar_types
                 .get(&scalar_position.type_name)
-                .unwrap();
+                .ok_or_else(|| missing_referencers_error!(&scalar_position))?;
             check_inaccessible_referencers!(
                 position,
                 &referencers.object_fields,
@@ -747,7 +758,7 @@ fn validate_inaccessible_type(
             let referencers = referencers
                 .object_types
                 .get(&object_position.type_name)
-                .unwrap();
+                .ok_or_else(|| missing_referencers_error!(&object_position))?;
             if referencers
                 .schema_roots
                 .iter()
@@ -767,7 +778,7 @@ fn validate_inaccessible_type(
             let referencers = referencers
                 .interface_types
                 .get(&interface_position.type_name)
-                .unwrap();
+                .ok_or_else(|| missing_referencers_error!(&interface_position))?;
             check_inaccessible_referencers!(
                 position,
                 &referencers.object_fields,
@@ -778,7 +789,7 @@ fn validate_inaccessible_type(
             let referencers = referencers
                 .union_types
                 .get(&union_position.type_name)
-                .unwrap();
+                .ok_or_else(|| missing_referencers_error!(&union_position))?;
             check_inaccessible_referencers!(
                 position,
                 &referencers.object_fields,
@@ -789,7 +800,7 @@ fn validate_inaccessible_type(
             let referencers = referencers
                 .enum_types
                 .get(&enum_position.type_name)
-                .unwrap();
+                .ok_or_else(|| missing_referencers_error!(&enum_position))?;
             check_inaccessible_referencers!(
                 position,
                 &referencers.object_fields,
@@ -804,7 +815,7 @@ fn validate_inaccessible_type(
             let referencers = referencers
                 .input_object_types
                 .get(&input_object_position.type_name)
-                .unwrap();
+                .ok_or_else(|| missing_referencers_error!(&input_object_position))?;
             check_inaccessible_referencers!(
                 position,
                 &referencers.input_object_fields,
@@ -830,6 +841,8 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
 
     let mut errors = MultipleFederationErrors { errors: vec![] };
 
+    // Guaranteed to exist, we would not be able to look up the `inaccessible_spec` without having
+    // metadata.
     let metadata = schema.metadata().unwrap();
 
     for position in schema.get_types() {
