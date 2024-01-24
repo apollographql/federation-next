@@ -2343,3 +2343,40 @@ fn matches_graphql_js_default_value_propagation() {
         }
     "###);
 }
+
+#[test]
+fn remove_referencing_directive_argument() {
+    let api_schema = inaccessible_to_api_schema(
+        r#"
+        extend schema @link(url: "https://example.com/directives/v0.0", as: "d")
+
+        # Set up a chain of core feature directives
+        # that are referenced in each other's arguments
+        # to make sure we remove directives safely
+        directive @d__example_2(
+            arg1: Int @d__example(arg: 1)
+            arg: Int @d__arg
+        ) on ARGUMENT_DEFINITION | FIELD
+        directive @d__arg(
+            arg: Int
+        ) on ARGUMENT_DEFINITION | FIELD
+        directive @d__example(
+            arg: Int! @d__arg
+        ) on ARGUMENT_DEFINITION | FIELD
+        directive @d__example_3(
+            arg: Int! @d__example_2
+        ) on ARGUMENT_DEFINITION | FIELD
+
+        type Query {
+            a: Int
+        }
+    "#,
+    )
+    .expect("should succeed");
+
+    insta::assert_display_snapshot!(api_schema, @r###"
+    type Query {
+      a: Int
+    }
+    "###);
+}

@@ -82,7 +82,6 @@ fn remove_core_feature_elements(schema: &mut FederationSchema) -> Result<(), Fed
         }
     }
 
-    // TODO is it necessary to remove arguments first?
     for position in &directives_for_removal {
         position.remove(schema)?;
     }
