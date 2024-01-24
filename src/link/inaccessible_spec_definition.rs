@@ -3,7 +3,6 @@ use crate::link::spec::{Identity, Url, Version};
 use crate::link::spec_definition::{SpecDefinition, SpecDefinitions};
 use crate::schema::position;
 use crate::schema::position::DirectiveDefinitionPosition;
-use crate::schema::position::EnumTypeDefinitionPosition;
 use crate::schema::position::EnumValueDefinitionPosition;
 use crate::schema::position::InputObjectFieldDefinitionPosition;
 use crate::schema::position::InterfaceFieldArgumentDefinitionPosition;
@@ -19,7 +18,6 @@ use apollo_compiler::schema::ComponentName;
 use apollo_compiler::schema::Directive;
 use apollo_compiler::schema::DirectiveDefinition;
 use apollo_compiler::schema::DirectiveLocation;
-use apollo_compiler::schema::EnumValueDefinition;
 use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::schema::FieldDefinition;
 use apollo_compiler::schema::InputValueDefinition;
@@ -494,28 +492,6 @@ fn validate_inaccessible_in_fields(
     Ok(())
 }
 
-fn validate_inaccessible_in_values(
-    inaccessible_directive: &Name,
-    enum_position: &EnumTypeDefinitionPosition,
-    values: &IndexMap<Name, Component<EnumValueDefinition>>,
-    errors: &mut MultipleFederationErrors,
-) {
-    let mut has_inaccessible_value = false;
-    let mut has_accessible_value = false;
-    for value in values.values() {
-        let value_inaccessible = value.directives.has(inaccessible_directive);
-        has_inaccessible_value |= value_inaccessible;
-        has_accessible_value |= !value_inaccessible;
-    }
-
-    // At this point, we know the type must be in the API schema. Check that at least one of the children is accessible.
-    if has_inaccessible_value && !has_accessible_value {
-        errors.push(SingleFederationError::OnlyInaccessibleChildren {
-            message: format!("Type `{enum_position}` is in the API schema but all of its members are @inaccessible."),
-        }.into());
-    }
-}
-
 /// Generic way to check for @inaccessible directives on a position or its parents.
 trait IsInaccessibleExt {
     /// Does this element, or any of its parents, have an @inaccessible directive?
@@ -951,12 +927,19 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
                 }
                 TypeDefinitionPosition::Enum(enum_position) => {
                     let enum_ = enum_position.get(schema.schema())?;
-                    validate_inaccessible_in_values(
-                        &inaccessible_directive,
-                        enum_position,
-                        &enum_.values,
-                        &mut errors,
-                    );
+                    let mut has_inaccessible_value = false;
+                    let mut has_accessible_value = false;
+                    for value in enum_.values.values() {
+                        let value_inaccessible = value.directives.has(&inaccessible_directive);
+                        has_inaccessible_value |= value_inaccessible;
+                        has_accessible_value |= !value_inaccessible;
+                    }
+
+                    if has_inaccessible_value && !has_accessible_value {
+                        errors.push(SingleFederationError::OnlyInaccessibleChildren {
+                            message: format!("Type `{enum_position}` is in the API schema but all of its members are @inaccessible."),
+                        }.into());
+                    }
                 }
                 _ => {}
             }
