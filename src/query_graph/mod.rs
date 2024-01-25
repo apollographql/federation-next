@@ -397,29 +397,24 @@ impl QueryGraph {
         &self,
         node: NodeIndex,
         field: &NormalizedField,
-    ) -> Result<Option<EdgeIndex>, FederationError> {
-        let mut candidates = vec![];
-        for edge_ref in self.graph.edges_directed(node, Direction::Outgoing) {
-            let edge_weight = edge_ref.weight();
-            let QueryGraphEdgeTransition::FieldCollection {
-                field_definition_position,
-                ..
-            } = &edge_weight.transition
-            else {
-                continue;
-            };
-            if field.data().field_position == *field_definition_position {
-                candidates.push(edge_ref.id())
-            }
-        }
-        if candidates.len() > 1 {
-            Err(SingleFederationError::Internal {
-                message: format!("Node has multiple edges matching {}", field),
-            }
-            .into())
-        } else {
-            Ok(candidates.pop())
-        }
+    ) -> Option<EdgeIndex> {
+        self.graph
+            .edges_directed(node, Direction::Outgoing)
+            .find_map(|edge_ref| {
+                let edge_weight = edge_ref.weight();
+                let QueryGraphEdgeTransition::FieldCollection {
+                    field_definition_position,
+                    ..
+                } = &edge_weight.transition
+                else {
+                    return None;
+                };
+                if field.data().field_position == *field_definition_position {
+                    Some(edge_ref.id())
+                } else {
+                    None
+                }
+            })
     }
 
     /// Given the possible runtime types at the head of the given edge, returns the possible runtime

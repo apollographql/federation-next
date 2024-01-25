@@ -26,7 +26,6 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
-use strum::IntoEnumIterator;
 
 /// An immutable path in a query graph.
 ///
@@ -175,29 +174,21 @@ impl OpPathElement {
         &self,
     ) -> Result<Vec<OperationConditional>, FederationError> {
         let mut conditionals = vec![];
-        for kind in OperationConditionalKind::iter() {
+        // PORT_NOTE: We explicitly use the order `Skip` and `Include` here, to align with the order
+        // used by the JS codebase.
+        for kind in [
+            OperationConditionalKind::Skip,
+            OperationConditionalKind::Include,
+        ] {
             let directive_name: &'static str = (&kind).into();
-            let applications = self
-                .directives()
-                .iter()
-                .filter(|directive| directive.name == directive_name)
-                .collect::<Vec<_>>();
-            if !applications.is_empty() {
-                if applications.len() > 1 {
-                    return Err(SingleFederationError::Internal {
-                        message: format!("@{} shouldn't be repeated on {}", directive_name, self),
-                    }
-                    .into());
-                }
-                let Some(arg) = applications[0]
-                    .argument_by_name("if")
-                else {
+            if let Some(application) = self.directives().get(directive_name) {
+                let Some(arg) = application.argument_by_name("if") else {
                     return Err(SingleFederationError::Internal {
                         message: format!("@{} missing required argument \"if\"", directive_name),
                     }
                     .into());
                 };
-                let value = match arg.value.deref() {
+                let value = match arg.deref() {
                     Value::Variable(variable_name) => {
                         BooleanOrVariable::Variable(variable_name.clone())
                     }
@@ -207,7 +198,7 @@ impl OpPathElement {
                             message: format!(
                                 "@{} has invalid value {} for argument \"if\"",
                                 directive_name,
-                                arg.value.serialize().no_indent()
+                                arg.serialize().no_indent()
                             ),
                         }
                         .into());
@@ -403,18 +394,7 @@ where
     TEdge: Copy + Into<Option<EdgeIndex>>,
 {
     pub(crate) fn new(graph: Arc<QueryGraph>, head: NodeIndex) -> Result<Self, FederationError> {
-        let head_weight = graph.node_weight(head)?;
-        let runtime_types = Arc::new(match &head_weight.type_ {
-            QueryGraphNodeType::SchemaType(head_type_pos) => {
-                let head_type_pos: CompositeTypeDefinitionPosition =
-                    head_type_pos.clone().try_into()?;
-                graph
-                    .schema_by_source(&head_weight.source)?
-                    .possible_runtime_types(head_type_pos)?
-            }
-            QueryGraphNodeType::FederatedRootType(_) => IndexSet::new(),
-        });
-        Ok(Self {
+        let mut path = Self {
             graph,
             head,
             tail: head,
@@ -424,9 +404,27 @@ where
             last_subgraph_entering_edge_info: None,
             own_path_ids: Arc::new(IndexSet::new()),
             overriding_path_ids: Arc::new(IndexSet::new()),
-            runtime_types_of_tail: runtime_types,
+            runtime_types_of_tail: Arc::new(IndexSet::new()),
             runtime_types_before_tail_if_last_is_cast: None,
             defer_on_tail: None,
+        };
+        path.runtime_types_of_tail = Arc::new(path.head_possible_runtime_types()?);
+        Ok(path)
+    }
+
+    fn head_possible_runtime_types(
+        &self,
+    ) -> Result<IndexSet<ObjectTypeDefinitionPosition>, FederationError> {
+        let head_weight = self.graph.node_weight(self.head)?;
+        Ok(match &head_weight.type_ {
+            QueryGraphNodeType::SchemaType(head_type_pos) => {
+                let head_type_pos: CompositeTypeDefinitionPosition =
+                    head_type_pos.clone().try_into()?;
+                self.graph
+                    .schema_by_source(&head_weight.source)?
+                    .possible_runtime_types(head_type_pos)?
+            }
+            QueryGraphNodeType::FederatedRootType(_) => IndexSet::new(),
         })
     }
 
@@ -494,7 +492,7 @@ impl OpGraphPath {
         Ok(self
             .edges
             .iter()
-            .zip(other.edges.iter())
+            .zip(&other.edges)
             .position(|(self_edge, other_edge)| self_edge != other_edge)
             .unwrap_or_else(|| self.edges.len().min(other.edges.len())))
     }
@@ -566,7 +564,7 @@ impl OpGraphPath {
             arguments: Arc::new(vec![]),
             directives: Arc::new(Default::default()),
         });
-        let Some(_edge) = self.graph.edge_for_field(path.tail, &typename_field)? else {
+        let Some(_edge) = self.graph.edge_for_field(path.tail, &typename_field) else {
             return Err(SingleFederationError::Internal {
                 message: "Unexpectedly missing edge for __typename field".to_owned(),
             }
@@ -577,17 +575,7 @@ impl OpGraphPath {
 
     /// Remove all trailing downcast edges and `None` edges.
     fn truncate_trailing_downcasts(&self) -> Result<OpGraphPath, FederationError> {
-        let head_weight = self.graph.node_weight(self.head)?;
-        let mut runtime_types = Arc::new(match &head_weight.type_ {
-            QueryGraphNodeType::SchemaType(head_type_pos) => {
-                let head_type_pos: CompositeTypeDefinitionPosition =
-                    head_type_pos.clone().try_into()?;
-                self.graph
-                    .schema_by_source(&head_weight.source)?
-                    .possible_runtime_types(head_type_pos)?
-            }
-            QueryGraphNodeType::FederatedRootType(_) => IndexSet::new(),
-        });
+        let mut runtime_types = Arc::new(self.head_possible_runtime_types()?);
         let mut last_edge_index = None;
         let mut last_runtime_types = runtime_types.clone();
         for (edge_index, edge) in self.edges.iter().enumerate() {
@@ -658,7 +646,7 @@ impl OpGraphPath {
         let Some(diff_pos) = self
             .edges
             .iter()
-            .zip(other.edges.iter())
+            .zip(&other.edges)
             .position(|(self_edge, other_edge)| self_edge != other_edge)
         else {
             // All edges are the same, but the `other` path has an extra edge. This can't be a type
@@ -864,20 +852,16 @@ impl SimultaneousPaths {
             let num_simultaneous_paths = options_for_each_path
                 .iter()
                 .zip(&option_indexes)
-                .map(|(options, option_index)| {
-                    options[*option_index].0.len()
-                })
+                .map(|(options, option_index)| options[*option_index].0.len())
                 .sum();
             let mut simultaneous_paths = Vec::with_capacity(num_simultaneous_paths);
 
-            for (options, option_index) in options_for_each_path.iter().zip(option_indexes.iter()) {
+            for (options, option_index) in options_for_each_path.iter().zip(&option_indexes) {
                 simultaneous_paths.extend(options[*option_index].0.iter().cloned());
             }
             product.push(SimultaneousPaths(simultaneous_paths));
 
-            for (options, option_index) in
-                options_for_each_path.iter().zip(option_indexes.iter_mut())
-            {
+            for (options, option_index) in options_for_each_path.iter().zip(&mut option_indexes) {
                 if *option_index == options.len() - 1 {
                     *option_index = 0
                 } else {
@@ -909,12 +893,8 @@ impl SimultaneousPaths {
         other: &SimultaneousPaths,
     ) -> Result<Ordering, FederationError> {
         match (self.0.as_slice(), other.0.as_slice()) {
-            ([a], [b]) => {
-                a.compare_single_path_options_complexity_out_of_context(b)
-            }
-            ([a], _) => {
-                a.compare_single_vs_multi_path_options_complexity_out_of_context(other)
-            }
+            ([a], [b]) => a.compare_single_path_options_complexity_out_of_context(b),
+            ([a], _) => a.compare_single_vs_multi_path_options_complexity_out_of_context(other),
             (_, [b]) => Ok(b
                 .compare_single_vs_multi_path_options_complexity_out_of_context(self)?
                 .reverse()),
@@ -1211,7 +1191,7 @@ impl ClosedBranch {
             let mut keep_option = true;
             for (other_option, keep_other_option) in self.0[(option_index + 1)..]
                 .iter()
-                .zip(keep_options[(option_index + 1)..].iter_mut())
+                .zip(&mut keep_options[(option_index + 1)..])
                 .rev()
             {
                 if !*keep_other_option {
@@ -1239,7 +1219,7 @@ impl ClosedBranch {
         Ok(ClosedBranch(
             self.0
                 .into_iter()
-                .zip(keep_options.iter())
+                .zip(&keep_options)
                 .filter(|(_, &keep_option)| keep_option)
                 .map(|(option, _)| option)
                 .collect(),

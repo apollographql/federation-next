@@ -396,7 +396,7 @@ impl NormalizedSelection {
             NormalizedSelection::FragmentSpread(_) => Err(Internal {
                 message: "Fragment spread does not have element".to_owned(),
             }
-                .into()),
+            .into()),
             NormalizedSelection::InlineFragment(inline_fragment_selection) => Ok(
                 OpPathElement::InlineFragment(inline_fragment_selection.inline_fragment.clone()),
             ),
@@ -411,7 +411,7 @@ impl NormalizedSelection {
             NormalizedSelection::FragmentSpread(_) => Err(Internal {
                 message: "Fragment spread does not directly have a selection set".to_owned(),
             }
-                .into()),
+            .into()),
             NormalizedSelection::InlineFragment(inline_fragment_selection) => {
                 Ok(Some(&inline_fragment_selection.selection_set))
             }
