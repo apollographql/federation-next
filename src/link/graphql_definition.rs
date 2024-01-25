@@ -7,6 +7,11 @@ pub(crate) struct DeferDirectiveArguments {
     if_: Option<BooleanOrVariable>,
 }
 
+/// This struct is meant for recording the original structure/intent of `@skip`/`@include`
+/// applications within the elements of a `GraphPath`. Accordingly, the order of them matters within
+/// a `Vec`, and superfluous struct instances aren't elided; `Conditions` is the more appropriate
+/// struct when trying to evaluate `@skip`/`@include` conditions (e.g. merging and short-circuiting
+/// logic).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct OperationConditional {
     pub(crate) kind: OperationConditionalKind,
