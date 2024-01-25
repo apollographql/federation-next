@@ -391,23 +391,32 @@ impl NormalizedSelection {
 
     pub(crate) fn conditions(&self) -> Result<Conditions, FederationError> {
         let self_conditions = Conditions::from_directives(self.directives())?;
-        if let Conditions::Boolean(false) = self_conditions {
-            // Never included, there is no point recuring
-            Ok(Conditions::Boolean(false))
-        } else {
-            match self {
-                NormalizedSelection::Field(_) => {
-                    // We want this field regardless of whether sub-selections are included
-                    Ok(self_conditions)
-                }
-                NormalizedSelection::InlineFragment(inline) => {
-                    Ok(self_conditions.merge(inline.selection_set.conditions()?))
-                }
-                NormalizedSelection::FragmentSpread(_x) => Err(FederationError::internal(
+        let sub_selections = match self {
+            NormalizedSelection::Field(field) => field.selection_set.as_ref(),
+            NormalizedSelection::InlineFragment(inline) => Some(&inline.selection_set),
+            NormalizedSelection::FragmentSpread(_x) => {
+                return Err(FederationError::internal(
                     "unexpected fragment spread in NormalizedSelection::conditions()",
-                )),
+                ))
+            }
+        };
+        let Some(sub_selections) = sub_selections else {
+            return Ok(self_conditions);
+        };
+
+        if let Conditions::Boolean(false) = &self_conditions {
+            // Never included, there is no point recuring
+            return Ok(Conditions::Boolean(false));
+        }
+        if let Conditions::Boolean(true) = &self_conditions {
+            if let NormalizedSelection::Field(_) = self {
+                // No matter what the sub-selection is, we need to get that field
+                return Ok(Conditions::Boolean(true));
+            } else {
+                // A fragment doesn’t really select anything by itself, so we recur in that case
             }
         }
+        Ok(self_conditions.merge(sub_selections.conditions()?))
     }
 }
 
