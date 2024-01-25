@@ -433,10 +433,9 @@ impl QueryGraph {
         let (_, tail) = self.edge_endpoints(edge)?;
         let tail_weight = self.node_weight(tail)?;
         let QueryGraphNodeType::SchemaType(tail_type_pos) = &tail_weight.type_ else {
-            return Err(SingleFederationError::Internal {
-                message: "Unexpectedly encountered federation root node as tail node.".to_owned(),
-            }
-            .into());
+            return Err(FederationError::internal(
+                "Unexpectedly encountered federation root node as tail node.",
+            ));
         };
         return match &edge_weight.transition {
             QueryGraphEdgeTransition::FieldCollection {
@@ -485,22 +484,18 @@ impl QueryGraph {
             QueryGraphEdgeTransition::RootTypeResolution { .. } => {
                 let OutputTypeDefinitionPosition::Object(tail_type_pos) = tail_type_pos.clone()
                 else {
-                    return Err(SingleFederationError::Internal {
-                        message: "Unexpectedly encountered non-object root operation type."
-                            .to_owned(),
-                    }
-                    .into());
+                    return Err(FederationError::internal(
+                        "Unexpectedly encountered non-object root operation type.",
+                    ));
                 };
                 Ok(IndexSet::from([tail_type_pos]))
             }
             QueryGraphEdgeTransition::SubgraphEnteringTransition => {
                 let OutputTypeDefinitionPosition::Object(tail_type_pos) = tail_type_pos.clone()
                 else {
-                    return Err(SingleFederationError::Internal {
-                        message: "Unexpectedly encountered non-object root operation type."
-                            .to_owned(),
-                    }
-                    .into());
+                    return Err(FederationError::internal(
+                        "Unexpectedly encountered non-object root operation type.",
+                    ));
                 };
                 Ok(IndexSet::from([tail_type_pos]))
             }

@@ -1,4 +1,4 @@
-use crate::error::{FederationError, SingleFederationError};
+use crate::error::FederationError;
 use crate::link::federation_spec_definition::get_federation_spec_definition_from_subgraph;
 use crate::link::graphql_definition::{
     BooleanOrVariable, DeferDirectiveArguments, OperationConditional, OperationConditionalKind,
@@ -183,10 +183,10 @@ impl OpPathElement {
             let directive_name: &'static str = (&kind).into();
             if let Some(application) = self.directives().get(directive_name) {
                 let Some(arg) = application.argument_by_name("if") else {
-                    return Err(SingleFederationError::Internal {
-                        message: format!("@{} missing required argument \"if\"", directive_name),
-                    }
-                    .into());
+                    return Err(FederationError::internal(format!(
+                        "@{} missing required argument \"if\"",
+                        directive_name
+                    )));
                 };
                 let value = match arg.deref() {
                     Value::Variable(variable_name) => {
@@ -194,14 +194,11 @@ impl OpPathElement {
                     }
                     Value::Boolean(boolean) => BooleanOrVariable::Boolean(*boolean),
                     _ => {
-                        return Err(SingleFederationError::Internal {
-                            message: format!(
-                                "@{} has invalid value {} for argument \"if\"",
-                                directive_name,
-                                arg.serialize().no_indent()
-                            ),
-                        }
-                        .into());
+                        return Err(FederationError::internal(format!(
+                            "@{} has invalid value {} for argument \"if\"",
+                            directive_name,
+                            arg.serialize().no_indent()
+                        )));
                     }
                 };
                 conditionals.push(OperationConditional { kind, value })
@@ -483,10 +480,9 @@ impl OpGraphPath {
         other: &OpGraphPath,
     ) -> Result<usize, FederationError> {
         if self.head != other.head {
-            return Err(SingleFederationError::Internal {
-                message: "Paths unexpectedly did not start at the same node.".to_owned(),
-            }
-            .into());
+            return Err(FederationError::internal(
+                "Paths unexpectedly did not start at the same node.",
+            ));
         }
 
         Ok(self
@@ -547,10 +543,9 @@ impl OpGraphPath {
         let path = self.truncate_trailing_downcasts()?;
         let tail_weight = self.graph.node_weight(path.tail)?;
         let QueryGraphNodeType::SchemaType(tail_type_pos) = &tail_weight.type_ else {
-            return Err(SingleFederationError::Internal {
-                message: "Unexpectedly found federated root node as tail".to_owned(),
-            }
-            .into());
+            return Err(FederationError::internal(
+                "Unexpectedly found federated root node as tail",
+            ));
         };
         let Ok(tail_type_pos): Result<CompositeTypeDefinitionPosition, _> =
             tail_type_pos.clone().try_into()
@@ -565,10 +560,9 @@ impl OpGraphPath {
             directives: Arc::new(Default::default()),
         });
         let Some(_edge) = self.graph.edge_for_field(path.tail, &typename_field) else {
-            return Err(SingleFederationError::Internal {
-                message: "Unexpectedly missing edge for __typename field".to_owned(),
-            }
-            .into());
+            return Err(FederationError::internal(
+                "Unexpectedly missing edge for __typename field",
+            ));
         };
         todo!()
     }
@@ -605,10 +599,9 @@ impl OpGraphPath {
             return Ok(self.clone());
         }
         let Some(last_edge) = self.edges[last_edge_index] else {
-            return Err(SingleFederationError::Internal {
-                message: "Unexpectedly found None for last non-downcast, non-None edge".to_owned(),
-            }
-            .into());
+            return Err(FederationError::internal(
+                "Unexpectedly found None for last non-downcast, non-None edge",
+            ));
         };
         let (_, last_edge_tail) = self.graph.edge_endpoints(last_edge)?;
         Ok(OpGraphPath {
@@ -1070,13 +1063,10 @@ impl SimultaneousPathsWithLazyIndirectPaths {
                         // one when testing direct transitions above (in which case we would have
                         // exited the method early).
                         if advance_options.is_empty() {
-                            return Err(SingleFederationError::Internal {
-                                message: format!(
-                                    "Unexpected empty options after non-collecting path {} for {}",
-                                    paths_with_non_collecting_edges, operation_element,
-                                ),
-                            }
-                            .into());
+                            return Err(FederationError::internal(format!(
+                                "Unexpected empty options after non-collecting path {} for {}",
+                                paths_with_non_collecting_edges, operation_element,
+                            )));
                         }
                         // There is a special case we can deal with now. Namely, suppose we have a
                         // case where a query is reaching an interface I in a subgraph S1, we query

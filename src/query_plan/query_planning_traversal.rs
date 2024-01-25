@@ -1,4 +1,4 @@
-use crate::error::{FederationError, SingleFederationError};
+use crate::error::FederationError;
 use crate::query_graph::condition_resolver::CachingConditionResolver;
 use crate::query_graph::graph_path::{
     ClosedBranch, ClosedPath, OpPathElement, OpenBranch, SimultaneousPaths,
@@ -100,10 +100,9 @@ impl QueryPlanningTraversal {
     fn find_best_plan(&mut self) -> Result<Option<&BestQueryPlanInfo>, FederationError> {
         while let Some(mut current_branch) = self.open_branches.pop() {
             let Some(current_selection) = current_branch.selections.pop() else {
-                return Err(SingleFederationError::Internal {
-                    message: "Sub-stack unexpectedly empty during query plan traversal".to_owned(),
-                }
-                .into());
+                return Err(FederationError::internal(
+                    "Sub-stack unexpectedly empty during query plan traversal",
+                ));
             };
             let (terminate_planning, new_branch) =
                 self.handle_open_branch(&current_selection, &mut current_branch.open_branch.0)?;
@@ -156,13 +155,10 @@ impl QueryPlanningTraversal {
             if let Some(options_limit) = self.parameters.config.debug.paths_limit {
                 if new_options.len() > options_limit as usize {
                     // TODO: Create a new error code for this error kind.
-                    return Err(SingleFederationError::Internal {
-                        message: format!(
-                            "Too many options generated for {}, reached the limit of {}.",
-                            selection, options_limit,
-                        ),
-                    }
-                    .into());
+                    return Err(FederationError::internal(format!(
+                        "Too many options generated for {}, reached the limit of {}.",
+                        selection, options_limit,
+                    )));
                 }
             }
         }
@@ -227,13 +223,10 @@ impl QueryPlanningTraversal {
             // happen for a top-level query planning (unless the supergraph has *not* been
             // validated), but can happen when computing sub-plans for a key condition.
             return if self.is_top_level {
-                Err(SingleFederationError::Internal {
-                    message: format!(
-                        "Was not able to find any options for {}: This shouldn't have happened.",
-                        selection,
-                    ),
-                }
-                .into())
+                Err(FederationError::internal(format!(
+                    "Was not able to find any options for {}: This shouldn't have happened.",
+                    selection,
+                )))
             } else {
                 // Indicate to the caller that query planning should terminate with no plan.
                 Ok((true, None))
