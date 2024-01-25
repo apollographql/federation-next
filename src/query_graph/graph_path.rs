@@ -190,9 +190,7 @@ impl OpPathElement {
                     .into());
                 }
                 let Some(arg) = applications[0]
-                    .arguments
-                    .iter()
-                    .find(|argument| argument.name == "if")
+                    .argument_by_name("if")
                 else {
                     return Err(SingleFederationError::Internal {
                         message: format!("@{} missing required argument \"if\"", directive_name),
@@ -852,24 +850,24 @@ impl SimultaneousPaths {
         }
 
         // Track, for each path, which option index we're at.
-        let mut option_indexes = std::iter::repeat_with(|| 0)
-            .take(options_for_each_path.len())
-            .collect::<Vec<usize>>();
+        let mut option_indexes = vec![0; options_for_each_path.len()];
 
         // Pre-allocate `Vec` for the result.
         let num_options = options_for_each_path
             .iter()
-            .fold(1, |acc, options| acc * options.len());
+            .map(|options| options.len())
+            .product();
         let mut product = Vec::with_capacity(num_options);
 
         // Compute the cartesian product.
         for _ in 0..num_options {
             let num_simultaneous_paths = options_for_each_path
                 .iter()
-                .zip(option_indexes.iter())
-                .fold(0, |acc, (options, option_index)| {
-                    acc + options[*option_index].0.len()
-                });
+                .zip(&option_indexes)
+                .map(|(options, option_index)| {
+                    options[*option_index].0.len()
+                })
+                .sum();
             let mut simultaneous_paths = Vec::with_capacity(num_simultaneous_paths);
 
             for (options, option_index) in options_for_each_path.iter().zip(option_indexes.iter()) {
@@ -910,17 +908,17 @@ impl SimultaneousPaths {
         &self,
         other: &SimultaneousPaths,
     ) -> Result<Ordering, FederationError> {
-        match (self.0.len() == 1, other.0.len() == 1) {
-            (true, true) => {
-                self.0[0].compare_single_path_options_complexity_out_of_context(&other.0[0])
+        match (self.0.as_slice(), other.0.as_slice()) {
+            ([a], [b]) => {
+                a.compare_single_path_options_complexity_out_of_context(b)
             }
-            (true, false) => {
-                self.0[0].compare_single_vs_multi_path_options_complexity_out_of_context(other)
+            ([a], _) => {
+                a.compare_single_vs_multi_path_options_complexity_out_of_context(other)
             }
-            (false, true) => Ok(other.0[0]
+            (_, [b]) => Ok(b
                 .compare_single_vs_multi_path_options_complexity_out_of_context(self)?
                 .reverse()),
-            (false, false) => Ok(Ordering::Equal),
+            _ => Ok(Ordering::Equal),
         }
     }
 }
