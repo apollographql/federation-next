@@ -392,19 +392,24 @@ impl NormalizedSelection {
     pub(crate) fn conditions(&self) -> Result<Conditions, FederationError> {
         let self_conditions = Conditions::from_directives(self.directives())?;
         if let Conditions::Boolean(false) = self_conditions {
-            // Never included, there is no point recuring
+            // Never included, so there is no point recursing.
             Ok(Conditions::Boolean(false))
         } else {
             match self {
                 NormalizedSelection::Field(_) => {
-                    // We want this field regardless of whether sub-selections are included
+                    // The sub-selections of this field don't affect whether we should query this
+                    // field, so we explicitly do not merge them in.
+                    //
+                    // PORT_NOTE: The JS codebase merges the sub-selections' conditions in with the
+                    // field's conditions when field's selections are non-boolean. This is arguably
+                    // a bug, so we've fixed it here.
                     Ok(self_conditions)
                 }
                 NormalizedSelection::InlineFragment(inline) => {
                     Ok(self_conditions.merge(inline.selection_set.conditions()?))
                 }
                 NormalizedSelection::FragmentSpread(_x) => Err(FederationError::internal(
-                    "unexpected fragment spread in NormalizedSelection::conditions()",
+                    "Unexpected fragment spread in NormalizedSelection::conditions()",
                 )),
             }
         }
