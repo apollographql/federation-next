@@ -494,7 +494,7 @@ impl NormalizedFragment {
                 &fragment.selection_set,
                 &IndexMap::new(),
                 schema,
-                false,
+                &FragmentSpreadNormalizationOption::PreserveFragmentSpread,
             )?,
         })
     }
@@ -747,6 +747,12 @@ pub(crate) mod normalized_inline_fragment_selection {
     }
 }
 
+/// Available fragment spread normalization options
+pub(crate) enum FragmentSpreadNormalizationOption {
+    InlineFragmentSpread,
+    PreserveFragmentSpread,
+}
+
 impl NormalizedSelectionSet {
     pub(crate) fn empty(
         schema: ValidFederationSchema,
@@ -794,7 +800,7 @@ impl NormalizedSelectionSet {
         selection_set: &SelectionSet,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        inline_fragment_spreads: bool,
+        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
     ) -> Result<NormalizedSelectionSet, FederationError> {
         let type_position: CompositeTypeDefinitionPosition =
             schema.get_type(selection_set.ty.clone())?.try_into()?;
@@ -805,7 +811,7 @@ impl NormalizedSelectionSet {
             &mut normalized_selections,
             fragments,
             schema,
-            inline_fragment_spreads,
+            normalize_fragment_spread_option,
         )?;
         let mut merged = NormalizedSelectionSet {
             schema: schema.clone(),
@@ -823,7 +829,7 @@ impl NormalizedSelectionSet {
         destination: &mut Vec<NormalizedSelection>,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        inline_fragment_spreads: bool,
+        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
     ) -> Result<(), FederationError> {
         for selection in selections {
             match selection {
@@ -834,7 +840,7 @@ impl NormalizedSelectionSet {
                             parent_type_position,
                             fragments,
                             schema,
-                            inline_fragment_spreads,
+                            normalize_fragment_spread_option,
                         )?
                     else {
                         continue;
@@ -854,7 +860,9 @@ impl NormalizedSelectionSet {
                         }
                         .into());
                     };
-                    if inline_fragment_spreads {
+                    if let FragmentSpreadNormalizationOption::InlineFragmentSpread =
+                        normalize_fragment_spread_option
+                    {
                         // We can hoist/collapse named fragments if their type condition is on the
                         // parent type and they don't have any directives.
                         if fragment.type_condition() == parent_type_position.type_name()
@@ -866,7 +874,7 @@ impl NormalizedSelectionSet {
                                 destination,
                                 fragments,
                                 schema,
-                                inline_fragment_spreads,
+                                normalize_fragment_spread_option,
                             )?;
                         } else {
                             let normalized_inline_fragment_selection =
@@ -875,7 +883,7 @@ impl NormalizedSelectionSet {
                                     parent_type_position,
                                     fragments,
                                     schema,
-                                    inline_fragment_spreads,
+                                    normalize_fragment_spread_option,
                                 )?;
                             destination.push(NormalizedSelection::InlineFragment(Arc::new(
                                 normalized_inline_fragment_selection,
@@ -916,7 +924,7 @@ impl NormalizedSelectionSet {
                             destination,
                             fragments,
                             schema,
-                            inline_fragment_spreads,
+                            normalize_fragment_spread_option,
                         )?;
                     } else {
                         let normalized_inline_fragment_selection =
@@ -925,7 +933,7 @@ impl NormalizedSelectionSet {
                                 parent_type_position,
                                 fragments,
                                 schema,
-                                inline_fragment_spreads,
+                                normalize_fragment_spread_option,
                             )?;
                         destination.push(NormalizedSelection::InlineFragment(Arc::new(
                             normalized_inline_fragment_selection,
@@ -1232,7 +1240,7 @@ impl NormalizedFieldSelection {
         parent_type_position: &CompositeTypeDefinitionPosition,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        inline_fragment_spreads: bool,
+        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
     ) -> Result<Option<NormalizedFieldSelection>, FederationError> {
         // Skip __schema/__type introspection fields as router takes care of those, and they do not
         // need to be query planned.
@@ -1261,7 +1269,7 @@ impl NormalizedFieldSelection {
                     &field.selection_set,
                     fragments,
                     schema,
-                    inline_fragment_spreads,
+                    normalize_fragment_spread_option,
                 )?)
             } else {
                 None
@@ -1364,7 +1372,7 @@ impl NormalizedFragmentSpreadSelection {
         parent_type_position: &CompositeTypeDefinitionPosition,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        inline_fragment_spreads: bool,
+        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
     ) -> Result<NormalizedInlineFragmentSelection, FederationError> {
         let Some(fragment) = fragments.get(&fragment_spread.fragment_name) else {
             return Err(Internal {
@@ -1395,7 +1403,7 @@ impl NormalizedFragmentSpreadSelection {
                 &fragment.selection_set,
                 fragments,
                 schema,
-                inline_fragment_spreads,
+                normalize_fragment_spread_option,
             )?,
         })
     }
@@ -1450,7 +1458,7 @@ impl NormalizedInlineFragmentSelection {
         parent_type_position: &CompositeTypeDefinitionPosition,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        inline_fragment_spreads: bool,
+        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
     ) -> Result<NormalizedInlineFragmentSelection, FederationError> {
         let type_condition_position: Option<CompositeTypeDefinitionPosition> =
             if let Some(type_condition) = &inline_fragment.type_condition {
@@ -1470,7 +1478,7 @@ impl NormalizedInlineFragmentSelection {
                 &inline_fragment.selection_set,
                 fragments,
                 schema,
-                inline_fragment_spreads,
+                normalize_fragment_spread_option,
             )?,
         })
     }
@@ -1780,7 +1788,7 @@ pub(crate) fn normalize_operation(
         &operation.selection_set,
         fragments,
         schema,
-        true,
+        &FragmentSpreadNormalizationOption::InlineFragmentSpread,
     )?;
     normalized_selection_set.optimize_sibling_typenames(interface_types_with_interface_objects)?;
 
