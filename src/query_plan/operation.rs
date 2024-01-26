@@ -1,5 +1,7 @@
 use crate::error::FederationError;
 use crate::error::SingleFederationError::Internal;
+use crate::query_graph::graph_path::OpPathElement;
+use crate::query_plan::conditions::Conditions;
 use crate::query_plan::operation::normalized_field_selection::{
     NormalizedField, NormalizedFieldData, NormalizedFieldSelection,
 };
@@ -98,9 +100,7 @@ pub(crate) mod normalized_selection_map {
     /// `IndexSet` since key computation is expensive (it involves sorting). This type is in its own
     /// module to prevent code from accidentally mutating the underlying map outside the mutation
     /// API.
-    ///
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, Default)]
     pub(crate) struct NormalizedSelectionMap(IndexMap<NormalizedSelectionKey, NormalizedSelection>);
 
     impl Deref for NormalizedSelectionMap {
@@ -387,6 +387,66 @@ impl NormalizedSelection {
             }
         }
     }
+
+    pub(crate) fn element(&self) -> Result<OpPathElement, FederationError> {
+        match self {
+            NormalizedSelection::Field(field_selection) => {
+                Ok(OpPathElement::Field(field_selection.field.clone()))
+            }
+            NormalizedSelection::FragmentSpread(_) => Err(Internal {
+                message: "Fragment spread does not have element".to_owned(),
+            }
+            .into()),
+            NormalizedSelection::InlineFragment(inline_fragment_selection) => Ok(
+                OpPathElement::InlineFragment(inline_fragment_selection.inline_fragment.clone()),
+            ),
+        }
+    }
+
+    pub(crate) fn selection_set(&self) -> Result<Option<&NormalizedSelectionSet>, FederationError> {
+        match self {
+            NormalizedSelection::Field(field_selection) => {
+                Ok(field_selection.selection_set.as_ref())
+            }
+            NormalizedSelection::FragmentSpread(_) => Err(Internal {
+                message: "Fragment spread does not directly have a selection set".to_owned(),
+            }
+            .into()),
+            NormalizedSelection::InlineFragment(inline_fragment_selection) => {
+                Ok(Some(&inline_fragment_selection.selection_set))
+            }
+        }
+    }
+
+    pub(crate) fn conditions(&self) -> Result<Conditions, FederationError> {
+        let self_conditions = Conditions::from_directives(self.directives())?;
+        if let Conditions::Boolean(false) = self_conditions {
+            // Never included, so there is no point recursing.
+            Ok(Conditions::Boolean(false))
+        } else {
+            match self {
+                NormalizedSelection::Field(_) => {
+                    // The sub-selections of this field don't affect whether we should query this
+                    // field, so we explicitly do not merge them in.
+                    //
+                    // PORT_NOTE: The JS codebase merges the sub-selections' conditions in with the
+                    // field's conditions when field's selections are non-boolean. This is arguably
+                    // a bug, so we've fixed it here.
+                    Ok(self_conditions)
+                }
+                NormalizedSelection::InlineFragment(inline) => {
+                    Ok(self_conditions.merge(inline.selection_set.conditions()?))
+                }
+                NormalizedSelection::FragmentSpread(_x) => Err(FederationError::internal(
+                    "Unexpected fragment spread in NormalizedSelection::conditions()",
+                )),
+            }
+        }
+    }
+
+    pub(crate) fn has_defer(&self) -> Result<bool, FederationError> {
+        todo!()
+    }
 }
 
 impl HasNormalizedSelectionKey for NormalizedSelection {
@@ -417,11 +477,12 @@ pub(crate) struct NormalizedFragment {
 }
 
 pub(crate) mod normalized_field_selection {
+    use crate::error::FederationError;
     use crate::query_plan::operation::{
         directives_with_sorted_arguments, HasNormalizedSelectionKey, NormalizedSelectionKey,
         NormalizedSelectionSet,
     };
-    use crate::schema::position::FieldDefinitionPosition;
+    use crate::schema::position::{FieldDefinitionPosition, TypeDefinitionPosition};
     use crate::schema::ValidFederationSchema;
     use apollo_compiler::ast::{Argument, DirectiveList, Name};
     use apollo_compiler::Node;
@@ -492,6 +553,17 @@ pub(crate) mod normalized_field_selection {
 
         pub(crate) fn response_name(&self) -> Name {
             self.alias.clone().unwrap_or_else(|| self.name().clone())
+        }
+
+        pub(crate) fn is_leaf(&self) -> Result<bool, FederationError> {
+            let definition = self.field_position.get(self.schema.schema())?;
+            let base_type_position = self
+                .schema
+                .get_type(definition.ty.inner_named_type().clone())?;
+            Ok(matches!(
+                base_type_position,
+                TypeDefinitionPosition::Scalar(_) | TypeDefinitionPosition::Enum(_)
+            ))
         }
     }
 
@@ -652,6 +724,37 @@ pub(crate) mod normalized_inline_fragment_selection {
 }
 
 impl NormalizedSelectionSet {
+    pub(crate) fn empty(
+        schema: ValidFederationSchema,
+        type_position: CompositeTypeDefinitionPosition,
+    ) -> Self {
+        Self {
+            schema,
+            type_position,
+            selections: Default::default(),
+        }
+    }
+
+    pub(crate) fn contains_top_level_field(
+        &self,
+        field: &NormalizedField,
+    ) -> Result<bool, FederationError> {
+        if let Some(selection) = self.selections.get(&field.key()) {
+            let NormalizedSelection::Field(field_selection) = selection else {
+                return Err(Internal {
+                    message: format!(
+                        "Field selection key for field \"{}\" references non-field selection",
+                        field.data().field_position,
+                    ),
+                }
+                .into());
+            };
+            Ok(field_selection.field == *field)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Normalize this selection set (merging selections with the same keys), with the following
     /// additional transformations:
     /// - Expand fragment spreads into inline fragments.
@@ -1029,6 +1132,44 @@ impl NormalizedSelectionSet {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn conditions(&self) -> Result<Conditions, FederationError> {
+        // If the conditions of all the selections within the set are the same,
+        // then those are conditions of the whole set and we return it.
+        // Otherwise, we just return `true`
+        // (which essentially translate to "that selection always need to be queried").
+        // Note that for the case where the set has only 1 selection,
+        // then this just mean we return the condition of that one selection.
+        // Also note that in theory we could be a tad more precise,
+        // and when all the selections have variable conditions,
+        // we could return the intersection of all of them,
+        // but we don't bother for now as that has probably extremely rarely an impact in practice.
+        let mut selections = self.selections.values();
+        let Some(first_selection) = selections.next() else {
+            // we shouldn't really get here for well-formed selection, so whether we return true or false doesn't matter
+            // too much, but in principle, if there is no selection, we should be cool not including it.
+            return Ok(Conditions::Boolean(false));
+        };
+        let conditions = first_selection.conditions()?;
+        for selection in selections {
+            if selection.conditions()? != conditions {
+                return Ok(Conditions::Boolean(true));
+            }
+        }
+        Ok(conditions)
+    }
+
+    pub(crate) fn add_back_typename_in_attachments(
+        &self,
+    ) -> Result<NormalizedSelectionSet, FederationError> {
+        todo!()
+    }
+
+    pub(crate) fn add_typename_field_for_abstract_types(
+        &self,
+    ) -> Result<NormalizedSelectionSet, FederationError> {
+        todo!()
     }
 }
 
@@ -1474,6 +1615,36 @@ impl Display for NormalizedFragmentSpreadSelection {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let fragment_spread: FragmentSpread = self.into();
         fragment_spread.serialize().no_indent().fmt(f)
+    }
+}
+
+impl Display for NormalizedField {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // We create a selection with an empty selection set here, relying on `apollo-rs` to skip
+        // serializing it when empty. Note we're implicitly relying on the lack of type-checking
+        // in both `NormalizedFieldSelection` and `Field` display logic (specifically, we rely on
+        // them not checking whether it is valid for the selection set to be empty).
+        let selection = NormalizedFieldSelection {
+            field: self.clone(),
+            selection_set: None,
+            sibling_typename: None,
+        };
+        selection.fmt(f)
+    }
+}
+
+impl Display for NormalizedInlineFragment {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // We can't use the same trick we did with `NormalizedField`'s display logic, since
+        // selection sets are non-optional for inline fragment selections.
+        let data = self.data();
+        if let Some(type_name) = &data.type_condition_position {
+            f.write_str("... on ")?;
+            f.write_str(type_name.type_name())?;
+        } else {
+            f.write_str("...")?;
+        }
+        data.directives.serialize().no_indent().fmt(f)
     }
 }
 
