@@ -156,10 +156,6 @@ pub struct DeferredDeferBlock {
 pub struct DeferredDependency {
     /// A `FetchNode` ID.
     id: NodeStr,
-    /// If the `FetchNode` pointed to by `id` has `has_defers` as `true`, and this field is set (to
-    /// the label of one of the defers of said `FetchNode`), then this dependency is strictly for
-    /// the defers with that label.
-    defer_label: Option<NodeStr>,
 }
 
 pub struct ConditionNode {

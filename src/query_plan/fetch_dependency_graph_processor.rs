@@ -285,10 +285,7 @@ impl FetchGroupProcessor<Option<PlanNode>, DeferredDeferBlock>
                 .dependencies
                 .iter()
                 .cloned()
-                .map(|id| DeferredDependency {
-                    id,
-                    defer_label: None, // TODO: is this never set?
-                })
+                .map(|id| DeferredDependency { id })
                 .collect(),
             label: if self
                 .assigned_defer_labels
