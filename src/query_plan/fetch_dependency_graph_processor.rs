@@ -250,7 +250,7 @@ impl FetchGroupProcessor<Option<PlanNode>, DeferredDeferBlock>
                 condition.then_some(value)
             }
             Conditions::Variables(variables) => {
-                for (name, negated) in &variables.0 {
+                for (name, negated) in variables.0.iter() {
                     let (if_clause, else_clause) = if *negated {
                         (None, Some(value))
                     } else {
