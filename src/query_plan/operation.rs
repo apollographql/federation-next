@@ -1554,11 +1554,7 @@ impl TryFrom<&NormalizedOperation> for Operation {
     type Error = FederationError;
 
     fn try_from(normalized_operation: &NormalizedOperation) -> Result<Self, Self::Error> {
-        let operation_type = match normalized_operation.root_kind {
-            SchemaRootDefinitionKind::Query => OperationType::Query,
-            SchemaRootDefinitionKind::Mutation => OperationType::Mutation,
-            SchemaRootDefinitionKind::Subscription => OperationType::Subscription,
-        };
+        let operation_type: OperationType = normalized_operation.root_kind.into();
         Ok(Self {
             operation_type,
             name: normalized_operation.name.clone(),
