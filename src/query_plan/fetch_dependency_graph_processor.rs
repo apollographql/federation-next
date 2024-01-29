@@ -301,8 +301,11 @@ impl FetchGroupProcessor<Option<PlanNode>, DeferredDeferBlock>
             // then the `value` is going to be a `DeferNode`
             // and we'll use it's own `subselection`, so we don't need it here.
             sub_selection: if defer_info.deferred.is_empty() {
-                // TODO: port `withoutEmptyBranches`?
-                Some((&defer_info.sub_selection).try_into()?)
+                defer_info
+                    .sub_selection
+                    .without_empty_branches()?
+                    .map(|filtered| filtered.as_ref().try_into())
+                    .transpose()?
             } else {
                 None
             },
@@ -318,8 +321,11 @@ impl FetchGroupProcessor<Option<PlanNode>, DeferredDeferBlock>
     ) -> Result<Option<PlanNode>, FederationError> {
         Ok(Some(PlanNode::Defer(Arc::new(DeferNode {
             primary: PrimaryDeferBlock {
-                // TODO: port `withoutEmptyBranches`?
-                sub_selection: Some(sub_selection.selection_set.as_ref().try_into()?),
+                sub_selection: sub_selection
+                    .selection_set
+                    .without_empty_branches()?
+                    .map(|filtered| filtered.as_ref().try_into())
+                    .transpose()?,
                 node: main,
             },
             deferred,
