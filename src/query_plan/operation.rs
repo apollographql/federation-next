@@ -40,7 +40,7 @@ static NEXT_ID: atomic::AtomicUsize = atomic::AtomicUsize::new(1);
 pub(crate) struct SelectionId(usize);
 
 impl SelectionId {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         // atomically increment global counter
         Self(NEXT_ID.fetch_add(1, atomic::Ordering::AcqRel))
     }
@@ -663,6 +663,8 @@ pub(crate) mod normalized_fragment_spread_selection {
 }
 
 pub(crate) mod normalized_inline_fragment_selection {
+    use crate::error::FederationError;
+    use crate::link::graphql_definition::{defer_directive_arguments, DeferDirectiveArguments};
     use crate::query_plan::operation::{
         directives_with_sorted_arguments, is_deferred_selection, HasNormalizedSelectionKey,
         NormalizedSelectionKey, NormalizedSelectionSet, SelectionId,
@@ -670,6 +672,7 @@ pub(crate) mod normalized_inline_fragment_selection {
     use crate::schema::position::CompositeTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
     use apollo_compiler::ast::DirectiveList;
+    use apollo_compiler::name;
     use std::sync::Arc;
 
     /// An analogue of the apollo-compiler type `InlineFragment` with these changes:
@@ -726,6 +729,18 @@ pub(crate) mod normalized_inline_fragment_selection {
         pub(crate) type_condition_position: Option<CompositeTypeDefinitionPosition>,
         pub(crate) directives: Arc<DirectiveList>,
         pub(crate) selection_id: SelectionId,
+    }
+
+    impl NormalizedInlineFragmentData {
+        pub(crate) fn defer_directive_arguments(
+            &self,
+        ) -> Result<Option<DeferDirectiveArguments>, FederationError> {
+            if let Some(directive) = self.directives.get(&name!("defer")) {
+                Ok(Some(defer_directive_arguments(directive)?))
+            } else {
+                Ok(None)
+            }
+        }
     }
 
     impl HasNormalizedSelectionKey for NormalizedInlineFragmentData {
