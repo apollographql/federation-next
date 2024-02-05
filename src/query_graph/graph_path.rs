@@ -1104,6 +1104,7 @@ impl OpGraphPath {
             alias: None,
             arguments: Arc::new(vec![]),
             directives: Arc::new(Default::default()),
+            sibling_typename: None,
         });
         let Some(_edge) = self.graph.edge_for_field(path.tail, &typename_field) else {
             return Err(FederationError::internal(
@@ -1377,6 +1378,7 @@ impl OpGraphPath {
                                 alias: operation_field.data().alias.clone(),
                                 arguments: operation_field.data().arguments.clone(),
                                 directives: operation_field.data().directives.clone(),
+                                sibling_typename: operation_field.data().sibling_typename.clone(),
                             })
                         }
 

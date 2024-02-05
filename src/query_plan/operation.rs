@@ -206,12 +206,12 @@ pub(crate) mod normalized_selection_map {
             self.0
         }
 
-        pub(crate) fn get_selection_set_mut(&mut self) -> &mut Option<NormalizedSelectionSet> {
-            &mut Arc::make_mut(self.0).selection_set
+        pub(crate) fn get_sibling_typename_mut(&mut self) -> &mut Option<Name> {
+            Arc::make_mut(self.0).field.sibling_typename_mut()
         }
 
-        pub(crate) fn get_sibling_typename_mut(&mut self) -> &mut Option<Name> {
-            &mut Arc::make_mut(self.0).sibling_typename
+        pub(crate) fn get_selection_set_mut(&mut self) -> &mut Option<NormalizedSelectionSet> {
+            &mut Arc::make_mut(self.0).selection_set
         }
     }
 
@@ -525,7 +525,6 @@ pub(crate) mod normalized_field_selection {
     pub(crate) struct NormalizedFieldSelection {
         pub(crate) field: NormalizedField,
         pub(crate) selection_set: Option<NormalizedSelectionSet>,
-        pub(crate) sibling_typename: Option<Name>,
     }
 
     impl HasNormalizedSelectionKey for NormalizedFieldSelection {
@@ -553,6 +552,10 @@ pub(crate) mod normalized_field_selection {
         pub(crate) fn data(&self) -> &NormalizedFieldData {
             &self.data
         }
+
+        pub(crate) fn sibling_typename_mut(&mut self) -> &mut Option<Name> {
+            &mut self.data.sibling_typename
+        }
     }
 
     impl HasNormalizedSelectionKey for NormalizedField {
@@ -568,6 +571,7 @@ pub(crate) mod normalized_field_selection {
         pub(crate) alias: Option<Name>,
         pub(crate) arguments: Arc<Vec<Node<Argument>>>,
         pub(crate) directives: Arc<DirectiveList>,
+        pub(crate) sibling_typename: Option<Name>,
     }
 
     impl NormalizedFieldData {
@@ -1279,6 +1283,7 @@ impl NormalizedFieldSelection {
                 alias: field.alias.clone(),
                 arguments: Arc::new(field.arguments.clone()),
                 directives: Arc::new(field.directives.clone()),
+                sibling_typename: None,
             }),
             selection_set: if field_composite_type_result.is_ok() {
                 Some(NormalizedSelectionSet::normalize_and_expand_fragments(
@@ -1290,7 +1295,6 @@ impl NormalizedFieldSelection {
             } else {
                 None
             },
-            sibling_typename: None,
         }))
     }
 }
@@ -1745,7 +1749,6 @@ impl Display for NormalizedField {
         let selection = NormalizedFieldSelection {
             field: self.clone(),
             selection_set: None,
-            sibling_typename: None,
         };
         selection.fmt(f)
     }
