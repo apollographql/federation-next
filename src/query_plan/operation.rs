@@ -494,7 +494,7 @@ impl NormalizedFragment {
                 &fragment.selection_set,
                 &IndexMap::new(),
                 schema,
-                &FragmentSpreadNormalizationOption::PreserveFragmentSpread,
+                FragmentSpreadNormalizationOption::PreserveFragmentSpread,
             )?,
         })
     }
@@ -748,6 +748,7 @@ pub(crate) mod normalized_inline_fragment_selection {
 }
 
 /// Available fragment spread normalization options
+#[derive(Copy, Clone)]
 pub(crate) enum FragmentSpreadNormalizationOption {
     InlineFragmentSpread,
     PreserveFragmentSpread,
@@ -800,7 +801,7 @@ impl NormalizedSelectionSet {
         selection_set: &SelectionSet,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
+        normalize_fragment_spread_option: FragmentSpreadNormalizationOption,
     ) -> Result<NormalizedSelectionSet, FederationError> {
         let type_position: CompositeTypeDefinitionPosition =
             schema.get_type(selection_set.ty.clone())?.try_into()?;
@@ -829,7 +830,7 @@ impl NormalizedSelectionSet {
         destination: &mut Vec<NormalizedSelection>,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
+        normalize_fragment_spread_option: FragmentSpreadNormalizationOption,
     ) -> Result<(), FederationError> {
         for selection in selections {
             match selection {
@@ -1240,7 +1241,7 @@ impl NormalizedFieldSelection {
         parent_type_position: &CompositeTypeDefinitionPosition,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
+        normalize_fragment_spread_option: FragmentSpreadNormalizationOption,
     ) -> Result<Option<NormalizedFieldSelection>, FederationError> {
         // Skip __schema/__type introspection fields as router takes care of those, and they do not
         // need to be query planned.
@@ -1372,7 +1373,7 @@ impl NormalizedFragmentSpreadSelection {
         parent_type_position: &CompositeTypeDefinitionPosition,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
+        normalize_fragment_spread_option: FragmentSpreadNormalizationOption,
     ) -> Result<NormalizedInlineFragmentSelection, FederationError> {
         let Some(fragment) = fragments.get(&fragment_spread.fragment_name) else {
             return Err(Internal {
@@ -1458,7 +1459,7 @@ impl NormalizedInlineFragmentSelection {
         parent_type_position: &CompositeTypeDefinitionPosition,
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
-        normalize_fragment_spread_option: &FragmentSpreadNormalizationOption,
+        normalize_fragment_spread_option: FragmentSpreadNormalizationOption,
     ) -> Result<NormalizedInlineFragmentSelection, FederationError> {
         let type_condition_position: Option<CompositeTypeDefinitionPosition> =
             if let Some(type_condition) = &inline_fragment.type_condition {
@@ -1784,7 +1785,7 @@ pub(crate) fn normalize_operation(
         &operation.selection_set,
         fragments,
         schema,
-        &FragmentSpreadNormalizationOption::InlineFragmentSpread,
+        FragmentSpreadNormalizationOption::InlineFragmentSpread,
     )?;
     normalized_selection_set.optimize_sibling_typenames(interface_types_with_interface_objects)?;
 
