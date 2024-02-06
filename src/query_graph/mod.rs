@@ -427,10 +427,7 @@ impl QueryGraph {
         node: NodeIndex,
         field: &NormalizedField,
     ) -> Option<EdgeIndex> {
-        // PORT_NOTE: The JS codebase found all matching candidates and asserted there was only one.
-        // We consider it unlikely for there to be more than one candidate given all the code paths
-        // that create edges, so we've removed the assert here and return on the first match.
-        self.out_edges(node).find_map(|edge_ref| {
+        let mut candidates = self.out_edges(node).filter_map(|edge_ref| {
             let edge_weight = edge_ref.weight();
             let QueryGraphEdgeTransition::FieldCollection {
                 field_definition_position,
@@ -446,7 +443,19 @@ impl QueryGraph {
             } else {
                 None
             }
-        })
+        });
+        if let Some(candidate) = candidates.next() {
+            // PORT_NOTE: The JS codebase used an assertion rather than a debug assertion here. We
+            // consider it unlikely for there to be more than one candidate given all the code paths
+            // that create edges, so we've downgraded this to a debug assertion.
+            debug_assert!(
+                candidates.next().is_none(),
+                "Unexpectedly found multiple candidates",
+            );
+            Some(candidate)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn edge_for_inline_fragment(
@@ -458,10 +467,7 @@ impl QueryGraph {
             // No type condition means the type hasn't changed, meaning there is no edge to take.
             return None;
         };
-        // PORT_NOTE: The JS codebase found all matching candidates and asserted there was only one.
-        // We consider it unlikely for there to be more than one candidate given all the code paths
-        // that create edges, so we've removed the assert here and return on the first match.
-        self.out_edges(node).find_map(|edge_ref| {
+        let mut candidates = self.out_edges(node).filter_map(|edge_ref| {
             let edge_weight = edge_ref.weight();
             let QueryGraphEdgeTransition::Downcast {
                 to_type_position, ..
@@ -477,7 +483,19 @@ impl QueryGraph {
             } else {
                 None
             }
-        })
+        });
+        if let Some(candidate) = candidates.next() {
+            // PORT_NOTE: The JS codebase used an assertion rather than a debug assertion here. We
+            // consider it unlikely for there to be more than one candidate given all the code paths
+            // that create edges, so we've downgraded this to a debug assertion.
+            debug_assert!(
+                candidates.next().is_none(),
+                "Unexpectedly found multiple candidates",
+            );
+            Some(candidate)
+        } else {
+            None
+        }
     }
 
     /// Given the possible runtime types at the head of the given edge, returns the possible runtime

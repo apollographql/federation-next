@@ -18,14 +18,15 @@ pub(crate) trait ConditionResolver {
     ) -> Result<ConditionResolution, FederationError>;
 }
 
-// TODO: This could probably be refactored into an enum.
 #[derive(Debug, Clone)]
-pub(crate) struct ConditionResolution {
-    pub(crate) satisfied: bool,
-    pub(crate) cost: QueryPlanCost,
-    pub(crate) path_tree: Option<Arc<OpPathTree>>,
-    // Note that this is not guaranteed to be set even if satisfied is false.
-    pub(crate) unsatisfied_condition_reason: Option<UnsatisfiedConditionReason>,
+pub(crate) enum ConditionResolution {
+    Satisfied {
+        cost: QueryPlanCost,
+        path_tree: Option<Arc<OpPathTree>>,
+    },
+    Unsatisfied {
+        reason: Option<UnsatisfiedConditionReason>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -35,21 +36,14 @@ pub(crate) enum UnsatisfiedConditionReason {
 
 impl ConditionResolution {
     pub(crate) fn no_conditions() -> Self {
-        Self {
-            satisfied: true,
+        Self::Satisfied {
             cost: 0,
             path_tree: None,
-            unsatisfied_condition_reason: None,
         }
     }
 
     pub(crate) fn unsatisfied_conditions() -> Self {
-        Self {
-            satisfied: false,
-            cost: -1,
-            path_tree: None,
-            unsatisfied_condition_reason: None,
-        }
+        Self::Unsatisfied { reason: None }
     }
 }
 

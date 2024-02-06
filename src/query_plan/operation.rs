@@ -35,7 +35,10 @@ const TYPENAME_FIELD: Name = name!("__typename");
 // Global storage for the counter used to uniquely identify selections
 static NEXT_ID: atomic::AtomicUsize = atomic::AtomicUsize::new(1);
 
-// opaque wrapper of the unique selection ID type
+/// Opaque wrapper of the unique selection ID type.
+///
+/// Note that we shouldn't add `derive(Serialize, Deserialize)` to this without changing the types
+/// to be something like UUIDs.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct SelectionId(usize);
 
@@ -676,7 +679,6 @@ pub(crate) mod normalized_inline_fragment_selection {
     use crate::schema::position::CompositeTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
     use apollo_compiler::ast::DirectiveList;
-    use apollo_compiler::name;
     use std::sync::Arc;
 
     /// An analogue of the apollo-compiler type `InlineFragment` with these changes:
@@ -739,7 +741,7 @@ pub(crate) mod normalized_inline_fragment_selection {
         pub(crate) fn defer_directive_arguments(
             &self,
         ) -> Result<Option<DeferDirectiveArguments>, FederationError> {
-            if let Some(directive) = self.directives.get(&name!("defer")) {
+            if let Some(directive) = self.directives.get("defer") {
                 Ok(Some(defer_directive_arguments(directive)?))
             } else {
                 Ok(None)

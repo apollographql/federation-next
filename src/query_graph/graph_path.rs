@@ -129,22 +129,10 @@ where
     defer_on_tail: Option<DeferDirectiveArguments>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From)]
 pub(crate) enum GraphPathTrigger {
     Op(Arc<OpGraphPathTrigger>),
     Transition(Arc<QueryGraphEdgeTransition>),
-}
-
-impl From<Arc<OpGraphPathTrigger>> for GraphPathTrigger {
-    fn from(value: Arc<OpGraphPathTrigger>) -> Self {
-        GraphPathTrigger::Op(value)
-    }
-}
-
-impl From<Arc<QueryGraphEdgeTransition>> for GraphPathTrigger {
-    fn from(value: Arc<QueryGraphEdgeTransition>) -> Self {
-        GraphPathTrigger::Transition(value)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -157,6 +145,9 @@ pub(crate) struct SubgraphEnteringEdgeInfo {
 
 /// Wrapper for an override ID, which indicates a relationship between a group of `OpGraphPath`s
 /// where one "overrides" the others in the group.
+///
+/// Note that we shouldn't add `derive(Serialize, Deserialize)` to this without changing the types
+/// to be something like UUIDs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct OverrideId(usize);
 
@@ -474,11 +465,15 @@ where
         condition_resolution: ConditionResolution,
         defer: Option<DeferDirectiveArguments>,
     ) -> Result<Self, FederationError> {
-        if !condition_resolution.satisfied {
+        let ConditionResolution::Satisfied {
+            path_tree: condition_path_tree,
+            cost: condition_cost,
+        } = condition_resolution
+        else {
             return Err(FederationError::internal(
                 "Cannot add an edge to a path if its conditions cannot be satisfied",
             ));
-        }
+        };
 
         let mut edges = self.edges.clone();
         let mut edge_triggers = self.edge_triggers.clone();
@@ -487,7 +482,7 @@ where
         let Some(new_edge) = edge.into() else {
             edges.push(edge);
             edge_triggers.push(Arc::new(trigger));
-            edge_conditions.push(condition_resolution.path_tree);
+            edge_conditions.push(condition_path_tree);
             return Ok(GraphPath {
                 graph: self.graph.clone(),
                 head: self.head,
@@ -523,7 +518,7 @@ where
                 edge_weight, tail_weight
             )));
         }
-        if let Some(path_tree) = &condition_resolution.path_tree {
+        if let Some(path_tree) = &condition_path_tree {
             if edge_weight.conditions.is_none() {
                 return Err(FederationError::internal(format!(
                     "Unexpectedly got conditions paths {} for edge {} without conditions",
@@ -621,7 +616,7 @@ where
                                     edge_conditions.pop();
                                     edges.push(new_edge.into());
                                     edge_triggers.push(Arc::new(trigger));
-                                    edge_conditions.push(condition_resolution.path_tree);
+                                    edge_conditions.push(condition_path_tree);
                                     return Ok(GraphPath {
                                         graph: self.graph.clone(),
                                         head: self.head,
@@ -677,7 +672,7 @@ where
                 edge_conditions.pop();
                 edges.push(edge);
                 edge_triggers.push(Arc::new(trigger));
-                edge_conditions.push(condition_resolution.path_tree);
+                edge_conditions.push(condition_path_tree);
                 return Ok(GraphPath {
                     graph: self.graph.clone(),
                     head: self.head,
@@ -695,7 +690,7 @@ where
                     {
                         Some(SubgraphEnteringEdgeInfo {
                             index: self.edges.len() - 1,
-                            conditions_cost: condition_resolution.cost,
+                            conditions_cost: condition_cost,
                         })
                     } else {
                         None
@@ -715,7 +710,7 @@ where
 
         edges.push(edge);
         edge_triggers.push(Arc::new(trigger));
-        edge_conditions.push(condition_resolution.path_tree);
+        edge_conditions.push(condition_path_tree);
         Ok(GraphPath {
             graph: self.graph.clone(),
             head: self.head,
@@ -730,7 +725,7 @@ where
             {
                 Some(SubgraphEnteringEdgeInfo {
                     index: self.edges.len(),
-                    conditions_cost: condition_resolution.cost,
+                    conditions_cost: condition_cost,
                 })
             } else {
                 None
@@ -885,7 +880,11 @@ where
                     last_edge_weight.transition,
                     QueryGraphEdgeTransition::KeyResolution
                 ) {
-                    let in_same_subgraph = if let Some(path_tree) = &resolution.path_tree {
+                    let in_same_subgraph = if let ConditionResolution::Satisfied {
+                        path_tree: Some(path_tree),
+                        ..
+                    } = &resolution
+                    {
                         path_tree.is_all_in_same_subgraph()?
                     } else {
                         true
@@ -893,11 +892,8 @@ where
                     if in_same_subgraph {
                         let (edge_head, _) = self.graph.edge_endpoints(edge)?;
                         if self.graph.get_locally_satisfiable_key(edge_head)?.is_none() {
-                            return Ok(ConditionResolution {
-                                unsatisfied_condition_reason: Some(
-                                    UnsatisfiedConditionReason::NoPostRequireKey,
-                                ),
-                                ..ConditionResolution::unsatisfied_conditions()
+                            return Ok(ConditionResolution::Unsatisfied {
+                                reason: Some(UnsatisfiedConditionReason::NoPostRequireKey),
                             });
                         };
                         // We're in a case where we have an `@requires` application (we have
@@ -951,7 +947,7 @@ impl OpGraphPath {
             &Default::default(),
             &Default::default(),
         )?;
-        if condition_resolution.satisfied {
+        if matches!(condition_resolution, ConditionResolution::Satisfied { .. }) {
             self.add(
                 operation_field.into(),
                 edge.into(),
@@ -1877,7 +1873,10 @@ impl OpGraphPath {
                                     &Default::default(),
                                     &Default::default(),
                                 )?;
-                                if !condition_resolution.satisfied {
+                                if matches!(
+                                    condition_resolution,
+                                    ConditionResolution::Unsatisfied { .. }
+                                ) {
                                     return Ok((None, None));
                                 }
                                 let fragment_path = self.add(
