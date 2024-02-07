@@ -37,6 +37,8 @@ use strum::IntoEnumIterator;
 pub fn build_federated_query_graph(
     supergraph_schema: ValidFederationSchema,
     api_schema: ValidFederationSchema,
+    // TODO(@goto-bus-stop): replace these booleans by descriptive types (either a struct or two
+    // enums)
     validate_extracted_subgraphs: Option<bool>,
     for_query_planning: Option<bool>,
 ) -> Result<QueryGraph, FederationError> {
