@@ -24,10 +24,11 @@ use apollo_compiler::executable::{Field, Selection, SelectionSet};
 use apollo_compiler::schema::{
     Component, ComponentName, ComponentOrigin, DirectiveDefinition, DirectiveList,
     DirectiveLocation, EnumType, EnumValueDefinition, ExtendedType, ExtensionId, InputObjectType,
-    InputValueDefinition, InterfaceType, Name, NamedType, ObjectType, ScalarType, Type, UnionType,
+    InputValueDefinition, InterfaceType, Name, NamedType, ObjectType, ScalarType, SchemaBuilder,
+    Type, UnionType,
 };
 use apollo_compiler::validation::Valid;
-use apollo_compiler::{name, Node, NodeStr, Schema};
+use apollo_compiler::{name, Node, NodeStr};
 use indexmap::{IndexMap, IndexSet};
 use lazy_static::lazy_static;
 use std::collections::BTreeMap;
@@ -211,7 +212,8 @@ fn collect_empty_subgraphs(
 
 /// TODO: Use the JS/programmatic approach instead of hard-coding definitions.
 pub(crate) fn new_empty_fed_2_subgraph_schema() -> Result<FederationSchema, FederationError> {
-    FederationSchema::new(Schema::parse(
+    let builder = SchemaBuilder::new().adopt_orphan_extensions();
+    let builder = builder.parse(
         r#"
     extend schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
@@ -264,7 +266,8 @@ pub(crate) fn new_empty_fed_2_subgraph_schema() -> Result<FederationSchema, Fede
     scalar federation__Scope
     "#,
         "subgraph.graphql",
-    )?)
+    );
+    FederationSchema::new(builder.build()?)
 }
 
 struct TypeInfo {
