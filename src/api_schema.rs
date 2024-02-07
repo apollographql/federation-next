@@ -1,7 +1,6 @@
 //! Implements API schema generation.
 use crate::error::FederationError;
-use crate::link::inaccessible_spec_definition::remove_inaccessible_elements;
-use crate::link::inaccessible_spec_definition::validate_inaccessible;
+use crate::link::inaccessible_spec_definition::InaccessibleSpecDefinition;
 use crate::schema::position;
 use crate::schema::FederationSchema;
 use crate::schema::ValidFederationSchema;
@@ -139,8 +138,10 @@ pub fn to_api_schema(
         stream.remove(&mut api_schema)?;
     }
 
-    validate_inaccessible(&api_schema)?;
-    remove_inaccessible_elements(&mut api_schema)?;
+    if let Some(inaccessible_spec) = InaccessibleSpecDefinition::get_from_schema(&api_schema)? {
+        inaccessible_spec.validate_inaccessible(&api_schema)?;
+        inaccessible_spec.remove_inaccessible_elements(&mut api_schema)?;
+    }
 
     remove_core_feature_elements(&mut api_schema)?;
 

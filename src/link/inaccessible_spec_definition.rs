@@ -61,6 +61,37 @@ impl InaccessibleSpecDefinition {
             arguments: Vec::new(),
         })
     }
+
+    pub fn get_from_schema(
+        schema: &FederationSchema,
+    ) -> Result<Option<&'static Self>, FederationError> {
+        let inaccessible_link = match schema
+            .metadata()
+            .as_ref()
+            .and_then(|metadata| metadata.for_identity(&Identity::inaccessible_identity()))
+        {
+            None => return Ok(None),
+            Some(link) => link,
+        };
+        Ok(Some(
+            INACCESSIBLE_VERSIONS
+                .find(&inaccessible_link.url.version)
+                .ok_or_else(|| SingleFederationError::Internal {
+                    message: format!("Cannot remove inaccessible elements: the schema uses unsupported inaccessible spec version {}", inaccessible_link.url.version),
+                })?,
+        ))
+    }
+
+    pub fn validate_inaccessible(&self, schema: &FederationSchema) -> Result<(), FederationError> {
+        validate_inaccessible(schema, self)
+    }
+
+    pub fn remove_inaccessible_elements(
+        &self,
+        schema: &mut FederationSchema,
+    ) -> Result<(), FederationError> {
+        remove_inaccessible_elements(schema, self)
+    }
 }
 
 impl SpecDefinition for InaccessibleSpecDefinition {
@@ -86,26 +117,6 @@ lazy_static! {
         ));
         definitions
     };
-}
-
-fn get_inaccessible_spec_from_schema(
-    schema: &FederationSchema,
-) -> Result<Option<&'static InaccessibleSpecDefinition>, FederationError> {
-    let inaccessible_link = match schema
-        .metadata()
-        .as_ref()
-        .and_then(|metadata| metadata.for_identity(&Identity::inaccessible_identity()))
-    {
-        None => return Ok(None),
-        Some(link) => link,
-    };
-    Ok(Some(
-        INACCESSIBLE_VERSIONS
-            .find(&inaccessible_link.url.version)
-            .ok_or_else(|| SingleFederationError::Internal {
-                message: format!("Cannot remove inaccessible elements: the schema uses unsupported inaccessible spec version {}", inaccessible_link.url.version),
-            })?,
-    ))
 }
 
 fn is_type_system_location(location: DirectiveLocation) -> bool {
@@ -805,10 +816,10 @@ fn validate_inaccessible_type(
     Ok(())
 }
 
-pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), FederationError> {
-    let Some(inaccessible_spec) = get_inaccessible_spec_from_schema(schema)? else {
-        return Ok(());
-    };
+fn validate_inaccessible(
+    schema: &FederationSchema,
+    inaccessible_spec: &InaccessibleSpecDefinition,
+) -> Result<(), FederationError> {
     let inaccessible_directive = inaccessible_spec
         .directive_name_in_schema(schema, &INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC)?
         .ok_or_else(|| SingleFederationError::Internal {
@@ -1001,10 +1012,10 @@ pub fn validate_inaccessible(schema: &FederationSchema) -> Result<(), Federation
     Ok(())
 }
 
-pub fn remove_inaccessible_elements(schema: &mut FederationSchema) -> Result<(), FederationError> {
-    let Some(inaccessible_spec) = get_inaccessible_spec_from_schema(schema)? else {
-        return Ok(());
-    };
+fn remove_inaccessible_elements(
+    schema: &mut FederationSchema,
+    inaccessible_spec: &InaccessibleSpecDefinition,
+) -> Result<(), FederationError> {
     let directive_name = inaccessible_spec
         .directive_name_in_schema(schema, &INACCESSIBLE_DIRECTIVE_NAME_IN_SPEC)?
         .ok_or_else(|| SingleFederationError::Internal {
