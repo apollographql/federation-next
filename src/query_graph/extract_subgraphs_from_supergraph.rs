@@ -38,7 +38,7 @@ use std::sync::Arc;
 ///
 /// TODO: A lot of common data gets passed around in the functions called by this one, considering
 /// making an e.g. ExtractSubgraphs struct to contain the data.
-pub(super) fn extract_subgraphs_from_supergraph(
+pub(crate) fn extract_subgraphs_from_supergraph(
     supergraph_schema: &FederationSchema,
     validate_extracted_subgraphs: Option<bool>,
 ) -> Result<ValidFederationSubgraphs, FederationError> {

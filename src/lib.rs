@@ -10,7 +10,6 @@ use apollo_compiler::Schema;
 
 mod api_schema;
 mod compat;
-pub mod database;
 pub mod error;
 pub mod link;
 pub mod merge;
@@ -144,7 +143,7 @@ mod tests {
         "#;
 
         let supergraph = Supergraph::new(schema).unwrap();
-        let _subgraphs = database::extract_subgraphs(&supergraph)
+        let _subgraphs = crate::query_graph::extract_subgraphs_from_supergraph::extract_subgraphs_from_supergraph(&supergraph.schema, None)
             .expect("Should have been able to extract subgraphs");
         // TODO: actual assertions on the subgraph once it's actually implemented.
     }
