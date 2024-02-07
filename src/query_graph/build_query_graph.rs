@@ -1373,7 +1373,7 @@ impl FederatedQueryGraphBuilder {
             let mut all_conditions = Vec::new();
             for directive in field
                 .directives
-                .get_all(&subgraph_data.requires_directive_definition_name)
+                .get_all(&subgraph_data.provides_directive_definition_name)
             {
                 let application = subgraph_data
                     .federation_spec_definition
