@@ -48,20 +48,27 @@ impl FederationSchema {
         &self.referencers
     }
 
+    /// Returns all the types in the schema, minus builtins.
     pub(crate) fn get_types(&self) -> impl Iterator<Item = TypeDefinitionPosition> + '_ {
-        self.schema.types.iter().map(|(type_name, type_)| {
-            let type_name = type_name.clone();
-            match type_ {
-                ExtendedType::Scalar(_) => ScalarTypeDefinitionPosition { type_name }.into(),
-                ExtendedType::Object(_) => ObjectTypeDefinitionPosition { type_name }.into(),
-                ExtendedType::Interface(_) => InterfaceTypeDefinitionPosition { type_name }.into(),
-                ExtendedType::Union(_) => UnionTypeDefinitionPosition { type_name }.into(),
-                ExtendedType::Enum(_) => EnumTypeDefinitionPosition { type_name }.into(),
-                ExtendedType::InputObject(_) => {
-                    InputObjectTypeDefinitionPosition { type_name }.into()
+        self.schema
+            .types
+            .iter()
+            .filter(|(_, ty)| !ty.is_built_in())
+            .map(|(type_name, type_)| {
+                let type_name = type_name.clone();
+                match type_ {
+                    ExtendedType::Scalar(_) => ScalarTypeDefinitionPosition { type_name }.into(),
+                    ExtendedType::Object(_) => ObjectTypeDefinitionPosition { type_name }.into(),
+                    ExtendedType::Interface(_) => {
+                        InterfaceTypeDefinitionPosition { type_name }.into()
+                    }
+                    ExtendedType::Union(_) => UnionTypeDefinitionPosition { type_name }.into(),
+                    ExtendedType::Enum(_) => EnumTypeDefinitionPosition { type_name }.into(),
+                    ExtendedType::InputObject(_) => {
+                        InputObjectTypeDefinitionPosition { type_name }.into()
+                    }
                 }
-            }
-        })
+            })
     }
 
     pub(crate) fn get_directive_definitions(
