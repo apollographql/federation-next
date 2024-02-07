@@ -29,7 +29,7 @@ const INACCESSIBLE_V02_HEADER: &str = r#"
 fn inaccessible_to_api_schema(input: &str) -> Result<Valid<Schema>, FederationError> {
     let sdl = format!("{INACCESSIBLE_V02_HEADER}{input}");
     let graph = Supergraph::new(&sdl)?;
-    graph.to_api_schema(Default::default())
+    Ok(graph.to_api_schema(Default::default())?.schema().clone())
 }
 
 #[test]
@@ -2398,7 +2398,7 @@ fn include_supergraph_directives() -> Result<(), FederationError> {
         include_stream: true,
     })?;
 
-    insta::assert_display_snapshot!(api_schema, @r###"
+    insta::assert_display_snapshot!(api_schema.schema(), @r###"
     """
     The `@defer` directive may be provided for fragment spreads and inline fragments
     to inform the executor to delay the execution of the current fragment to

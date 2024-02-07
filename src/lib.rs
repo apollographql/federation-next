@@ -20,21 +20,31 @@ pub mod schema;
 pub mod subgraph;
 
 pub use api_schema::ApiSchemaOptions;
+use schema::ValidFederationSchema;
 
 pub struct Supergraph {
-    pub schema: Valid<Schema>,
+    pub schema: ValidFederationSchema,
 }
 
 impl Supergraph {
     pub fn new(schema_str: &str) -> Result<Self, FederationError> {
         let schema = Schema::parse_and_validate(schema_str, "schema.graphql")?;
         // TODO: federation-specific validation
-        Ok(Self { schema })
+        Self::from_schema(schema)
+    }
+
+    pub fn from_schema(schema: Valid<Schema>) -> Result<Self, FederationError> {
+        Ok(Self {
+            schema: ValidFederationSchema::new(schema)?,
+        })
     }
 
     pub fn compose(subgraphs: Vec<&ValidSubgraph>) -> Result<Self, MergeFailure> {
         let schema = merge_subgraphs(subgraphs)?.schema;
-        Ok(Self { schema })
+        Ok(Self {
+            schema: ValidFederationSchema::new(schema)
+                .map_err(|err| todo!("missing error handling: {err}"))?,
+        })
     }
 
     /// Generates an API Schema from this supergraph schema. The API Schema represents the combined
@@ -42,15 +52,8 @@ impl Supergraph {
     pub fn to_api_schema(
         &self,
         options: ApiSchemaOptions,
-    ) -> Result<Valid<Schema>, FederationError> {
-        let api_schema = FederationSchema::new(self.schema.clone().into_inner())?;
-        api_schema::to_api_schema(api_schema, options)
-    }
-}
-
-impl From<Valid<Schema>> for Supergraph {
-    fn from(schema: Valid<Schema>) -> Self {
-        Self { schema }
+    ) -> Result<ValidFederationSchema, FederationError> {
+        api_schema::to_api_schema(self.schema.clone(), options)
     }
 }
 

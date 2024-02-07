@@ -18,6 +18,7 @@ use std::sync::Arc;
 pub(crate) mod position;
 pub(crate) mod referencer;
 
+/// A GraphQL schema with federation data.
 #[derive(Debug)]
 pub struct FederationSchema {
     schema: Schema,
@@ -28,6 +29,10 @@ pub struct FederationSchema {
 impl FederationSchema {
     pub(crate) fn schema(&self) -> &Schema {
         &self.schema
+    }
+
+    pub(crate) fn schema_mut(&mut self) -> &mut Schema {
+        &mut self.schema
     }
 
     /// Discard the Federation metadata and return the apollo-compiler schema.
@@ -141,6 +146,7 @@ impl FederationSchema {
     }
 }
 
+/// A GraphQL schema with federation data that is known to be valid, and cheap to clone.
 #[derive(Debug, Clone)]
 pub struct ValidFederationSchema(pub(crate) Arc<Valid<FederationSchema>>);
 
@@ -150,7 +156,8 @@ impl ValidFederationSchema {
         Ok(ValidFederationSchema(Arc::new(Valid::assume_valid(schema))))
     }
 
-    pub(crate) fn schema(&self) -> &Valid<Schema> {
+    /// Access the GraphQL schema.
+    pub fn schema(&self) -> &Valid<Schema> {
         Valid::assume_valid_ref(&self.schema)
     }
 }
