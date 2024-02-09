@@ -208,7 +208,7 @@ impl TryFrom<TypeDefinitionPosition> for CompositeTypeDefinitionPosition {
                 Ok(CompositeTypeDefinitionPosition::Union(value))
             }
             _ => Err(SingleFederationError::Internal {
-                message: format!("Type \"{}\" was unexpectedly not a composite type", value,),
+                message: format!(r#"Type "{value}" was unexpectedly not a composite type"#),
             }
             .into()),
         }
@@ -230,7 +230,7 @@ impl TryFrom<OutputTypeDefinitionPosition> for CompositeTypeDefinitionPosition {
                 Ok(CompositeTypeDefinitionPosition::Union(value))
             }
             _ => Err(SingleFederationError::Internal {
-                message: format!("Type \"{}\" was unexpectedly not a composite type", value,),
+                message: format!(r#"Type "{value}" was unexpectedly not a composite type"#),
             }
             .into()),
         }
@@ -266,6 +266,21 @@ impl AbstractTypeDefinitionPosition {
         match self {
             AbstractTypeDefinitionPosition::Interface(type_) => &type_.type_name,
             AbstractTypeDefinitionPosition::Union(type_) => &type_.type_name,
+        }
+    }
+}
+
+impl TryFrom<TypeDefinitionPosition> for AbstractTypeDefinitionPosition {
+    type Error = FederationError;
+
+    fn try_from(value: TypeDefinitionPosition) -> Result<Self, Self::Error> {
+        match value {
+            TypeDefinitionPosition::Interface(value) => Ok(Self::Interface(value)),
+            TypeDefinitionPosition::Union(value) => Ok(Self::Union(value)),
+            _ => Err(SingleFederationError::Internal {
+                message: format!("Type \"{}\" was unexpectedly not an abstract type", value,),
+            }
+            .into()),
         }
     }
 }
@@ -1170,6 +1185,10 @@ pub(crate) struct ObjectTypeDefinitionPosition {
 }
 
 impl ObjectTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn field(&self, field_name: Name) -> ObjectFieldDefinitionPosition {
         ObjectFieldDefinitionPosition {
             type_name: self.type_name.clone(),

@@ -4,12 +4,18 @@ use crate::query_graph::build_federated_query_graph;
 use crate::query_graph::QueryGraph;
 use crate::schema::position::AbstractTypeDefinitionPosition;
 use crate::schema::position::InterfaceTypeDefinitionPosition;
+use crate::schema::position::ObjectTypeDefinitionPosition;
+use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
 use crate::ApiSchemaOptions;
 use crate::Supergraph;
+use apollo_compiler::name;
+use apollo_compiler::schema::ExtendedType;
+use apollo_compiler::schema::Name;
 use apollo_compiler::NodeStr;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct QueryPlannerConfig {
@@ -119,19 +125,20 @@ impl Default for QueryPlannerDebugConfig {
 }
 
 pub struct QueryPlanner {
-    config: Arc<QueryPlannerConfig>,
+    // TODO(@goto-bus-stop) not convinced that these arcs are all necessary
+    config: QueryPlannerConfig,
     federated_query_graph: Arc<QueryGraph>,
     supergraph_schema: ValidFederationSchema,
     api_schema: ValidFederationSchema,
     subgraph_federation_spec_definitions: Arc<IndexMap<NodeStr, &'static FederationSpecDefinition>>,
     /// A set of the names of interface types for which at least one subgraph use an
     /// @interfaceObject to abstract that interface.
-    interface_types_with_interface_objects: Arc<IndexSet<InterfaceTypeDefinitionPosition>>,
+    interface_types_with_interface_objects: IndexSet<InterfaceTypeDefinitionPosition>,
     /// A set of the names of interface or union types that have inconsistent "runtime types" across
     /// subgraphs.
     // PORT_NOTE: Named `inconsistentAbstractTypesRuntimes` in the JS codebase, which was slightly
     // confusing.
-    abstract_types_with_inconsistent_runtime_types: Arc<IndexSet<AbstractTypeDefinitionPosition>>,
+    abstract_types_with_inconsistent_runtime_types: IndexSet<AbstractTypeDefinitionPosition>,
     // TODO: Port _lastGeneratedPlanStatistics from the JS codebase in a way that keeps QueryPlanner
     // immutable.
 }
@@ -141,19 +148,114 @@ impl QueryPlanner {
         supergraph: Supergraph,
         config: QueryPlannerConfig,
     ) -> Result<Self, FederationError> {
+        let supergraph_schema = supergraph.schema.clone();
+        let api_schema = supergraph.to_api_schema(ApiSchemaOptions {
+            include_defer: config.incremental_delivery.enable_defer,
+            ..Default::default()
+        })?;
         let query_graph = build_federated_query_graph(
-            supergraph.schema.clone(),
-            supergraph.to_api_schema(ApiSchemaOptions {
-                include_defer: config.incremental_delivery.enable_defer,
-                ..Default::default()
-            })?,
+            supergraph_schema.clone(),
+            api_schema.clone(),
             Some(true),
             Some(true),
         )?;
 
-        // query_graph.sources;
+        // TODO(@goto-bus-stop) shouldn't this get `@interfaceObject` from the `@link` definition?
+        let is_interface_object =
+            |ty: &ExtendedType| ty.is_object() && ty.directives().has("interfaceObject");
 
-        todo!()
+        let interface_types_with_interface_objects = supergraph
+            .schema
+            .get_types()
+            .filter_map(|position| match position {
+                TypeDefinitionPosition::Interface(interface_position) => Some(interface_position),
+                _ => None,
+            })
+            .filter(|position| {
+                query_graph.sources().any(|schema| {
+                    schema
+                        .schema()
+                        .types
+                        .get(&position.type_name)
+                        .is_some_and(|ty| is_interface_object(ty))
+                })
+            })
+            .collect::<IndexSet<_>>();
+
+        let is_inconsistent = |position: AbstractTypeDefinitionPosition| {
+            let mut sources = query_graph.sources().filter_map(|subgraph| {
+                match subgraph.try_get_type(position.type_name().clone())? {
+                    TypeDefinitionPosition::Object(object) => Some(IndexSet::from([object])),
+                    TypeDefinitionPosition::Interface(interface) => Some(
+                        subgraph
+                            .referencers()
+                            .get_interface_type(&interface.type_name)
+                            .ok()?
+                            .object_types
+                            .clone(),
+                    ),
+                    TypeDefinitionPosition::Union(union_) => Some(
+                        union_
+                            .try_get(subgraph.schema())?
+                            .members
+                            .iter()
+                            .map(|member| ObjectTypeDefinitionPosition::new(member.name.clone()))
+                            .collect(),
+                    ),
+                    _ => None,
+                }
+            });
+
+            let Some(expected_runtimes) = sources.next() else {
+                return false;
+            };
+            sources.all(|runtimes| runtimes == expected_runtimes)
+        };
+
+        let abstract_types_with_inconsistent_runtime_types = supergraph
+            .schema
+            .get_types()
+            .filter_map(|position| AbstractTypeDefinitionPosition::try_from(position).ok())
+            .filter(|position| is_inconsistent(position.clone()))
+            .collect::<IndexSet<_>>();
+
+        const JOIN_FIELD: Name = name!("join__field");
+        let default_override_conditions = supergraph
+            .schema
+            .get_directive_definition(&JOIN_FIELD)
+            .and_then(|directive| {
+                supergraph
+                    .schema
+                    .referencers()
+                    .directives
+                    .get(&directive.directive_name)
+            })
+            .and_then(|referencers| {
+                Some(
+                    referencers
+                        .object_fields
+                        .iter()
+                        .filter_map(|position| {
+                            let field = position.get(supergraph.schema.schema()).ok()?;
+                            let directive = field.directives.get(&JOIN_FIELD)?;
+                            let value = directive.argument_by_name("overrideLabel")?;
+                            value.as_node_str()
+                        })
+                        .map(|label| (label.clone(), false))
+                        .collect::<HashMap<_, _>>(),
+                )
+            })
+            .unwrap_or_default();
+
+        Ok(Self {
+            config,
+            federated_query_graph: Arc::new(query_graph),
+            supergraph_schema,
+            api_schema,
+            subgraph_federation_spec_definitions: todo!(),
+            interface_types_with_interface_objects,
+            abstract_types_with_inconsistent_runtime_types,
+        })
     }
 }
 
