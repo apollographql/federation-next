@@ -2,7 +2,7 @@ use crate::error::FederationError;
 use crate::query_plan::conditions::Conditions;
 use crate::query_plan::fetch_dependency_graph::DeferredInfo;
 use crate::query_plan::fetch_dependency_graph::FetchDependencyGraphNode;
-use crate::query_plan::fetch_dependency_graph::FetchSelectionSet;
+use crate::query_plan::operation::NormalizedSelectionSet;
 use crate::query_plan::query_planner::QueryPlannerConfig;
 use crate::query_plan::ConditionNode;
 use crate::query_plan::DeferNode;
@@ -78,24 +78,24 @@ pub(crate) struct RebasedFragments;
 ///    a fetch of 5 fields is probably not too different from than of 2 fields.
 pub(crate) struct FetchDependencyGraphToCostProcessor;
 
-/// Generic interface for "processing" a (reduced) dependency graph of fetch groups
+/// Generic interface for "processing" a (reduced) dependency graph of fetch dependency nodes
 /// (a `FetchDependencyGraph`).
 ///
 /// The processor methods will be called in a way that "respects" the dependency graph.
-/// More precisely, a reduced fetch group dependency graph can be expressed
-/// as an alternance of parallel branches and sequences of groups
+/// More precisely, a reduced fetch dependency graph can be expressed
+/// as an alternance of parallel branches and sequences of nodes
 /// (the roots needing to be either parallel or
 /// sequential depending on whether we represent a `query` or a `mutation`),
-/// and the processor will be called on groups in such a way.
-pub(crate) trait FetchGroupProcessor<TProcessed, TDeferred> {
-    fn on_fetch_group(
+/// and the processor will be called on nodes in such a way.
+pub(crate) trait FetchDependencyGraphProcessor<TProcessed, TDeferred> {
+    fn on_node(
         &mut self,
-        group: &mut FetchDependencyGraphNode,
+        node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<TProcessed, FederationError>;
     fn on_conditions(&mut self, conditions: &Conditions, value: TProcessed) -> TProcessed;
-    fn reduce_parallel(&mut self, values: &[TProcessed]) -> TProcessed;
-    fn reduce_sequence(&mut self, values: &[TProcessed]) -> TProcessed;
+    fn reduce_parallel(&mut self, values: impl IntoIterator<Item = TProcessed>) -> TProcessed;
+    fn reduce_sequence(&mut self, values: impl IntoIterator<Item = TProcessed>) -> TProcessed;
     fn reduce_deferred(
         &mut self,
         defer_info: &DeferredInfo,
@@ -104,22 +104,24 @@ pub(crate) trait FetchGroupProcessor<TProcessed, TDeferred> {
     fn reduce_defer(
         &mut self,
         main: TProcessed,
-        sub_selection: &FetchSelectionSet,
+        sub_selection: &NormalizedSelectionSet,
         deferred_blocks: Vec<TDeferred>,
     ) -> Result<TProcessed, FederationError>;
 }
 
-impl FetchGroupProcessor<QueryPlanCost, QueryPlanCost> for FetchDependencyGraphToCostProcessor {
+impl FetchDependencyGraphProcessor<QueryPlanCost, QueryPlanCost>
+    for FetchDependencyGraphToCostProcessor
+{
     /// The cost of a fetch roughly proportional to how many fields it fetches
     /// (but see `selectionCost` for more details)
     /// plus some constant "premium" to account for the fact than doing each fetch is costly
     /// (and that fetch cost often dwarfted the actual cost of fields resolution).
-    fn on_fetch_group(
+    fn on_node(
         &mut self,
-        group: &mut FetchDependencyGraphNode,
+        node: &mut FetchDependencyGraphNode,
         _handled_conditions: &Conditions,
     ) -> Result<QueryPlanCost, FederationError> {
-        Ok(FETCH_COST + group.cost()?)
+        Ok(FETCH_COST + node.cost()?)
     }
 
     /// We don't take conditions into account in costing for now
@@ -129,14 +131,17 @@ impl FetchGroupProcessor<QueryPlanCost, QueryPlanCost> for FetchDependencyGraphT
         value
     }
 
-    /// We sum the cost of fetch groups in parallel.
+    /// We sum the cost of nodes in parallel.
     /// Note that if we were only concerned about expected latency,
     /// we could instead take the `max` of the values,
     /// but as we also try to minimize general resource usage,
     /// we want 2 parallel fetches with cost 1000 to be more costly
     /// than one with cost 1000 and one with cost 10,
     /// so suming is a simple option.
-    fn reduce_parallel(&mut self, values: &[QueryPlanCost]) -> QueryPlanCost {
+    fn reduce_parallel(
+        &mut self,
+        values: impl IntoIterator<Item = QueryPlanCost>,
+    ) -> QueryPlanCost {
         parallel_cost(values)
     }
 
@@ -145,7 +150,10 @@ impl FetchGroupProcessor<QueryPlanCost, QueryPlanCost> for FetchDependencyGraphT
     ///
     /// To do so, each "stage" of a sequence/pipeline gets an additional multiplier
     /// on the intrinsic cost of that stage.
-    fn reduce_sequence(&mut self, values: &[QueryPlanCost]) -> QueryPlanCost {
+    fn reduce_sequence(
+        &mut self,
+        values: impl IntoIterator<Item = QueryPlanCost>,
+    ) -> QueryPlanCost {
         sequence_cost(values)
     }
 
@@ -173,23 +181,22 @@ impl FetchGroupProcessor<QueryPlanCost, QueryPlanCost> for FetchDependencyGraphT
     fn reduce_defer(
         &mut self,
         main: QueryPlanCost,
-        _sub_selection: &FetchSelectionSet,
+        _sub_selection: &NormalizedSelectionSet,
         deferred_blocks: Vec<QueryPlanCost>,
     ) -> Result<QueryPlanCost, FederationError> {
-        Ok(sequence_cost(&[main, parallel_cost(&deferred_blocks)]))
+        Ok(sequence_cost([main, parallel_cost(deferred_blocks)]))
     }
 }
 
-fn parallel_cost(values: &[QueryPlanCost]) -> QueryPlanCost {
-    values.iter().sum()
+fn parallel_cost(values: impl IntoIterator<Item = QueryPlanCost>) -> QueryPlanCost {
+    values.into_iter().sum()
 }
 
-fn sequence_cost(values: &[QueryPlanCost]) -> QueryPlanCost {
-    // reduceRight((acc, stage, idx) => (acc + (Math.max(1, idx * pipeliningCost) * stage)), 0);
+fn sequence_cost(values: impl IntoIterator<Item = QueryPlanCost>) -> QueryPlanCost {
     values
-        .iter()
+        .into_iter()
         .enumerate()
-        .map(|(i, value)| value * 1.max(i as QueryPlanCost * PIPELINING_COST))
+        .map(|(i, stage)| stage * 1.max(i as QueryPlanCost * PIPELINING_COST))
         .sum()
 }
 
@@ -212,21 +219,21 @@ impl FetchDependencyGraphToQueryPlanProcessor {
     }
 }
 
-impl FetchGroupProcessor<Option<PlanNode>, DeferredDeferBlock>
+impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
     for FetchDependencyGraphToQueryPlanProcessor
 {
-    fn on_fetch_group(
+    fn on_node(
         &mut self,
-        group: &mut FetchDependencyGraphNode,
+        node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<Option<PlanNode>, FederationError> {
         let op_name = self.operation_name.as_ref().map(|name| {
             let counter = self.counter;
             self.counter += 1;
-            let subgraph = to_valid_graphql_name(&group.subgraph_name);
+            let subgraph = to_valid_graphql_name(&node.subgraph_name).unwrap_or("".into());
             format!("{name}__{subgraph}__{counter}")
         });
-        Ok(group.to_plan_node(
+        Ok(node.to_plan_node(
             &self.config,
             handled_conditions,
             &self.variable_definitions,
@@ -267,11 +274,17 @@ impl FetchGroupProcessor<Option<PlanNode>, DeferredDeferBlock>
         }
     }
 
-    fn reduce_parallel(&mut self, values: &[Option<PlanNode>]) -> Option<PlanNode> {
+    fn reduce_parallel(
+        &mut self,
+        values: impl IntoIterator<Item = Option<PlanNode>>,
+    ) -> Option<PlanNode> {
         flat_wrap_nodes(NodeKind::Parallel, values)
     }
 
-    fn reduce_sequence(&mut self, values: &[Option<PlanNode>]) -> Option<PlanNode> {
+    fn reduce_sequence(
+        &mut self,
+        values: impl IntoIterator<Item = Option<PlanNode>>,
+    ) -> Option<PlanNode> {
         flat_wrap_nodes(NodeKind::Sequence, values)
     }
 
@@ -316,13 +329,12 @@ impl FetchGroupProcessor<Option<PlanNode>, DeferredDeferBlock>
     fn reduce_defer(
         &mut self,
         main: Option<PlanNode>,
-        sub_selection: &FetchSelectionSet,
+        sub_selection: &NormalizedSelectionSet,
         deferred: Vec<DeferredDeferBlock>,
     ) -> Result<Option<PlanNode>, FederationError> {
         Ok(Some(PlanNode::Defer(Arc::new(DeferNode {
             primary: PrimaryDeferBlock {
                 sub_selection: sub_selection
-                    .selection_set
                     .without_empty_branches()?
                     .map(|filtered| filtered.as_ref().try_into())
                     .transpose()?,
@@ -333,7 +345,11 @@ impl FetchGroupProcessor<Option<PlanNode>, DeferredDeferBlock>
     }
 }
 
-pub(crate) fn to_valid_graphql_name(subgraph_name: &str) -> String {
+/// Returns `None` if `subgraph_name` contains no character in [-_A-Za-z0-9]
+///
+/// Add `.unwrap_or("".into())` to get an empty string in that case.
+/// The empty string is not a valid name by itself but work if concatenating with something else.
+pub(crate) fn to_valid_graphql_name(subgraph_name: &str) -> Option<String> {
     // We have almost no limitations on subgraph names, so we cannot use them inside query names
     // without some cleaning up. GraphQL names can only be: [_A-Za-z][_0-9A-Za-z]*.
     // To do so, we:
@@ -350,16 +366,14 @@ pub(crate) fn to_valid_graphql_name(subgraph_name: &str) -> String {
             c.is_ascii_alphanumeric().then_some(c)
         }
     });
-    let Some(first) = chars.next() else {
-        return "_".to_owned();
-    };
+    let first = chars.next()?;
     let mut sanitized = String::with_capacity(subgraph_name.len() + 1);
     if first.is_ascii_digit() {
         sanitized.push('_')
     }
     sanitized.push(first);
     sanitized.extend(chars);
-    sanitized
+    Some(sanitized)
 }
 
 #[derive(Clone, Copy)]
@@ -373,8 +387,11 @@ enum NodeKind {
 /// in the given list have their sub-nodes flattened into the list: ie,
 /// flatWrapNodes('Sequence', [a, flatWrapNodes('Sequence', b, c), d]) returns a SequenceNode
 /// with four children.
-fn flat_wrap_nodes(kind: NodeKind, nodes: &[Option<PlanNode>]) -> Option<PlanNode> {
-    let mut iter = nodes.iter().flatten();
+fn flat_wrap_nodes(
+    kind: NodeKind,
+    nodes: impl IntoIterator<Item = Option<PlanNode>>,
+) -> Option<PlanNode> {
+    let mut iter = nodes.into_iter().flatten();
     let first = iter.next()?;
     let Some(second) = iter.next() else {
         return Some(first.clone());
@@ -388,7 +405,7 @@ fn flat_wrap_nodes(kind: NodeKind, nodes: &[Option<PlanNode>]) -> Option<PlanNod
             (NodeKind::Sequence, PlanNode::Sequence(inner)) => {
                 nodes.extend(inner.nodes.iter().cloned())
             }
-            _ => nodes.push(node.clone()),
+            (_, node) => nodes.push(node),
         }
     }
     Some(match kind {
