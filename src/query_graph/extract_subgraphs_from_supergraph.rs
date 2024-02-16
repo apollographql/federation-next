@@ -32,6 +32,7 @@ use apollo_compiler::{name, Node, NodeStr};
 use indexmap::{IndexMap, IndexSet};
 use lazy_static::lazy_static;
 use std::collections::BTreeMap;
+use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -1476,14 +1477,24 @@ impl IntoIterator for FederationSubgraphs {
     }
 }
 
-pub(crate) struct ValidFederationSubgraph {
-    pub(crate) name: String,
-    pub(crate) url: String,
-    pub(crate) schema: ValidFederationSchema,
+// TODO(@goto-bus-stop): consider an appropriate name for this in the public API
+// TODO(@goto-bus-stop): should this exist separately from the `crate::subgraph::Subgraph` type?
+#[derive(Debug)]
+pub struct ValidFederationSubgraph {
+    pub name: String,
+    pub url: String,
+    pub schema: ValidFederationSchema,
 }
 
-pub(crate) struct ValidFederationSubgraphs {
+pub struct ValidFederationSubgraphs {
     subgraphs: BTreeMap<String, ValidFederationSubgraph>,
+}
+
+impl fmt::Debug for ValidFederationSubgraphs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ValidFederationSubgraphs ")?;
+        f.debug_map().entries(self.subgraphs.iter()).finish()
+    }
 }
 
 impl ValidFederationSubgraphs {
@@ -1504,7 +1515,7 @@ impl ValidFederationSubgraphs {
         Ok(())
     }
 
-    pub(crate) fn get(&self, name: &str) -> Option<&ValidFederationSubgraph> {
+    pub fn get(&self, name: &str) -> Option<&ValidFederationSubgraph> {
         self.subgraphs.get(name)
     }
 }

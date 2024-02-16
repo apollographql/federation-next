@@ -3,7 +3,6 @@
 use crate::error::FederationError;
 use crate::merge::merge_subgraphs;
 use crate::merge::MergeFailure;
-use crate::schema::FederationSchema;
 use crate::subgraph::ValidSubgraph;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Schema;
@@ -19,6 +18,8 @@ pub mod schema;
 pub mod subgraph;
 
 pub use api_schema::ApiSchemaOptions;
+pub use query_graph::extract_subgraphs_from_supergraph::ValidFederationSubgraph;
+pub use query_graph::extract_subgraphs_from_supergraph::ValidFederationSubgraphs;
 use schema::ValidFederationSchema;
 
 pub struct Supergraph {
@@ -53,6 +54,13 @@ impl Supergraph {
         options: ApiSchemaOptions,
     ) -> Result<ValidFederationSchema, FederationError> {
         api_schema::to_api_schema(self.schema.clone(), options)
+    }
+
+    pub fn extract_subgraphs(&self) -> Result<ValidFederationSubgraphs, FederationError> {
+        crate::query_graph::extract_subgraphs_from_supergraph::extract_subgraphs_from_supergraph(
+            &self.schema,
+            None,
+        )
     }
 }
 
