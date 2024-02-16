@@ -191,7 +191,7 @@ impl QueryPlanner {
                         .schema()
                         .types
                         .get(&position.type_name)
-                        .is_some_and(|ty| is_interface_object(ty))
+                        .is_some_and(is_interface_object)
                 })
             })
             .collect::<IndexSet<_>>();
@@ -233,7 +233,10 @@ impl QueryPlanner {
             .filter(|position| is_inconsistent(position.clone()))
             .collect::<IndexSet<_>>();
 
-        let default_override_conditions = supergraph
+        // TODO(@goto-bus-stop): not sure if this is needed
+        // we can just do `.get().unwrap_or(false)` on a map with *some* labels,
+        // instead of preparing this map for all labels?
+        let _default_override_conditions = supergraph
             .schema
             .get_directive_definition(&join_field_directive)
             .and_then(|directive| {
@@ -243,20 +246,18 @@ impl QueryPlanner {
                     .directives
                     .get(&directive.directive_name)
             })
-            .and_then(|referencers| {
-                Some(
-                    referencers
-                        .object_fields
-                        .iter()
-                        .filter_map(|position| {
-                            let field = position.get(supergraph.schema.schema()).ok()?;
-                            let directive = field.directives.get(&join_field_directive)?;
-                            let value = directive.argument_by_name("overrideLabel")?;
-                            value.as_node_str()
-                        })
-                        .map(|label| (label.clone(), false))
-                        .collect::<HashMap<_, _>>(),
-                )
+            .map(|referencers| {
+                referencers
+                    .object_fields
+                    .iter()
+                    .filter_map(|position| {
+                        let field = position.get(supergraph.schema.schema()).ok()?;
+                        let directive = field.directives.get(&join_field_directive)?;
+                        let value = directive.argument_by_name("overrideLabel")?;
+                        value.as_node_str()
+                    })
+                    .map(|label| (label.clone(), false))
+                    .collect::<HashMap<_, _>>()
             })
             .unwrap_or_default();
 

@@ -65,7 +65,7 @@ fn preserve_default_values_of_input_fields() {
         .expect("missing subgraph")
         .schema
         .schema();
-    let field_a = coord!(Input.a).lookup_input_field(&service).unwrap();
+    let field_a = coord!(Input.a).lookup_input_field(service).unwrap();
     assert_eq!(
         field_a.default_value,
         Some(Node::new(Value::Int(1234.into())))
