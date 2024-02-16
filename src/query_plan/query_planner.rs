@@ -264,7 +264,8 @@ impl QueryPlanner {
             federated_query_graph: Arc::new(query_graph),
             supergraph_schema,
             api_schema,
-            subgraph_federation_spec_definitions: todo!(),
+            // TODO(@goto-bus-stop): not sure how this is used
+            subgraph_federation_spec_definitions: Default::default(),
             interface_types_with_interface_objects,
             abstract_types_with_inconsistent_runtime_types,
         })
