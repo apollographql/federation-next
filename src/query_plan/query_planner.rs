@@ -1,5 +1,6 @@
 use crate::error::FederationError;
 use crate::link::federation_spec_definition::FederationSpecDefinition;
+use crate::link::join_spec_definition::JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC;
 use crate::link::spec::Identity;
 use crate::query_graph::build_federated_query_graph;
 use crate::query_graph::QueryGraph;
@@ -8,11 +9,10 @@ use crate::schema::position::InterfaceTypeDefinitionPosition;
 use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
+use crate::subgraph::spec::INTF_OBJECT_DIRECTIVE_NAME;
 use crate::ApiSchemaOptions;
 use crate::Supergraph;
-use apollo_compiler::name;
 use apollo_compiler::schema::ExtendedType;
-use apollo_compiler::schema::Name;
 use apollo_compiler::NodeStr;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
@@ -164,14 +164,15 @@ impl QueryPlanner {
 
         let metadata = supergraph_schema.metadata().unwrap();
 
-        let federation_link = metadata
-            .for_identity(&Identity::federation_identity())
-            .unwrap();
-        let interface_object_directive =
-            federation_link.directive_name_in_schema(&name!("interfaceObject"));
+        let federation_link = metadata.for_identity(&Identity::federation_identity());
+        let interface_object_directive = federation_link
+            .map_or(INTF_OBJECT_DIRECTIVE_NAME, |link| {
+                link.directive_name_in_schema(&INTF_OBJECT_DIRECTIVE_NAME)
+            });
 
         let join_link = metadata.for_identity(&Identity::join_identity()).unwrap();
-        let join_field_directive = join_link.directive_name_in_schema(&name!("field"));
+        let join_field_directive =
+            join_link.directive_name_in_schema(&JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC);
 
         // TODO(@goto-bus-stop) shouldn't this get `@interfaceObject` from the `@link` definition?
         let is_interface_object =
