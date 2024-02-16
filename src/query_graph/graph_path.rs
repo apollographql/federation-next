@@ -15,7 +15,7 @@ use crate::query_plan::operation::normalized_inline_fragment_selection::{
     NormalizedInlineFragment, NormalizedInlineFragmentData,
 };
 use crate::query_plan::operation::{NormalizedSelectionSet, SelectionId};
-use crate::query_plan::QueryPlanCost;
+use crate::query_plan::{QueryPathElement, QueryPlanCost};
 use crate::schema::position::{
     AbstractTypeDefinitionPosition, CompositeTypeDefinitionPosition,
     InterfaceFieldDefinitionPosition, ObjectTypeDefinitionPosition, OutputTypeDefinitionPosition,
@@ -180,7 +180,7 @@ pub(crate) enum OpGraphPathTrigger {
 
 /// A path of operation elements within a GraphQL operation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub(crate) struct OpPath(Vec<Arc<OpPathElement>>);
+pub(crate) struct OpPath(pub(crate) Vec<Arc<OpPathElement>>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From)]
 pub(crate) enum OpPathElement {
@@ -2450,5 +2450,24 @@ impl OpPath {
         let mut new = self.0.clone();
         new.push(element);
         Self(new)
+    }
+}
+
+impl TryFrom<&'_ OpPath> for Vec<QueryPathElement> {
+    type Error = FederationError;
+
+    fn try_from(value: &'_ OpPath) -> Result<Self, Self::Error> {
+        value
+            .0
+            .iter()
+            .map(|path_element| {
+                Ok(match path_element.as_ref() {
+                    OpPathElement::Field(field) => QueryPathElement::Field(field.try_into()?),
+                    OpPathElement::InlineFragment(inline) => {
+                        QueryPathElement::InlineFragment(inline.try_into()?)
+                    }
+                })
+            })
+            .collect()
     }
 }
