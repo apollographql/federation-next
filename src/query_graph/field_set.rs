@@ -1,5 +1,5 @@
 use crate::error::FederationError;
-use crate::query_plan::operation::{FragmentSpreadNormalizationOption, NormalizedSelectionSet};
+use crate::query_plan::operation::{NamedFragments, NormalizedSelectionSet};
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::executable::{FieldSet, SelectionSet};
 use apollo_compiler::schema::NamedType;
@@ -22,12 +22,9 @@ pub(super) fn parse_field_set(
         value.as_str(),
         "field_set.graphql",
     )?;
-    NormalizedSelectionSet::normalize_and_expand_fragments(
-        &field_set.selection_set,
-        &IndexMap::new(),
-        schema,
-        FragmentSpreadNormalizationOption::InlineFragmentSpread,
-    )
+    // field set should not contain any named fragments
+    let named_fragments = NamedFragments::new(&IndexMap::new(), schema);
+    NormalizedSelectionSet::from_selection_set(&field_set.selection_set, &named_fragments, schema)
 }
 
 /// This exists because there's a single callsite in extract_subgraphs_from_supergraph() that needs

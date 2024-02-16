@@ -181,6 +181,18 @@ impl Debug for CompositeTypeDefinitionPosition {
 }
 
 impl CompositeTypeDefinitionPosition {
+    pub(crate) fn is_object_type(&self) -> bool {
+        matches!(self, CompositeTypeDefinitionPosition::Object(_))
+    }
+
+    pub(crate) fn is_interface_type(&self) -> bool {
+        matches!(self, CompositeTypeDefinitionPosition::Interface(_))
+    }
+
+    pub(crate) fn is_union_type(&self) -> bool {
+        matches!(self, CompositeTypeDefinitionPosition::Union(_))
+    }
+
     pub(crate) fn type_name(&self) -> &Name {
         match self {
             CompositeTypeDefinitionPosition::Object(type_) => &type_.type_name,
@@ -226,6 +238,42 @@ impl CompositeTypeDefinitionPosition {
                 type_.introspection_typename_field().into()
             }
         }
+    }
+
+    pub(crate) fn get<'schema>(
+        &self,
+        schema: &'schema Schema,
+    ) -> Result<&'schema ExtendedType, FederationError> {
+        let type_name = self.type_name();
+        let type_ = schema
+            .types
+            .get(type_name)
+            .ok_or_else(|| SingleFederationError::Internal {
+                message: format!("Schema has no type \"{}\"", self),
+            })?;
+        let type_matches = match type_ {
+            ExtendedType::Object(_) => matches!(self, CompositeTypeDefinitionPosition::Object(_)),
+            ExtendedType::Interface(_) => {
+                matches!(self, CompositeTypeDefinitionPosition::Interface(_))
+            }
+            ExtendedType::Union(_) => matches!(self, CompositeTypeDefinitionPosition::Union(_)),
+            _ => false,
+        };
+        if type_matches {
+            Ok(type_)
+        } else {
+            Err(SingleFederationError::Internal {
+                message: format!("Schema type \"{}\" is the wrong kind", self),
+            }
+            .into())
+        }
+    }
+
+    pub(crate) fn try_get<'schema>(
+        &self,
+        schema: &'schema Schema,
+    ) -> Option<&'schema ExtendedType> {
+        self.get(schema).ok()
     }
 }
 
