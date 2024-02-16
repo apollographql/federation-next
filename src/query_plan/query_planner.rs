@@ -1,5 +1,6 @@
 use crate::error::FederationError;
 use crate::link::federation_spec_definition::FederationSpecDefinition;
+use crate::link::spec::Identity;
 use crate::query_graph::build_federated_query_graph;
 use crate::query_graph::QueryGraph;
 use crate::schema::position::AbstractTypeDefinitionPosition;
@@ -97,6 +98,7 @@ pub struct QueryPlannerDebugConfig {
     /// debug a specific issue (with unexpectedly slow query planning for instance). Remember that
     /// setting this value too low can negatively affect query runtime (due to the use of
     /// sub-optimal query plans).
+    // TODO: should there additionally be a max_evaluated_cost?
     pub(crate) max_evaluated_plans: u32,
 
     /// Before creating query plans, for each path of fields in the query we compute all the
@@ -118,7 +120,7 @@ impl Default for QueryPlannerDebugConfig {
     fn default() -> Self {
         Self {
             bypass_planner_for_single_subgraph: false,
-            max_evaluated_plans: 10000,
+            max_evaluated_plans: 10_000,
             paths_limit: None,
         }
     }
@@ -160,9 +162,20 @@ impl QueryPlanner {
             Some(true),
         )?;
 
+        let metadata = supergraph_schema.metadata().unwrap();
+
+        let federation_link = metadata
+            .for_identity(&Identity::federation_identity())
+            .unwrap();
+        let interface_object_directive =
+            federation_link.directive_name_in_schema(&name!("interfaceObject"));
+
+        let join_link = metadata.for_identity(&Identity::join_identity()).unwrap();
+        let join_field_directive = join_link.directive_name_in_schema(&name!("field"));
+
         // TODO(@goto-bus-stop) shouldn't this get `@interfaceObject` from the `@link` definition?
         let is_interface_object =
-            |ty: &ExtendedType| ty.is_object() && ty.directives().has("interfaceObject");
+            |ty: &ExtendedType| ty.is_object() && ty.directives().has(&interface_object_directive);
 
         let interface_types_with_interface_objects = supergraph
             .schema
@@ -219,10 +232,9 @@ impl QueryPlanner {
             .filter(|position| is_inconsistent(position.clone()))
             .collect::<IndexSet<_>>();
 
-        const JOIN_FIELD: Name = name!("join__field");
         let default_override_conditions = supergraph
             .schema
-            .get_directive_definition(&JOIN_FIELD)
+            .get_directive_definition(&join_field_directive)
             .and_then(|directive| {
                 supergraph
                     .schema
@@ -237,7 +249,7 @@ impl QueryPlanner {
                         .iter()
                         .filter_map(|position| {
                             let field = position.get(supergraph.schema.schema()).ok()?;
-                            let directive = field.directives.get(&JOIN_FIELD)?;
+                            let directive = field.directives.get(&join_field_directive)?;
                             let value = directive.argument_by_name("overrideLabel")?;
                             value.as_node_str()
                         })

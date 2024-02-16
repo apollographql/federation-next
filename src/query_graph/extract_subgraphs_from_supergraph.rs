@@ -123,11 +123,11 @@ pub(crate) fn extract_subgraphs_from_supergraph(
     Ok(valid_subgraphs)
 }
 
-type ValidateSupergraphOk = (&'static LinkSpecDefinition, &'static JoinSpecDefinition);
+type SupergraphSpecs = (&'static LinkSpecDefinition, &'static JoinSpecDefinition);
 
 fn validate_supergraph(
     supergraph_schema: &FederationSchema,
-) -> Result<ValidateSupergraphOk, FederationError> {
+) -> Result<SupergraphSpecs, FederationError> {
     let Some(metadata) = supergraph_schema.metadata() else {
         return Err(SingleFederationError::InvalidFederationSupergraph {
             message: "Invalid supergraph: must be a core schema".to_owned(),
