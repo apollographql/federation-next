@@ -670,15 +670,15 @@ struct ComputeNodesStackItem<'a> {
 
 pub(crate) fn compute_nodes_for_tree(
     dependency_graph: &mut FetchDependencyGraph,
-    tree: &OpPathTree,
-    start_node_id: NodeIndex,
+    initial_tree: &OpPathTree,
+    initial_node_id: NodeIndex,
     initial_node_path: FetchDependencyGraphNodePath,
     initial_defer_context: DeferContext,
     initial_conditions: &OpGraphPathContext,
 ) -> Result<IndexSet<NodeIndex>, FederationError> {
     let mut stack = vec![ComputeNodesStackItem {
-        tree,
-        node_id: start_node_id,
+        tree: initial_tree,
+        node_id: initial_node_id,
         node_path: initial_node_path,
         context: initial_conditions,
         defer_context: initial_defer_context,
@@ -687,14 +687,14 @@ pub(crate) fn compute_nodes_for_tree(
     while let Some(stack_item) = stack.pop() {
         let node =
             FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
-        for selection_set in &tree.local_selection_sets {
+        for selection_set in &stack_item.tree.local_selection_sets {
             node.selection_set_mut()
                 .add_at_path(&stack_item.node_path.path_in_node, Some(selection_set))?;
             dependency_graph
                 .defer_tracking
                 .update_subselection(&stack_item.defer_context, Some(selection_set));
         }
-        if tree.is_leaf() {
+        if stack_item.tree.is_leaf() {
             node.selection_set_mut()
                 .add_at_path(&stack_item.node_path.path_in_node, None)?;
             dependency_graph
@@ -705,7 +705,7 @@ pub(crate) fn compute_nodes_for_tree(
         // We want to preserve the order of the elements in the child,
         // but the stack will reverse everything,
         // so we iterate in reverse order to counter-balance it.
-        for child in tree.childs.iter().rev() {
+        for child in stack_item.tree.childs.iter().rev() {
             match &*child.trigger {
                 OpGraphPathTrigger::Context(new_context) => {
                     // The only 3 cases where we can take edge not "driven" by an operation is either:
@@ -720,12 +720,11 @@ pub(crate) fn compute_nodes_for_tree(
                             stack_item.node_path
                         )));
                     };
-                    let edge = tree.graph.edge_weight(edge_id)?;
+                    let edge = stack_item.tree.graph.edge_weight(edge_id)?;
                     if let QueryGraphEdgeTransition::KeyResolution = &edge.transition {
                         stack.push(compute_nodes_for_key_resolution(
                             dependency_graph,
                             &stack_item,
-                            tree,
                             child,
                             edge_id,
                             new_context,
@@ -735,7 +734,6 @@ pub(crate) fn compute_nodes_for_tree(
                         stack.push(compute_nodes_for_graph_path_context(
                             dependency_graph,
                             &stack_item,
-                            tree,
                             child,
                             edge_id,
                             edge,
@@ -747,7 +745,6 @@ pub(crate) fn compute_nodes_for_tree(
                     stack.push(compute_nodes_for_op_path_element(
                         dependency_graph,
                         &stack_item,
-                        tree,
                         child,
                         operation,
                         &mut created_nodes,
@@ -762,13 +759,12 @@ pub(crate) fn compute_nodes_for_tree(
 fn compute_nodes_for_key_resolution<'a>(
     dependency_graph: &mut FetchDependencyGraph,
     stack_item: &ComputeNodesStackItem<'a>,
-    tree: &OpPathTree,
     child: &'a PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>,
     edge_id: EdgeIndex,
     new_context: &'a OpGraphPathContext,
     created_nodes: &mut IndexSet<NodeIndex>,
 ) -> Result<ComputeNodesStackItem<'a>, FederationError> {
-    let edge = tree.graph.edge_weight(edge_id)?;
+    let edge = stack_item.tree.graph.edge_weight(edge_id)?;
     let Some(conditions) = &child.conditions else {
         return Err(FederationError::internal(format!(
             "Key edge {edge:?} should have some conditions paths",
@@ -783,9 +779,9 @@ fn compute_nodes_for_key_resolution<'a>(
         &Default::default(),
     )?;
     created_nodes.extend(conditions_nodes.iter().copied());
-    let (source_id, dest_id) = tree.graph.edge_endpoints(edge_id)?;
-    let source = tree.graph.node_weight(source_id)?;
-    let dest = tree.graph.node_weight(dest_id)?;
+    let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
+    let source = stack_item.tree.graph.node_weight(source_id)?;
+    let dest = stack_item.tree.graph.node_weight(dest_id)?;
     let source_type: CompositeTypeDefinitionPosition = source.type_.clone().try_into()?;
     let dest_type: CompositeTypeDefinitionPosition = dest.type_.clone().try_into()?;
     let path_in_parent = &stack_item.node_path.path_in_node;
@@ -886,7 +882,6 @@ fn compute_nodes_for_key_resolution<'a>(
 fn compute_nodes_for_graph_path_context<'a>(
     dependency_graph: &mut FetchDependencyGraph,
     stack_item: &ComputeNodesStackItem<'_>,
-    tree: &OpPathTree,
     child: &'a Arc<PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>>,
     edge_id: EdgeIndex,
     edge: &crate::query_graph::QueryGraphEdge,
@@ -902,9 +897,9 @@ fn compute_nodes_for_graph_path_context<'a>(
             "Root type resolution edge {edge} should not have conditions"
         )));
     }
-    let (source_id, dest_id) = tree.graph.edge_endpoints(edge_id)?;
-    let source = tree.graph.node_weight(source_id)?;
-    let dest = tree.graph.node_weight(dest_id)?;
+    let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
+    let source = stack_item.tree.graph.node_weight(source_id)?;
+    let dest = stack_item.tree.graph.node_weight(dest_id)?;
     let source_type: ObjectTypeDefinitionPosition = source.type_.clone().try_into()?;
     let dest_type: ObjectTypeDefinitionPosition = dest.type_.clone().try_into()?;
     let root_operation_type = dependency_graph
@@ -972,7 +967,6 @@ fn compute_nodes_for_graph_path_context<'a>(
 fn compute_nodes_for_op_path_element<'a>(
     dependency_graph: &mut FetchDependencyGraph,
     stack_item: &ComputeNodesStackItem<'a>,
-    tree: &OpPathTree,
     child: &'a Arc<PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>>,
     operation: &OpPathElement,
     created_nodes: &mut IndexSet<NodeIndex>,
@@ -1007,9 +1001,9 @@ fn compute_nodes_for_op_path_element<'a>(
             defer_context: updated_defer_context,
         });
     };
-    let (source_id, dest_id) = tree.graph.edge_endpoints(edge_id)?;
-    let source = tree.graph.node_weight(source_id)?;
-    let dest = tree.graph.node_weight(dest_id)?;
+    let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
+    let source = stack_item.tree.graph.node_weight(source_id)?;
+    let dest = stack_item.tree.graph.node_weight(dest_id)?;
     if source.source != dest.source {
         return Err(FederationError::internal(format!(
             "Collecting edge {edge_id:?} for {operation:?} \
