@@ -1243,5 +1243,7 @@ fn handle_requires(
     _defer_context: &DeferContext,
     _created_nodes: &mut IndexSet<NodeIndex>,
 ) -> Result<(NodeIndex, FetchDependencyGraphNodePath), FederationError> {
+    // PORT_NOTE: instead of returing IDs of created nodes they should be inserted directly
+    // in the `created_nodes` set passed by mutable reference.
     todo!() // Port `handleRequires`
 }
