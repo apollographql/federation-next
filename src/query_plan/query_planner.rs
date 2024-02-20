@@ -127,7 +127,6 @@ impl Default for QueryPlannerDebugConfig {
 }
 
 pub struct QueryPlanner {
-    // TODO(@goto-bus-stop) not convinced that these arcs are all necessary
     config: QueryPlannerConfig,
     federated_query_graph: Arc<QueryGraph>,
     supergraph_schema: ValidFederationSchema,
@@ -174,7 +173,6 @@ impl QueryPlanner {
         let join_field_directive =
             join_link.directive_name_in_schema(&JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC);
 
-        // TODO(@goto-bus-stop) shouldn't this get `@interfaceObject` from the `@link` definition?
         let is_interface_object =
             |ty: &ExtendedType| ty.is_object() && ty.directives().has(&interface_object_directive);
 
