@@ -643,8 +643,7 @@ impl LinkSpecDefinitions {
                 InputValueDefinition {
                     description: None,
                     name: name!("url"),
-                    // TODO: doc-comment disagrees with non-null here
-                    ty: ty!(String!).into(),
+                    ty: ty!(String).into(),
                     default_value: None,
                     directives: Default::default(),
                 }
