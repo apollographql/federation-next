@@ -6,11 +6,13 @@ use crate::schema::position::{
     ObjectTypeDefinitionPosition, ScalarTypeDefinitionPosition, TypeDefinitionPosition,
     UnionTypeDefinitionPosition,
 };
+use apollo_compiler::name;
 use apollo_compiler::schema::{ExtendedType, Name};
 use apollo_compiler::validation::Valid;
 use apollo_compiler::Schema;
 use indexmap::IndexSet;
 use referencer::Referencers;
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
@@ -138,6 +140,58 @@ impl FederationSchema {
             .then(|| DirectiveDefinitionPosition {
                 directive_name: name.clone(),
             })
+    }
+}
+
+impl Display for FederationSchema {
+    /// Printing for federation schemas that matches the JS formatting conventions.
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        use apollo_compiler::ast::OperationType;
+        use apollo_compiler::ast::SchemaDefinition;
+
+        let schema_definition = &self.schema.schema_definition;
+        let mut ast_schema = SchemaDefinition {
+            description: schema_definition.description.clone(),
+            directives: schema_definition
+                .directives
+                .iter()
+                .map(|component| (**component).clone())
+                .collect(),
+            root_operations: vec![],
+        };
+        if schema_definition.description.is_some() || !schema_definition.directives.is_empty() {
+            ast_schema.root_operations.push(
+                (
+                    OperationType::Query,
+                    schema_definition
+                        .query
+                        .as_deref()
+                        .cloned()
+                        .unwrap_or(name!("Query")),
+                )
+                    .into(),
+            );
+        }
+
+        if !ast_schema.root_operations.is_empty() {
+            writeln!(f, "{ast_schema}")?;
+        }
+
+        let mut directives = self.schema.directive_definitions.iter().collect::<Vec<_>>();
+        directives.sort_by_cached_key(|(name, _def)| name.to_ascii_lowercase());
+
+        for (_name, def) in directives {
+            writeln!(f, "{def}")?;
+        }
+
+        let mut types = self.schema.types.iter().collect::<Vec<_>>();
+        types.sort_by_cached_key(|(name, _def)| name.to_ascii_lowercase());
+
+        for (_name, def) in types {
+            writeln!(f, "{def}")?;
+        }
+
+        Ok(())
     }
 }
 

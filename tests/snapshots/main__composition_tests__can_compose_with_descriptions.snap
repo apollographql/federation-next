@@ -32,18 +32,6 @@ enum E @join__type(graph: SUBGRAPH2) {
   B @join__enumValue(graph: SUBGRAPH2)
 }
 
-"""
-Available queries
-Not much yet
-"""
-type Query @join__type(graph: SUBGRAPH1) @join__type(graph: SUBGRAPH2) {
-  """Returns tea"""
-  t(
-    """An argument that is very important"""
-    x: String!,
-  ): String @join__field(graph: SUBGRAPH1)
-}
-
 scalar join__FieldSet
 
 enum join__Graph {
@@ -60,5 +48,17 @@ enum link__Purpose {
   SECURITY
   """EXECUTION features provide metadata necessary for operation execution."""
   EXECUTION
+}
+
+"""
+Available queries
+Not much yet
+"""
+type Query @join__type(graph: SUBGRAPH1) @join__type(graph: SUBGRAPH2) {
+  """Returns tea"""
+  t(
+    """An argument that is very important"""
+    x: String!,
+  ): String @join__field(graph: SUBGRAPH1)
 }
 

@@ -25,22 +25,6 @@ enum E @join__type(graph: SUBGRAPH2) {
   V2 @join__enumValue(graph: SUBGRAPH2)
 }
 
-type Query @join__type(graph: SUBGRAPH1) @join__type(graph: SUBGRAPH2) {
-  t: T @join__field(graph: SUBGRAPH1)
-}
-
-type S @join__type(graph: SUBGRAPH1) {
-  x: Int
-}
-
-type T @join__type(graph: SUBGRAPH1, key: "k") @join__type(graph: SUBGRAPH2, key: "k") {
-  k: ID
-  a: Int @join__field(graph: SUBGRAPH2)
-  b: String @join__field(graph: SUBGRAPH2)
-}
-
-union U @join__type(graph: SUBGRAPH1) @join__unionMember(graph: SUBGRAPH1, member: "S") @join__unionMember(graph: SUBGRAPH1, member: "T") = S | T
-
 scalar join__FieldSet
 
 enum join__Graph {
@@ -58,4 +42,20 @@ enum link__Purpose {
   """EXECUTION features provide metadata necessary for operation execution."""
   EXECUTION
 }
+
+type Query @join__type(graph: SUBGRAPH1) @join__type(graph: SUBGRAPH2) {
+  t: T @join__field(graph: SUBGRAPH1)
+}
+
+type S @join__type(graph: SUBGRAPH1) {
+  x: Int
+}
+
+type T @join__type(graph: SUBGRAPH1, key: "k") @join__type(graph: SUBGRAPH2, key: "k") {
+  k: ID
+  a: Int @join__field(graph: SUBGRAPH2)
+  b: String @join__field(graph: SUBGRAPH2)
+}
+
+union U @join__type(graph: SUBGRAPH1) @join__unionMember(graph: SUBGRAPH1, member: "S") @join__unionMember(graph: SUBGRAPH1, member: "T") = S | T
 

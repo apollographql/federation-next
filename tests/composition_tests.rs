@@ -4,8 +4,12 @@ use apollo_federation::Supergraph;
 
 fn print_sdl(schema: &Schema) -> String {
     let mut schema = schema.clone();
-    schema.types.sort_keys();
-    schema.directive_definitions.sort_keys();
+    schema
+        .types
+        .sort_by_cached_key(|name, _element| name.to_ascii_lowercase());
+    schema
+        .directive_definitions
+        .sort_by_cached_key(|name, _element| name.to_ascii_lowercase());
     schema.to_string()
 }
 
