@@ -8,7 +8,7 @@ use crate::query_graph::{
     QueryGraph, QueryGraphEdge, QueryGraphEdgeTransition, QueryGraphNode, QueryGraphNodeType,
 };
 use crate::query_plan::operation::{
-    equal_selection_sets, merge_selection_sets, NormalizedSelection, NormalizedSelectionSet,
+    merge_selection_sets, NormalizedSelection, NormalizedSelectionSet,
 };
 use crate::schema::position::{
     AbstractTypeDefinitionPosition, CompositeTypeDefinitionPosition, FieldDefinitionPosition,
@@ -1883,7 +1883,10 @@ impl FederatedQueryGraphBuilder {
                                 }
                                 .into());
                             };
-                            if equal_selection_sets(conditions, followup_conditions)? {
+                            // PORT_NOTE: in the JS code, this uses `.equals()`, which does the
+                            // equivalent of `conditions.selections == followup_conditions.selections`.
+                            // The check here additionally requires that the parent type is the same.
+                            if conditions == followup_conditions {
                                 continue;
                             }
                         }

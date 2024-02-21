@@ -1678,22 +1678,6 @@ pub(crate) fn merge_selection_sets(
     Ok(first)
 }
 
-pub(crate) fn equal_selection_sets(
-    a: &NormalizedSelectionSet,
-    b: &NormalizedSelectionSet,
-) -> Result<bool, FederationError> {
-    // TODO: Once operation processing is done, we should be able to call into that logic here.
-    // We're specifically wanting the equivalent of something like
-    // ```
-    // selectionSetOfNode(...).equals(selectionSetOfNode(...));
-    // ```
-    // from the JS codebase. It may be more performant for federation-next to use its own
-    // representation instead of repeatedly inter-converting between its representation and the
-    // apollo-rs one, but we'll cross that bridge if we come to it.
-    println!("TODO: equal_selection_sets");
-    Ok(a == b)
-}
-
 impl TryFrom<&NormalizedOperation> for Operation {
     type Error = FederationError;
 
