@@ -1,5 +1,6 @@
 use crate::error::FederationError;
 use crate::link::federation_spec_definition::FederationSpecDefinition;
+use crate::link::federation_spec_definition::FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC;
 use crate::link::join_spec_definition::JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC;
 use crate::link::spec::Identity;
 use crate::query_graph::build_federated_query_graph;
@@ -9,7 +10,6 @@ use crate::schema::position::InterfaceTypeDefinitionPosition;
 use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
-use crate::subgraph::spec::INTF_OBJECT_DIRECTIVE_NAME;
 use crate::ApiSchemaOptions;
 use crate::Supergraph;
 use apollo_compiler::schema::ExtendedType;
@@ -164,9 +164,9 @@ impl QueryPlanner {
         let metadata = supergraph_schema.metadata().unwrap();
 
         let federation_link = metadata.for_identity(&Identity::federation_identity());
-        let interface_object_directive = federation_link
-            .map_or(INTF_OBJECT_DIRECTIVE_NAME, |link| {
-                link.directive_name_in_schema(&INTF_OBJECT_DIRECTIVE_NAME)
+        let interface_object_directive =
+            federation_link.map_or(FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC, |link| {
+                link.directive_name_in_schema(&FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC)
             });
 
         let join_link = metadata.for_identity(&Identity::join_identity()).unwrap();

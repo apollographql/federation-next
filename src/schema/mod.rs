@@ -140,6 +140,10 @@ impl FederationSchema {
         ))))
     }
 
+    pub(crate) fn assume_valid(self) -> ValidFederationSchema {
+        ValidFederationSchema(Arc::new(Valid::assume_valid(self)))
+    }
+
     pub(crate) fn get_directive_definition(
         &self,
         name: &Name,

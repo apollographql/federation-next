@@ -3,9 +3,8 @@ use crate::link::federation_spec_definition::{
     get_federation_spec_definition_from_subgraph, FederationSpecDefinition, FEDERATION_VERSIONS,
 };
 use crate::link::join_spec_definition::{
-    FieldDirectiveArguments, JoinSpecDefinition, TypeDirectiveArguments, JOIN_VERSIONS,
+    FieldDirectiveArguments, JoinSpecDefinition, TypeDirectiveArguments,
 };
-use crate::link::link_spec_definition::LinkSpecDefinition;
 use crate::link::spec::{Identity, Version};
 use crate::link::spec_definition::SpecDefinition;
 use crate::query_graph::field_set::parse_field_set_without_normalization;
@@ -19,6 +18,7 @@ use crate::schema::position::{
     TypeDefinitionPosition, UnionTypeDefinitionPosition,
 };
 use crate::schema::{FederationSchema, ValidFederationSchema};
+use crate::validate_supergraph;
 use apollo_compiler::ast::FieldDefinition;
 use apollo_compiler::executable::{Field, Selection, SelectionSet};
 use apollo_compiler::schema::{
@@ -122,36 +122,6 @@ pub(crate) fn extract_subgraphs_from_supergraph(
     }
 
     Ok(valid_subgraphs)
-}
-
-type SupergraphSpecs = (&'static LinkSpecDefinition, &'static JoinSpecDefinition);
-
-fn validate_supergraph(
-    supergraph_schema: &FederationSchema,
-) -> Result<SupergraphSpecs, FederationError> {
-    let Some(metadata) = supergraph_schema.metadata() else {
-        return Err(SingleFederationError::InvalidFederationSupergraph {
-            message: "Invalid supergraph: must be a core schema".to_owned(),
-        }
-        .into());
-    };
-    let link_spec_definition = metadata.link_spec_definition()?;
-    let Some(join_link) = metadata.for_identity(&Identity::join_identity()) else {
-        return Err(SingleFederationError::InvalidFederationSupergraph {
-            message: "Invalid supergraph: must use the join spec".to_owned(),
-        }
-        .into());
-    };
-    let Some(join_spec_definition) = JOIN_VERSIONS.find(&join_link.url.version) else {
-        return Err(SingleFederationError::InvalidFederationSupergraph {
-            message: format!(
-                "Invalid supergraph: uses unsupported join spec version {} (supported versions: {})",
-                JOIN_VERSIONS.versions().map(|v| v.to_string()).collect::<Vec<_>>().join(", "),
-                join_link.url.version,
-            ),
-        }.into());
-    };
-    Ok((link_spec_definition, join_spec_definition))
 }
 
 type CollectEmptySubgraphsOk = (

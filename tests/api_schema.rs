@@ -6,6 +6,12 @@ use apollo_federation::error::FederationError;
 use apollo_federation::ApiSchemaOptions;
 use apollo_federation::Supergraph;
 
+// TODO(@goto-bus-stop): inaccessible is in theory a standalone spec,
+// but is only tested here as part of API schema, unlike in the JS implementation.
+// This means that all test inputs must be valid supergraphs.
+// Ideally we would pull out the inaccessible tests to only apply
+// `InaccessibleSpecDefinition::remove_inaccessible_elements` to a `FederationSchema`,
+// and remove the supergraph-specific `@link`s (`join`) below.
 const INACCESSIBLE_V02_HEADER: &str = r#"
     directive @link(url: String!, as: String, import: [link__Import], for: link__Purpose) repeatable on SCHEMA
 
@@ -20,6 +26,7 @@ const INACCESSIBLE_V02_HEADER: &str = r#"
 
     schema
       @link(url: "https://specs.apollo.dev/link/v1.0")
+      @link(url: "https://specs.apollo.dev/join/v0.2", for: EXECUTION)
       @link(url: "https://specs.apollo.dev/inaccessible/v0.2")
     {
       query: Query
@@ -2094,6 +2101,8 @@ fn inaccessible_on_builtins() {
 
 #[test]
 fn inaccessible_on_imported_elements() {
+    // TODO(@goto-bus-stop): this `@link`s the join spec but doesn't use it, just because the
+    // testing code goes through the Supergraph API. See comment at top of file
     let graph = Supergraph::new(
         r#"
       directive @link(url: String!, as: String, import: [link__Import] @inaccessible, for: link__Purpose) repeatable on SCHEMA
@@ -2108,7 +2117,8 @@ fn inaccessible_on_imported_elements() {
       directive @inaccessible on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
 
       schema
-        @link(url: "https://specs.apollo.dev/link/v0.3")
+        @link(url: "https://specs.apollo.dev/link/v1.0")
+        @link(url: "https://specs.apollo.dev/join/v0.2")
         @link(url: "https://specs.apollo.dev/inaccessible/v0.2")
         @link(url: "http://localhost/foo/v1.0")
       {
