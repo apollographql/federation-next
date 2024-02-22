@@ -1883,10 +1883,7 @@ impl FederatedQueryGraphBuilder {
                                 }
                                 .into());
                             };
-                            // PORT_NOTE: in the JS code, this uses `.equals()`, which does the
-                            // equivalent of `conditions.selections == followup_conditions.selections`.
-                            // The check here additionally requires that the parent type is the same.
-                            if conditions == followup_conditions {
+                            if conditions.selections == followup_conditions.selections {
                                 continue;
                             }
                         }
