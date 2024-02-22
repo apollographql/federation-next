@@ -773,24 +773,33 @@ pub(crate) fn compute_nodes_for_tree(
                         )));
                     };
                     let edge = stack_item.tree.graph.edge_weight(edge_id)?;
-                    if let QueryGraphEdgeTransition::KeyResolution = &edge.transition {
-                        stack.push(compute_nodes_for_key_resolution(
-                            dependency_graph,
-                            &stack_item,
-                            child,
-                            edge_id,
-                            new_context,
-                            &mut created_nodes,
-                        )?);
-                    } else {
-                        stack.push(compute_nodes_for_graph_path_context(
-                            dependency_graph,
-                            &stack_item,
-                            child,
-                            edge_id,
-                            edge,
-                            new_context,
-                        )?);
+                    match edge.transition {
+                        QueryGraphEdgeTransition::KeyResolution => {
+                            stack.push(compute_nodes_for_key_resolution(
+                                dependency_graph,
+                                &stack_item,
+                                child,
+                                edge_id,
+                                new_context,
+                                &mut created_nodes,
+                            )?);
+                        }
+                        QueryGraphEdgeTransition::RootTypeResolution { root_kind } => {
+                            stack.push(compute_nodes_for_root_type_resolution(
+                                dependency_graph,
+                                &stack_item,
+                                child,
+                                edge_id,
+                                edge,
+                                root_kind,
+                                new_context,
+                            )?);
+                        }
+                        _ => {
+                            return Err(FederationError::internal(format!(
+                                "Unexpected non-collecting edge {edge}"
+                            )))
+                        }
                     }
                 }
                 OpGraphPathTrigger::OpPathElement(operation) => {
@@ -931,19 +940,15 @@ fn compute_nodes_for_key_resolution<'a>(
     })
 }
 
-fn compute_nodes_for_graph_path_context<'a>(
+fn compute_nodes_for_root_type_resolution<'a>(
     dependency_graph: &mut FetchDependencyGraph,
     stack_item: &ComputeNodesStackItem<'_>,
     child: &'a Arc<PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>>,
     edge_id: EdgeIndex,
     edge: &crate::query_graph::QueryGraphEdge,
+    root_kind: SchemaRootDefinitionKind,
     new_context: &'a OpGraphPathContext,
 ) -> Result<ComputeNodesStackItem<'a>, FederationError> {
-    let QueryGraphEdgeTransition::RootTypeResolution { root_kind } = edge.transition else {
-        return Err(FederationError::internal(format!(
-            "Unexpected non-collecting edge {edge}"
-        )));
-    };
     if child.conditions.is_some() {
         return Err(FederationError::internal(format!(
             "Root type resolution edge {edge} should not have conditions"
