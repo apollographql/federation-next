@@ -2369,19 +2369,23 @@ type T {
         }
     }
 
-    // TODO enable when @defer is available in apollo-rs
-    #[ignore]
     #[test]
     fn do_not_merge_fields_with_defer_directive() {
         let operation_defer_fields = r#"
 query Test {
-  t @defer {
-    v1
+  t {
+    ... @defer {
+      v1
+    }
   }
-  t @defer {
-    v2
+  t {
+    ... @defer {
+      v2
+    }
   }
 }
+
+directive @defer(label: String, if: Boolean! = true) on FRAGMENT_SPREAD | INLINE_FRAGMENT
 
 type Query {
   t: T
@@ -2402,11 +2406,13 @@ type T {
             )
             .unwrap();
             let expected = r#"query Test {
-  t @defer {
-    v1
-  }
-  t @defer {
-    v2
+  t {
+    ... @defer {
+      v1
+    }
+    ... @defer {
+      v2
+    }
   }
 }"#;
             let actual = normalized_operation.to_string();
@@ -2416,26 +2422,30 @@ type T {
         }
     }
 
-    // TODO enable when @defer is available in apollo-rs
-    #[ignore]
     #[test]
     fn merge_nested_field_selections() {
         let nested_operation = r#"
 query Test {
   t {
     t1
-    v @defer {
-      v1
+    ... @defer {
+      v {
+        v1
+      }
     }
   }
   t {
     t1
     t2
-    v @defer {
-      v2
+    ... @defer {
+      v {
+        v2
+      }
     }
   }
 }
+
+directive @defer(label: String, if: Boolean! = true) on FRAGMENT_SPREAD | INLINE_FRAGMENT
 
 type Query {
   t: T
@@ -2464,12 +2474,16 @@ type V {
             let expected = r#"query Test {
   t {
     t1
-    v @defer {
-      v1
+    ... @defer {
+      v {
+        v1
+      }
     }
     t2
-    v @defer {
-      v2
+    ... @defer {
+      v {
+        v2
+      }
     }
   }
 }"#;
@@ -2726,8 +2740,6 @@ type T {
         }
     }
 
-    // TODO enable when @defer is available in apollo-rs
-    #[ignore]
     #[test]
     fn do_not_merge_fragments_with_defer_directive() {
         let operation_fragments_with_defer = r#"
@@ -2741,6 +2753,8 @@ query Test {
     }
   }
 }
+
+directive @defer(label: String, if: Boolean! = true) on FRAGMENT_SPREAD | INLINE_FRAGMENT
 
 type Query {
   t: T
@@ -2778,8 +2792,6 @@ type T {
         }
     }
 
-    // TODO enable when @defer is available in apollo-rs
-    #[ignore]
     #[test]
     fn merge_nested_fragments() {
         let operation_nested_fragments = r#"
@@ -2789,7 +2801,7 @@ query Test {
       t1
     }
     ... on T {
-      v @defer {
+      v {
         v1
       }
     }
@@ -2800,7 +2812,7 @@ query Test {
       t2
     }
     ... on T {
-      v @defer {
+      v {
         v2
       }
     }
@@ -2835,13 +2847,11 @@ type V {
             let expected = r#"query Test {
   t {
     t1
-    v @defer {
+    v {
       v1
-    }
-    t2
-    v @defer {
       v2
     }
+    t2
   }
 }"#;
             let actual = normalized_operation.to_string();
