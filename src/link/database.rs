@@ -15,7 +15,7 @@ pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkErro
         .schema_definition
         .directives
         .iter()
-        .filter(|d| parse_link_if_bootstrap_directive(schema, d));
+        .filter(|d| is_bootstrap_directive(schema, d));
     let Some(bootstrap_directive) = bootstrap_directives.next() else {
         return Ok(None);
     };
@@ -163,9 +163,9 @@ fn is_core_directive_definition(definition: &DirectiveDefinition) -> bool {
             .map_or(true, |argument| *argument.ty == ty!(String))
 }
 
-// Note: currently only recognizing @link, not @core. Doesn't feel worth bothering with @core at
-// this point, but the latter uses the "feature" arg instead of "url".
-fn parse_link_if_bootstrap_directive(schema: &Schema, directive: &Directive) -> bool {
+/// Returns whether a given directive is the @link or @core directive that imports the @link or
+/// @core spec.
+fn is_bootstrap_directive(schema: &Schema, directive: &Directive) -> bool {
     let Some(definition) = schema.directive_definitions.get(&directive.name) else {
         return false;
     };
