@@ -831,6 +831,7 @@ fn compute_nodes_for_key_resolution<'a>(
             "Key edge {edge:?} should have some conditions paths",
         )));
     };
+    // First, we need to ensure we fetch the conditions from the current node.
     let conditions_nodes = compute_nodes_for_tree(
         dependency_graph,
         conditions,
@@ -840,13 +841,29 @@ fn compute_nodes_for_key_resolution<'a>(
         &Default::default(),
     )?;
     created_nodes.extend(conditions_nodes.iter().copied());
+    // Then we can "take the edge", creating a new node.
+    // That node depends on the condition ones.
     let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
     let source = stack_item.tree.graph.node_weight(source_id)?;
     let dest = stack_item.tree.graph.node_weight(dest_id)?;
+    // We shouldn't have a key on a non-composite type
     let source_type: CompositeTypeDefinitionPosition = source.type_.clone().try_into()?;
     let dest_type: CompositeTypeDefinitionPosition = dest.type_.clone().try_into()?;
     let path_in_parent = &stack_item.node_path.path_in_node;
     let updated_defer_context = stack_item.defer_context.after_subgraph_jump();
+    // Note that we use the name of `dest_type` for the inputs parent type, which can seem strange,
+    // but the reason is that we have 2 kind of cases:
+    //  - either source_type == dest_type, which is the case for an object entity key,
+    //    or for a key from an @interfaceObject to an interface key.
+    //  - or source_type !== dest_type,
+    //    and that means the source is an implementation type X of some interface I,
+    //    and dest_type is an @interfaceObject corresponding to I.
+    //    But in that case, using I as base for the inputs is a bit more flexible
+    //    as it ensure that if the query uses multiple such key for multiple implementations
+    //    (so, key from X to I, and then Y to I), then the same fetch is properly reused.
+    //    Note that it is ok to do so since
+    //    1) inputs are based on the supergraph schema, so I is going to exist there and
+    //    2) we wrap the input selection properly against `source_type` below anyway.
     let new_node_id = dependency_graph.get_or_create_key_node(
         &dest.source,
         &stack_item.node_path.response_path,
@@ -884,14 +901,16 @@ fn compute_nodes_for_key_resolution<'a>(
             },
         )
     }
+    // Note that inputs must be based on the supergraph schema, not any particular subgraph,
+    // since sometimes key conditions are fetched from multiple subgraphs
+    // (and so no one subgraph has a type definition with all the proper fields,
+    // only the supergraph does).
     let input_type = dependency_graph.type_for_fetch_inputs(source_type.type_name())?;
     let mut input_selections = NormalizedSelectionSet::empty(
-        // TODO: should this be a subgraph schema?
         dependency_graph.supergraph_schema.clone(),
         input_type.clone(),
     );
     let Some(edge_conditions) = &edge.conditions else {
-        // TODO: Can this ever be `None`?
         // PORT_NOTE: TypeScript `computeGroupsForTree()` has a non-null assertion here
         return Err(FederationError::internal(
             "missing expected edge conditions",
@@ -907,11 +926,12 @@ fn compute_nodes_for_key_resolution<'a>(
             .into_iter()
             .flatten(),
     );
+
+    // We also ensure to get the __typename of the current type in the "original" node.
     let node =
         FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
     let typename_field = Arc::new(OpPathElement::Field(NormalizedField::new(
         NormalizedFieldData {
-            // TODO: should this be a subgraph schema?
             schema: dependency_graph.supergraph_schema.clone(),
             field_position: source_type.introspection_typename_field(),
             alias: None,
@@ -970,12 +990,24 @@ fn compute_nodes_for_root_type_resolution<'a>(
              but that is {root_operation_type:?}"
         )));
     }
+
+    // Usually, we get here because a field (say `q`) has query root type as type,
+    // and the field queried for that root type is on another subgraph.
+    // When that happens, it means that on the original subgraph
+    // we may not have added _any_ subselection for type `q`
+    // and that would make the query to the original subgraph invalid.
+    // To avoid this, we request the __typename field.
+    // One exception however is if we're at the "top" of the current node
+    // (`path_in_node.is_empty()`, which is a corner case but can happen with @defer
+    // when everything in a query is deferred):
+    // in that case, there is no point in adding __typename
+    // because if we don't add any other selection, the node will be empty
+    // and we've rather detect that and remove the node entirely later.
     let node =
         FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
     if !stack_item.node_path.path_in_node.is_empty() {
         let typename_field = Arc::new(OpPathElement::Field(NormalizedField::new(
             NormalizedFieldData {
-                // TODO: should this be a subgraph schema?
                 schema: dependency_graph.supergraph_schema.clone(),
                 field_position: source_type.introspection_typename_field().into(),
                 alias: None,
@@ -990,6 +1022,11 @@ fn compute_nodes_for_root_type_resolution<'a>(
             .with_pushed(typename_field);
         node.selection_set_mut().add_at_path(&typename_path, None)?;
     }
+
+    // We take the edge, creating a new node.
+    // Note that we always create a new node because this corresponds to jumping subgraph
+    // after a field returned the query root type,
+    // and we want to preserve this ordering somewhat (debatable, possibly).
     let updated_defer_context = stack_item.defer_context.after_subgraph_jump();
     let new_node_id = dependency_graph.new_root_type_node(
         dest.source.clone(),
@@ -1040,7 +1077,7 @@ fn compute_nodes_for_op_path_element<'a>(
             &stack_item.defer_context,
             &stack_item.node_path,
         );
-        // We're now removed any @defer.
+        // We've now removed any @defer.
         // If the operation contains other directives or a non-trivial type condition,
         // we need to preserve it and so we add operation.
         // Otherwise, we just skip it as a minor optimization (it makes the subgraph query
@@ -1081,7 +1118,6 @@ fn compute_nodes_for_op_path_element<'a>(
         };
         let typename_field = Arc::new(OpPathElement::Field(NormalizedField::new(
             NormalizedFieldData {
-                // TODO: should this be a subgraph schema?
                 schema: dependency_graph.supergraph_schema.clone(),
                 field_position: operation
                     .parent_type_position()
