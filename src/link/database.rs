@@ -25,6 +25,8 @@ pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkErro
             "the @link specification itself (\"{}\") is applied multiple times",
             extraneous_directive
                 .argument_by_name("url")
+                // XXX(@goto-bus-stop): @core compatibility is primarily to support old tests--should be
+                // removed when those are updated.
                 .or(extraneous_directive.argument_by_name("feature"))
                 .and_then(|value| value.as_str().map(Cow::Borrowed))
                 .unwrap_or_else(|| Cow::Owned(Identity::link_identity().to_string()))
@@ -145,6 +147,8 @@ fn is_link_directive_definition(definition: &DirectiveDefinition) -> bool {
 /// directive @_ANY_NAME_(feature: String) repeatable on SCHEMA
 /// ```
 fn is_core_directive_definition(definition: &DirectiveDefinition) -> bool {
+    // XXX(@goto-bus-stop): @core compatibility is primarily to support old tests--should be
+    // removed when those are updated.
     definition.repeatable
         && definition.locations == [DirectiveLocation::Schema]
         && definition
@@ -185,6 +189,8 @@ fn is_bootstrap_directive(schema: &Schema, directive: &Directive) -> bool {
             });
         }
     } else if is_core_directive_definition(definition) {
+        // XXX(@goto-bus-stop): @core compatibility is primarily to support old tests--should be
+        // removed when those are updated.
         if let Some(url) = directive
             .argument_by_name("feature")
             .and_then(|value| value.as_str())

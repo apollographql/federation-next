@@ -266,6 +266,8 @@ impl Link {
         let (url, is_link) = if let Some(value) = directive.argument_by_name("url") {
             (value, true)
         } else if let Some(value) = directive.argument_by_name("feature") {
+            // XXX(@goto-bus-stop): @core compatibility is primarily to support old tests--should be
+            // removed when those are updated.
             (value, false)
         } else {
             return Err(LinkError::BootstrapError(
