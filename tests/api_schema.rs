@@ -2449,7 +2449,7 @@ type Query {
 }
     "#;
 
-    let graph = Supergraph::new(&sdl).expect("should succeed");
+    let graph = Supergraph::new(sdl).expect("should succeed");
     let api_schema = graph
         .to_api_schema(Default::default())
         .expect("should succeed");
