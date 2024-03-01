@@ -1,9 +1,10 @@
 use crate::error::FederationError;
 use crate::query_plan::conditions::Conditions;
 use crate::query_plan::fetch_dependency_graph::DeferredInfo;
+use crate::query_plan::fetch_dependency_graph::FetchDependencyGraph;
 use crate::query_plan::fetch_dependency_graph::FetchDependencyGraphNode;
+use crate::query_plan::operation::NamedFragments;
 use crate::query_plan::operation::NormalizedSelectionSet;
-use crate::query_plan::query_planner::QueryPlannerConfig;
 use crate::query_plan::ConditionNode;
 use crate::query_plan::DeferNode;
 use crate::query_plan::DeferredDeferBlock;
@@ -13,10 +14,12 @@ use crate::query_plan::PlanNode;
 use crate::query_plan::PrimaryDeferBlock;
 use crate::query_plan::QueryPlanCost;
 use crate::query_plan::SequenceNode;
+use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::Name;
 use apollo_compiler::executable::VariableDefinition;
 use apollo_compiler::Node;
 use apollo_compiler::NodeStr;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -43,7 +46,6 @@ const FETCH_COST: QueryPlanCost = 1000;
 const PIPELINING_COST: QueryPlanCost = 100;
 
 pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
-    config: Arc<QueryPlannerConfig>,
     variable_definitions: Vec<Node<VariableDefinition>>,
     fragments: Option<RebasedFragments>,
     operation_name: Option<Name>,
@@ -51,8 +53,11 @@ pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
     counter: u32,
 }
 
-// TODO
-pub(crate) struct RebasedFragments;
+#[derive(Default)]
+pub(crate) struct RebasedFragments {
+    query_fragments: NamedFragments,
+    by_subgraph: HashMap<NodeStr, Option<NamedFragments>>,
+}
 
 /// Computes the cost of a Plan.
 ///
@@ -90,6 +95,7 @@ pub(crate) struct FetchDependencyGraphToCostProcessor;
 pub(crate) trait FetchDependencyGraphProcessor<TProcessed, TDeferred> {
     fn on_node(
         &mut self,
+        graph: &FetchDependencyGraph,
         node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<TProcessed, FederationError>;
@@ -118,6 +124,7 @@ impl FetchDependencyGraphProcessor<QueryPlanCost, QueryPlanCost>
     /// (and that fetch cost often dwarfted the actual cost of fields resolution).
     fn on_node(
         &mut self,
+        _graph: &FetchDependencyGraph,
         node: &mut FetchDependencyGraphNode,
         _handled_conditions: &Conditions,
     ) -> Result<QueryPlanCost, FederationError> {
@@ -202,14 +209,12 @@ fn sequence_cost(values: impl IntoIterator<Item = QueryPlanCost>) -> QueryPlanCo
 
 impl FetchDependencyGraphToQueryPlanProcessor {
     pub(crate) fn new(
-        config: Arc<QueryPlannerConfig>,
         variable_definitions: Vec<Node<VariableDefinition>>,
         fragments: Option<RebasedFragments>,
         operation_name: Option<Name>,
         assigned_defer_labels: Option<HashSet<NodeStr>>,
     ) -> Self {
         Self {
-            config,
             variable_definitions,
             fragments,
             operation_name,
@@ -224,6 +229,7 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
 {
     fn on_node(
         &mut self,
+        graph: &FetchDependencyGraph,
         node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<Option<PlanNode>, FederationError> {
@@ -231,15 +237,15 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
             let counter = self.counter;
             self.counter += 1;
             let subgraph = to_valid_graphql_name(&node.subgraph_name).unwrap_or("".into());
-            format!("{name}__{subgraph}__{counter}")
+            format!("{name}__{subgraph}__{counter}").into()
         });
-        Ok(node.to_plan_node(
-            &self.config,
+        node.to_plan_node(
+            graph,
             handled_conditions,
             &self.variable_definitions,
-            self.fragments.as_ref(),
+            self.fragments.as_mut(),
             op_name,
-        ))
+        )
     }
 
     fn on_conditions(
@@ -412,4 +418,31 @@ fn flat_wrap_nodes(
         NodeKind::Parallel => PlanNode::Parallel(Arc::new(ParallelNode { nodes })),
         NodeKind::Sequence => PlanNode::Sequence(Arc::new(SequenceNode { nodes })),
     })
+}
+
+impl RebasedFragments {
+    pub(crate) fn new(query_fragments: NamedFragments) -> Self {
+        Self {
+            query_fragments,
+            by_subgraph: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn for_subgraph(
+        &mut self,
+        subgraph_name: NodeStr,
+        subgraph_schema: &ValidFederationSchema,
+    ) -> Option<&NamedFragments> {
+        self.by_subgraph
+            .entry(subgraph_name)
+            .or_insert_with(|| Self::rebase_on(&self.query_fragments, subgraph_schema))
+            .as_ref()
+    }
+
+    fn rebase_on(
+        query_fragments: &NamedFragments,
+        subgraph_schema: &ValidFederationSchema,
+    ) -> Option<NamedFragments> {
+        todo!() // TODO: port JS `NamedFragments.rebaseOn` from `operations.ts`
+    }
 }

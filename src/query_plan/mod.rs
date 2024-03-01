@@ -48,7 +48,7 @@ pub struct FetchNode {
     subgraph_name: NodeStr,
     /// Optional identifier for the fetch for defer support. All fetches of a given plan will be
     /// guaranteed to have a unique `id`.
-    id: Option<NodeStr>,
+    id: Option<u64>,
     /// If query planner `@defer` support is enabled _and_ the subgraph named `subgraph_name`
     /// supports `@defer`, then this boolean says whether `operation` contains some `@defer`. `None`
     /// otherwise.
@@ -59,7 +59,7 @@ pub struct FetchNode {
     /// `FragmentSpread`.
     // PORT_NOTE: This was its own type in the JS codebase, but it's likely simpler to just have the
     // constraint be implicit for router instead of creating a new type.
-    requires: Vec<Selection>,
+    requires: Option<Vec<Selection>>,
     // PORT_NOTE: We don't serialize the "operation" string in this struct, as these query plan
     // nodes are meant for direct consumption by router (without any serdes), so we leave the
     // question of whether it needs to be serialized to router.
@@ -71,10 +71,10 @@ pub struct FetchNode {
     /// inputs of the fetch they are applied to (meaning that, as those inputs are collected from
     /// the current in-memory result, the rewrite should _not_ impact said in-memory results, only
     /// what is sent in the fetch).
-    input_rewrites: Vec<FetchDataRewrite>,
+    input_rewrites: Arc<Vec<Arc<FetchDataRewrite>>>,
     /// Similar to `input_rewrites`, but for optional "rewrites" to apply to the data that is
     /// received from a fetch (and before it is applied to the current in-memory results).
-    output_rewrites: Vec<FetchDataRewrite>,
+    output_rewrites: Vec<Arc<FetchDataRewrite>>,
 }
 
 pub struct SequenceNode {

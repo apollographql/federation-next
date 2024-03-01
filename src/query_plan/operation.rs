@@ -21,10 +21,12 @@ use crate::schema::position::{
 };
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::{DirectiveList, Name, OperationType};
+use apollo_compiler::executable;
 use apollo_compiler::executable::{
     Field, Fragment, FragmentSpread, InlineFragment, Operation, Selection, SelectionSet,
     VariableDefinition,
 };
+use apollo_compiler::validation::Valid;
 use apollo_compiler::{name, Node};
 use indexmap::{IndexMap, IndexSet};
 use std::borrow::Cow;
@@ -51,6 +53,8 @@ impl SelectionId {
     }
 }
 
+pub(crate) type NamedFragments = IndexMap<Name, Node<NormalizedFragment>>;
+
 /// An analogue of the apollo-compiler type `Operation` with these changes:
 /// - Stores the schema that the operation is queried against.
 /// - Swaps `operation_type` with `root_kind` (using the analogous federation-next type).
@@ -65,7 +69,7 @@ pub struct NormalizedOperation {
     pub(crate) variables: Arc<Vec<Node<VariableDefinition>>>,
     pub(crate) directives: Arc<DirectiveList>,
     pub(crate) selection_set: NormalizedSelectionSet,
-    pub(crate) fragments: Arc<IndexMap<Name, Node<NormalizedFragment>>>,
+    pub(crate) fragments: Arc<NamedFragments>,
 }
 
 /// An analogue of the apollo-compiler type `SelectionSet` with these changes:
@@ -866,6 +870,27 @@ pub(crate) mod normalized_inline_fragment_selection {
     }
 }
 
+impl NormalizedOperation {
+    pub(crate) fn optimize(
+        &mut self,
+        fragments: Option<&NamedFragments>,
+        min_usages_to_optimize: Option<u32>,
+    ) {
+        let min_usages_to_optimize = min_usages_to_optimize.unwrap_or(2);
+        let Some(fragments) = fragments else { return };
+        if fragments.is_empty() {
+            return;
+        }
+        assert!(
+            min_usages_to_optimize >= 1,
+            "Expected 'min_usages_to_optimize' to be at least 1, but got {min_usages_to_optimize}"
+        );
+
+        todo!(); // TODO: port JS `Operation.optimize` from `operations.ts`
+        ();
+    }
+}
+
 /// Available fragment spread normalization options
 #[derive(Copy, Clone)]
 pub(crate) enum FragmentSpreadNormalizationOption {
@@ -1394,6 +1419,17 @@ impl NormalizedSelectionSet {
     pub(crate) fn add(&mut self, _selections: &NormalizedSelectionSet) {
         todo!()
     }
+
+    pub(crate) fn used_variables(&self) -> Vec<Name> {
+        todo!();
+        ();
+    }
+}
+
+impl From<NormalizedSelectionSet> for executable::SelectionSet {
+    fn from(value: NormalizedSelectionSet) -> Self {
+        todo!()
+    }
 }
 
 impl NormalizedSelectionMap {
@@ -1890,6 +1926,14 @@ impl From<&NormalizedFragmentSpreadSelection> for FragmentSpread {
             fragment_name: val.data().fragment_name.to_owned(),
             directives: val.data().directives.deref().to_owned(),
         }
+    }
+}
+
+impl TryFrom<NormalizedOperation> for Valid<executable::ExecutableDocument> {
+    type Error = FederationError;
+
+    fn try_from(value: NormalizedOperation) -> Result<Self, Self::Error> {
+        todo!()
     }
 }
 
