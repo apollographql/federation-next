@@ -2454,7 +2454,7 @@ type Query {
         .to_api_schema(Default::default())
         .expect("should succeed");
 
-    insta::assert_display_snapshot!(api_schema, @r###"
+    insta::assert_snapshot!(api_schema, @r###"
     type Query {
       me: String
     }
