@@ -1,6 +1,6 @@
 [package]
 name = "apollo-federation"
-version = "0.0.6"
+version = "0.0.7"
 authors = ["The Apollo GraphQL Contributors"]
 edition = "2021"
 description = "Apollo Federation"
@@ -17,7 +17,7 @@ lazy_static = "1.4.0"
 petgraph = "0.6.4"
 salsa = "0.16.1"
 serde_json = "1.0.108"
-strum = "0.25.0"
+strum = "0.26.0"
 strum_macros = "0.26.0"
 thiserror = "1.0"
 url = "2"
