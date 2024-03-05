@@ -11,6 +11,9 @@ use crate::link::{
 
 /// Extract @link metadata from a schema.
 pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkError> {
+    // This finds "bootstrap" uses of @link / @core regardless of order. By spec,
+    // the bootstrap directive application must be the first application of @link / @core, but
+    // this was not enforced by the JS implementation, so we match it for backward compatibility.
     let mut bootstrap_directives = schema
         .schema_definition
         .directives
@@ -25,8 +28,8 @@ pub fn links_metadata(schema: &Schema) -> Result<Option<LinksMetadata>, LinkErro
             "the @link specification itself (\"{}\") is applied multiple times",
             extraneous_directive
                 .argument_by_name("url")
-                // XXX(@goto-bus-stop): @core compatibility is primarily to support old tests--should be
-                // removed when those are updated.
+                // XXX(@goto-bus-stop): @core compatibility is primarily to support old tests in other projects,
+                // and should be removed when those are updated.
                 .or(extraneous_directive.argument_by_name("feature"))
                 .and_then(|value| value.as_str().map(Cow::Borrowed))
                 .unwrap_or_else(|| Cow::Owned(Identity::link_identity().to_string()))
