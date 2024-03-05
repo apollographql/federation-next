@@ -1,7 +1,6 @@
 use crate::error::FederationError;
 use crate::link::federation_spec_definition::FederationSpecDefinition;
 use crate::link::federation_spec_definition::FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC;
-use crate::link::join_spec_definition::JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC;
 use crate::link::spec::Identity;
 use crate::query_graph::build_federated_query_graph;
 use crate::query_graph::QueryGraph;
@@ -16,7 +15,6 @@ use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::NodeStr;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct QueryPlannerConfig {
@@ -169,10 +167,6 @@ impl QueryPlanner {
                 link.directive_name_in_schema(&FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC)
             });
 
-        let join_link = metadata.for_identity(&Identity::join_identity()).unwrap();
-        let join_field_directive =
-            join_link.directive_name_in_schema(&JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC);
-
         let is_interface_object =
             |ty: &ExtendedType| ty.is_object() && ty.directives().has(&interface_object_directive);
 
@@ -235,40 +229,18 @@ impl QueryPlanner {
             .filter(|position| is_inconsistent(position.clone()))
             .collect::<IndexSet<_>>();
 
-        // TODO(@goto-bus-stop): not sure if this is needed
-        // we can just do `.get().unwrap_or(false)` on a map with *some* labels,
-        // instead of preparing this map for all labels?
-        let _default_override_conditions = supergraph
-            .schema
-            .get_directive_definition(&join_field_directive)
-            .and_then(|directive| {
-                supergraph
-                    .schema
-                    .referencers()
-                    .directives
-                    .get(&directive.directive_name)
-            })
-            .map(|referencers| {
-                referencers
-                    .object_fields
-                    .iter()
-                    .filter_map(|position| {
-                        let field = position.get(supergraph.schema.schema()).ok()?;
-                        let directive = field.directives.get(&join_field_directive)?;
-                        let value = directive.argument_by_name("overrideLabel")?;
-                        value.as_node_str()
-                    })
-                    .map(|label| (label.clone(), false))
-                    .collect::<HashMap<_, _>>()
-            })
-            .unwrap_or_default();
+        // PORT_NOTE: JS prepares a map of override conditions here, which is
+        // a map where the keys are all `@join__field(overrideLabel:)` argument values
+        // and the values are all initialised to `false`. Instead of doing that, we should
+        // be able to use a Set where presence means `true` and absence means `false`.
 
         Ok(Self {
             config,
             federated_query_graph: Arc::new(query_graph),
             supergraph_schema,
             api_schema,
-            // TODO(@goto-bus-stop): not sure how this is used
+            // TODO(@goto-bus-stop): not sure how this is going to be used,
+            // keeping empty for the moment
             subgraph_federation_spec_definitions: Default::default(),
             interface_types_with_interface_objects,
             abstract_types_with_inconsistent_runtime_types,
