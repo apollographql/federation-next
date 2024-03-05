@@ -197,7 +197,11 @@ impl QueryPlanner {
         let is_inconsistent = |position: AbstractTypeDefinitionPosition| {
             let mut sources = query_graph.sources().filter_map(|subgraph| {
                 match subgraph.try_get_type(position.type_name().clone())? {
-                    TypeDefinitionPosition::Object(object) => Some(IndexSet::from([object])),
+                    // This is only called for type names that are abstract in the supergraph, so it
+                    // can only be an object in a subgraph if it is an `@interfaceObject`. And as `@interfaceObject`s
+                    // "stand-in" for all possible runtime types, they don't create inconsistencies by themselves
+                    // and we can ignore them.
+                    TypeDefinitionPosition::Object(_) => None,
                     TypeDefinitionPosition::Interface(interface) => Some(
                         subgraph
                             .referencers()
