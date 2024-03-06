@@ -62,6 +62,11 @@ impl InaccessibleSpecDefinition {
         })
     }
 
+    /// Returns the `@inaccessible` spec used in the given schema, if any.
+    ///
+    /// # Errors
+    /// Returns an error if the schema specifies an `@inaccessible` spec version that is not
+    /// supported by this version of the apollo-federation crate.
     pub fn get_from_schema(
         schema: &FederationSchema,
     ) -> Result<Option<&'static Self>, FederationError> {
