@@ -438,9 +438,9 @@ type User
     #[test]
     fn it_does_not_crash() {
         let supergraph = Supergraph::new(TEST_SUPERGRAPH).unwrap();
-        let planner = QueryPlanner::new(&supergraph, Default::default()).unwrap();
+        let _planner = QueryPlanner::new(&supergraph, Default::default()).unwrap();
 
-        let document = ExecutableDocument::parse_and_validate(
+        let _document = ExecutableDocument::parse_and_validate(
             supergraph
                 .to_api_schema(Default::default())
                 .unwrap()
