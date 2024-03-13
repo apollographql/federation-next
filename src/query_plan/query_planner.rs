@@ -5,6 +5,8 @@ use crate::link::spec::Identity;
 use crate::query_graph::build_federated_query_graph;
 use crate::query_graph::QueryGraph;
 use crate::query_plan::operation::normalize_operation;
+use crate::query_plan::query_planning_traversal::QueryPlanningParameters;
+use crate::query_plan::FetchNode;
 use crate::query_plan::QueryPlan;
 use crate::schema::position::AbstractTypeDefinitionPosition;
 use crate::schema::position::InterfaceTypeDefinitionPosition;
@@ -130,6 +132,12 @@ impl Default for QueryPlannerDebugConfig {
     }
 }
 
+// PORT_NOTE: renamed from PlanningStatistics in the JS codebase.
+#[derive(Debug, Clone)]
+pub(crate) struct QueryPlanningStatistics {
+    pub(crate) evaluated_plan_count: usize,
+}
+
 pub struct QueryPlanner {
     config: QueryPlannerConfig,
     federated_query_graph: Arc<QueryGraph>,
@@ -185,7 +193,7 @@ impl QueryPlanner {
                 _ => None,
             })
             .filter(|position| {
-                query_graph.sources().any(|schema| {
+                query_graph.sources().any(|(_name, schema)| {
                     schema
                         .schema()
                         .types
@@ -196,7 +204,7 @@ impl QueryPlanner {
             .collect::<IndexSet<_>>();
 
         let is_inconsistent = |position: AbstractTypeDefinitionPosition| {
-            let mut sources = query_graph.sources().filter_map(|subgraph| {
+            let mut sources = query_graph.sources().filter_map(|(_name, subgraph)| {
                 match subgraph.try_get_type(position.type_name().clone())? {
                     // This is only called for type names that are abstract in the supergraph, so it
                     // can only be an object in a subgraph if it is an `@interfaceObject`. And as `@interfaceObject`s
@@ -265,16 +273,59 @@ impl QueryPlanner {
             // TODO(@goto-bus-stop) this is not an internal error
             .map_err(|_| FederationError::internal("requested operation does not exist"))?;
 
-        // TODO(@goto-bus-stop) this isn't valid GraphQL so it should never happen given a
-        // `Valid<ExecutableDocument>`?
-        // The JS code checks this *again* post-normalization. That should be enough
+        // TODO(@goto-bus-stop) this isn't valid GraphQL so it should not return Ok()?
         if operation.selection_set.selections.is_empty() {
             return Ok(QueryPlan::default());
         }
 
+        let is_subscription = operation.is_subscription();
+
+        let mut statistics = QueryPlanningStatistics {
+            evaluated_plan_count: 0,
+        };
+
         if self.config.debug.bypass_planner_for_single_subgraph {
-            todo!("return a single fetch node for the whole operation");
+            // A federated query graph always have 1 more sources than there is subgraph, because the root vertices
+            // belong to no subgraphs and use a special source named '_'. So we skip that "fake" source.
+            let mut subgraphs = self
+                .federated_query_graph
+                .sources()
+                .filter(|(&name, _schema)| name != "_");
+            if let (Some((subgraph_name, subgraph_schema)), None) =
+                (subgraphs.next(), subgraphs.next())
+            {
+                let node = FetchNode {
+                    subgraph_name: subgraph_name.clone(),
+                    operation_document: document.clone(),
+                    operation_name: operation_name.map(|name| name.into()),
+                    operation_kind: operation.operation_type,
+                    id: Some("single".into()),
+                    has_defers: None,
+                    variable_usages: operation
+                        .variables
+                        .iter()
+                        .map(|var| var.name.clone())
+                        .collect(),
+                    requires: Default::default(),
+                    input_rewrites: Default::default(),
+                    output_rewrites: Default::default(),
+                };
+
+                return Ok(QueryPlan::new(node));
+            }
         }
+
+        /*
+            const reuseQueryFragments = this.config.reuseQueryFragments ?? true;
+            let fragments = operation.fragments;
+            if (fragments && !fragments.isEmpty() && reuseQueryFragments) {
+              // For all subgraph fetches we query `__typename` on every abstract types (see `FetchGroup.toPlanNode`) so if we want
+              // to have a chance to reuse fragments, we should make sure those fragments also query `__typename` for every abstract type.
+              fragments = addTypenameFieldForAbstractTypesInNamedFragments(fragments);
+            } else {
+              fragments = undefined;
+            }
+        */
 
         let normalized_operation = normalize_operation(
             operation,
@@ -283,13 +334,120 @@ impl QueryPlanner {
             &self.interface_types_with_interface_objects,
         )?;
 
-        // TODO(@goto-bus-stop): some defer stuff
+        /*
+            let assignedDeferLabels: Set<string> | undefined = undefined;
+            let hasDefers = false;
+            let deferConditions: SetMultiMap<string, string> | undefined = undefined;
+            if (this.config.incrementalDelivery.enableDefer) {
+              ({ operation, hasDefers, assignedDeferLabels, deferConditions } = operation.withNormalizedDefer());
+              if (isSubscription && hasDefers) {
+                throw new Error(`@defer is not supported on subscriptions`);
+              }
+            } else {
+              // If defer is not enabled, we remove all @defer from the query. This feels cleaner do this once here than
+              // having to guard all the code dealing with defer later, and is probably less error prone too (less likely
+              // to end up passing through a @defer to a subgraph by mistake).
+              operation = operation.withoutDefer();
+            }
+        */
 
         if normalized_operation.selection_set.selections.is_empty() {
             return Ok(QueryPlan::default());
         }
 
-        todo!("the rest of the owl")
+        let root = self
+            .federated_query_graph
+            .root(normalized_operation.root_kind);
+
+        let processor = fetch_group_to_plan_processor(/* TODO */);
+        let parameters = QueryPlanningParameters {
+            supergraph_schema: self.supergraph_schema.clone(),
+            federated_query_graph: self.federated_query_graph.clone(),
+            operation: Arc::new(normalized_operation),
+            processor,
+            head: todo!(),
+            head_must_be_root: todo!(),
+            abstract_types_with_inconsistent_runtime_types: self
+                .abstract_types_with_inconsistent_runtime_types
+                .clone()
+                .into(),
+            config: self.config.clone(),
+        };
+
+        todo!();
+
+        /*
+            this._lastGeneratedPlanStatistics = statistics;
+
+            const root = this.federatedQueryGraph.root(operation.rootKind);
+            assert(root, () => `Shouldn't have a ${operation.rootKind} operation if the subgraphs don't have a ${operation.rootKind} root`);
+            const processor = fetchGroupToPlanProcessor({
+              config: this.config,
+              variableDefinitions: operation.variableDefinitions,
+              fragments: fragments ? new RebasedFragments(fragments) : undefined,
+              operationName: operation.name,
+              assignedDeferLabels,
+            });
+
+            const parameters: PlanningParameters<RootVertex> = {
+              supergraphSchema: this.supergraph.schema,
+              federatedQueryGraph: this.federatedQueryGraph,
+              operation,
+              processor,
+              root,
+              statistics,
+              inconsistentAbstractTypesRuntimes: this.inconsistentAbstractTypesRuntimes,
+              config: this.config,
+            }
+
+            let rootNode: PlanNode | SubscriptionNode | undefined;
+            if (deferConditions && deferConditions.size > 0) {
+              assert(hasDefers, 'Should not have defer conditions without @defer');
+              rootNode = computePlanForDeferConditionals({
+                parameters,
+                deferConditions,
+              })
+            } else {
+              rootNode = computePlanInternal({
+                parameters,
+                hasDefers,
+              });
+            }
+
+            // If this is a subscription, we want to make sure that we return a SubscriptionNode rather than a PlanNode
+            // We potentially will need to separate "primary" from "rest"
+            // Note that if it is a subscription, we are guaranteed that nothing is deferred.
+            if (rootNode && isSubscription) {
+              switch (rootNode.kind) {
+                case 'Fetch': {
+                  rootNode = {
+                    kind: 'Subscription',
+                    primary: rootNode,
+                  };
+                }
+                break;
+                case 'Sequence': {
+                  const [primary, ...rest] = rootNode.nodes;
+                  assert(primary.kind === 'Fetch', 'Primary node of a subscription is not a Fetch');
+                  rootNode = {
+                    kind: 'Subscription',
+                    primary,
+                    rest: {
+                      kind: 'Sequence',
+                      nodes: rest,
+                    },
+                  };
+                }
+                break;
+                default:
+                  throw new Error(`Unexpected top level PlanNode kind: '${rootNode.kind}' when processing subscription`);
+              }
+            }
+
+            debug.groupEnd('Query plan computed');
+
+            return { kind: 'QueryPlan', node: rootNode };
+        */
     }
 }
 

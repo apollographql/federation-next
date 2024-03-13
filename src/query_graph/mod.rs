@@ -1,4 +1,5 @@
 use crate::error::{FederationError, SingleFederationError};
+use crate::query_graph::field_set::parse_field_set;
 use crate::query_plan::operation::normalized_field_selection::NormalizedField;
 use crate::query_plan::operation::normalized_inline_fragment_selection::NormalizedInlineFragment;
 use crate::query_plan::operation::NormalizedSelectionSet;
@@ -335,8 +336,8 @@ impl QueryGraph {
         })
     }
 
-    pub(crate) fn sources(&self) -> impl Iterator<Item = &ValidFederationSchema> {
-        self.sources.values()
+    pub(crate) fn sources(&self) -> impl Iterator<Item = (&NodeStr, &ValidFederationSchema)> {
+        self.sources.iter()
     }
 
     pub(crate) fn types_to_nodes(
@@ -594,9 +595,42 @@ impl QueryGraph {
 
     pub(crate) fn get_locally_satisfiable_key(
         &self,
-        _node: NodeIndex,
+        node: NodeIndex,
     ) -> Result<Option<NormalizedSelectionSet>, FederationError> {
         todo!()
+        // let node = self.graph.node_weight(node).unwrap();
+
+        // let Some(schema) = self.sources.get(&node.source) else {
+        //     unreachable!();
+        // };
+        // let Some(metadata) = schema.metadata() else {
+        //     unreachable!("no federation metadata for source {}", node.source);
+        // };
+
+        // let QueryGraphNodeType::SchemaType(type_position) = node.type_.clone() else {
+        //     return Err(FederationError::internal(
+        //         "Unexpectedly encountered federation root node as field collection node.",
+        //     ));
+        // };
+        // let ty = crate::schema::position::TypeDefinitionPosition::from(type_position)
+        //     .get(schema.schema())?;
+
+        // for key in ty.directives().get_all("key") {
+        //     let Some(fields) = key
+        //         .argument_by_name("fields")
+        //         .and_then(|fields| fields.as_node_str())
+        //         .cloned()
+        //     else {
+        //         continue;
+        //     };
+        //     let selection = parse_field_set(schema, ty.name().clone(), fields)?;
+
+        //     if !selection_selects_any_external_field(selection) {
+        //         return Ok(Some(selection));
+        //     }
+        // }
+
+        // Ok(None)
     }
 
     pub(crate) fn is_cross_subgraph_edge(&self, edge: EdgeIndex) -> Result<bool, FederationError> {

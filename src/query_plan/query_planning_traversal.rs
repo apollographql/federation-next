@@ -23,31 +23,34 @@ use indexmap::IndexSet;
 use petgraph::graph::NodeIndex;
 use std::sync::Arc;
 
+use super::query_planner::QueryPlanningStatistics;
+
 // PORT_NOTE: Named `PlanningParameters` in the JS codebase, but there was no particular reason to
 // leave out to the `Query` prefix, so it's been added for consistency. Similar to `GraphPath`, we
 // don't have a distinguished type for when the head is a root vertex, so we instead check this at
 // runtime (introducing the new field `head_must_be_root`).
 pub(crate) struct QueryPlanningParameters {
     /// The supergraph schema that generated the federated query graph.
-    supergraph_schema: ValidFederationSchema,
+    pub(crate) supergraph_schema: ValidFederationSchema,
     /// The federated query graph used for query planning.
-    federated_query_graph: Arc<QueryGraph>,
+    pub(crate) federated_query_graph: Arc<QueryGraph>,
     /// The operation to be query planned.
-    operation: Arc<NormalizedOperation>,
+    pub(crate) operation: Arc<NormalizedOperation>,
     /// A processor for converting fetch dependency graphs to query plans.
-    processor: FetchDependencyGraphToQueryPlanProcessor,
+    pub(crate) processor: FetchDependencyGraphToQueryPlanProcessor,
     /// The query graph node at which query planning begins.
-    head: NodeIndex,
+    pub(crate) head: NodeIndex,
     /// Whether the head must be a root node for query planning.
-    head_must_be_root: bool,
+    pub(crate) head_must_be_root: bool,
     /// A set of the names of interface or union types that have inconsistent "runtime types" across
     /// subgraphs.
     // PORT_NOTE: Named `inconsistentAbstractTypesRuntimes` in the JS codebase, which was slightly
     // confusing.
-    abstract_types_with_inconsistent_runtime_types: Arc<IndexSet<AbstractTypeDefinitionPosition>>,
+    pub(crate) abstract_types_with_inconsistent_runtime_types:
+        Arc<IndexSet<AbstractTypeDefinitionPosition>>,
     /// The configuration for the query planner.
-    config: Arc<QueryPlannerConfig>,
-    // TODO: When `PlanningStatistics` is ported, add a field for it.
+    pub(crate) config: QueryPlannerConfig,
+    pub(crate) statistics: QueryPlanningStatistics,
 }
 
 pub(crate) struct QueryPlanningTraversal {
