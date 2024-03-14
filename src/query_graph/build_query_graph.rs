@@ -3,13 +3,13 @@ use crate::link::federation_spec_definition::{
     get_federation_spec_definition_from_subgraph, FederationSpecDefinition, KeyDirectiveArguments,
 };
 use crate::query_graph::extract_subgraphs_from_supergraph::extract_subgraphs_from_supergraph;
-use crate::query_graph::field_set::parse_field_set;
 use crate::query_graph::{
     QueryGraph, QueryGraphEdge, QueryGraphEdgeTransition, QueryGraphNode, QueryGraphNodeType,
 };
 use crate::query_plan::operation::{
     merge_selection_sets, NormalizedSelection, NormalizedSelectionSet,
 };
+use crate::schema::field_set::parse_field_set;
 use crate::schema::position::{
     AbstractTypeDefinitionPosition, CompositeTypeDefinitionPosition, FieldDefinitionPosition,
     InterfaceTypeDefinitionPosition, ObjectFieldDefinitionPosition,
