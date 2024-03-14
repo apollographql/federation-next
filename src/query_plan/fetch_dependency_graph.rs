@@ -9,15 +9,16 @@ use crate::query_plan::fetch_dependency_graph_processor::RebasedFragments;
 use crate::query_plan::operation::normalized_field_selection::{
     NormalizedField, NormalizedFieldData,
 };
-use crate::query_plan::operation::{NormalizedSelection, NormalizedSelectionSet, TYPENAME_FIELD};
-use crate::query_plan::query_planner::QueryPlannerConfig;
+use crate::query_plan::operation::{
+    NormalizedOperation, NormalizedSelection, NormalizedSelectionSet, TYPENAME_FIELD,
+};
 use crate::query_plan::FetchDataPathElement;
 use crate::query_plan::{FetchDataRewrite, QueryPlanCost};
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, ObjectTypeDefinitionPosition, SchemaRootDefinitionKind,
 };
 use crate::schema::ValidFederationSchema;
-use apollo_compiler::executable::VariableDefinition;
+use apollo_compiler::executable::{self, VariableDefinition};
 use apollo_compiler::schema::{self, Name};
 use apollo_compiler::{Node, NodeStr};
 use indexmap::{IndexMap, IndexSet};
@@ -585,17 +586,113 @@ impl FetchDependencyGraphNode {
         Ok(self.cached_cost.unwrap())
     }
 
-    // TODO: https://github.com/apollographql/federation/blob/f69a0694b95/query-planner-js/src/buildPlan.ts#L1518-L1573
     pub(crate) fn to_plan_node(
         &self,
-        _config: &QueryPlannerConfig,
-        _handled_conditions: &Conditions,
-        _variable_definitions: &[Node<VariableDefinition>],
-        _fragments: Option<&RebasedFragments>,
-        _op_name: Option<String>,
-    ) -> Option<super::PlanNode> {
-        todo!()
+        dependency_graph: &FetchDependencyGraph,
+        handled_conditions: &Conditions,
+        variable_definitions: &[Node<VariableDefinition>],
+        fragments: Option<&mut RebasedFragments>,
+        operation_name: Option<NodeStr>,
+    ) -> Result<Option<super::PlanNode>, FederationError> {
+        if self.selection_set.selection_set.selections.is_empty() {
+            return Ok(None);
+        }
+        let (selection, output_rewrites) =
+            self.finalize_selection(variable_definitions, handled_conditions);
+        let input_nodes = self
+            .inputs
+            .as_ref()
+            .map(|inputs| inputs.to_selection_set_nodes(variable_definitions, handled_conditions));
+        let subgraph_schema = dependency_graph
+            .federated_query_graph
+            .schema_by_source(&self.subgraph_name)?;
+        let variable_usages = selection.used_variables();
+        let mut operation = if self.is_entity_fetch {
+            operation_for_entities_fetch(
+                subgraph_schema,
+                selection,
+                variable_definitions,
+                &operation_name,
+            )
+        } else {
+            operation_for_query_fetch(
+                subgraph_schema,
+                self.root_kind,
+                selection,
+                variable_definitions,
+                &operation_name,
+            )
+        };
+        let fragments = fragments
+            .and_then(|rebased| rebased.for_subgraph(self.subgraph_name.clone(), subgraph_schema));
+        operation.optimize(fragments, Default::default());
+        let operation_document = operation.try_into()?;
+
+        let has_defers = None; // TODO: JS doesn’t have this?
+
+        let node = super::PlanNode::Fetch(Arc::new(super::FetchNode {
+            subgraph_name: self.subgraph_name.clone(),
+            id: self.id,
+            has_defers,
+            variable_usages,
+            requires: input_nodes.map(|sel| executable::SelectionSet::from(sel).selections),
+            operation_document,
+            operation_name,
+            operation_kind: self.root_kind.into(),
+            input_rewrites: self.input_rewrites.clone(),
+            output_rewrites,
+        }));
+
+        Ok(Some(if let Some(path) = self.merge_at.clone() {
+            super::PlanNode::Flatten(Arc::new(super::FlattenNode { path, node }))
+        } else {
+            node
+        }))
     }
+
+    fn finalize_selection(
+        &self,
+        _variable_definitions: &[Node<VariableDefinition>],
+        _handled_conditions: &Conditions,
+    ) -> (Arc<NormalizedSelectionSet>, Vec<Arc<FetchDataRewrite>>) {
+        // Finalizing the selection involves the following:
+        // 1. removing any @include/@skip that are not necessary
+        //    because they are already handled earlier in the query plan
+        //    by some `ConditionNode`.
+        // 2. adding __typename to all abstract types.
+        //    This is because any follow-up fetch may need
+        //    to select some of the entities fetched by this node,
+        //    and so we need to have the __typename of those.
+        // 3. checking if some selection violates
+        //    `https://spec.graphql.org/draft/#FieldsInSetCanMerge()`:
+        //    while the original query we plan for will never violate this,
+        //    because the planner adds some additional fields to the query
+        //    (due to @key and @requires) and because type-explosion changes the query,
+        //    we could have violation of this.
+        //    If that is the case, we introduce aliases to the selection to make it valid,
+        //    and then generate a rewrite on the output of the fetch
+        //    so that data aliased this way is rewritten back to the original/proper response name.
+        todo!() // TODO: port from `FetchGroup.finalizeSelection`
+    }
+}
+
+fn operation_for_entities_fetch(
+    subgraph_schema: &ValidFederationSchema,
+    selection: Arc<NormalizedSelectionSet>,
+    variable_definitions: &[Node<VariableDefinition>],
+    operation_name: &Option<NodeStr>,
+) -> NormalizedOperation {
+    todo!() // TODO: port from `operationForEntitiesFetch` in `buildPlan.ts`
+}
+
+fn operation_for_query_fetch(
+    subgraph_schema: &ValidFederationSchema,
+    root_kind: SchemaRootDefinitionKind,
+    selection: Arc<NormalizedSelectionSet>,
+    variable_definitions: &[Node<VariableDefinition>],
+    operation_name: &Option<NodeStr>,
+) -> NormalizedOperation {
+    todo!() // TODO: port from `operationForQueryFetch` in `buildPlan.ts`
 }
 
 impl NormalizedSelectionSet {
@@ -668,6 +765,14 @@ impl FetchInputs {
             "Inputs selections must be based on the supergraph schema"
         );
         todo!()
+    }
+
+    fn to_selection_set_nodes(
+        &self,
+        variable_definitions: &[Node<VariableDefinition>],
+        handled_conditions: &Conditions,
+    ) -> NormalizedSelectionSet {
+        todo!() // TODO: port from `GroupInputs.toSelectionSetNode`
     }
 }
 
