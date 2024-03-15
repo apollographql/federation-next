@@ -4391,7 +4391,7 @@ type T implements I {
                 )
                 .unwrap();
 
-                let subgraph_schema = r#"extend schema @link(url: "https://specs.apollo.dev/federation/v2.5", import: [{ name: "@interfaceObject" }, { name: "@key" }])
+                let subgraph_schema = r#"extend schema @link(url: "https://specs.apollo.dev/link/v1.0") @link(url: "https://specs.apollo.dev/federation/v2.5", import: [{ name: "@interfaceObject" }, { name: "@key" }])
 
 directive @link(url: String, as: String, import: [link__Import]) repeatable on SCHEMA
 
@@ -4422,8 +4422,7 @@ scalar federation__FieldSet
                 let expected = r#"fragment FragOnI on I {
   id
   x
-}
-"#;
+}"#;
                 let actual = rebased_fragment.to_string();
                 assert_eq!(actual, expected);
             }
