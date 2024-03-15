@@ -4364,6 +4364,11 @@ interface I {
   id: ID!
   x: String!
 }
+
+type T implements I {
+  id: ID!
+  x: String!
+}
 "#;
             // TODO blows up parsing fragment
             let (schema, mut executable_document) = parse_schema_and_operation(operation_fragments);
@@ -4412,7 +4417,7 @@ scalar federation__FieldSet
                     .named_fragments
                     .rebase_on(&subgraph)
                     .unwrap();
-                let rebased_fragment = rebased_fragments.fragments.get("FragOnT").unwrap();
+                let rebased_fragment = rebased_fragments.fragments.get("FragOnI").unwrap();
 
                 let expected = r#"fragment FragOnI on I {
   id
