@@ -565,10 +565,11 @@ impl NormalizedSelection {
     pub(crate) fn normalize(
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
+        schema: &ValidFederationSchema,
     ) -> NormalizedSelection {
         match self {
             NormalizedSelection::Field(field) => {
-                NormalizedSelection::Field(Arc::new(field.normalize(parent_type)))
+                NormalizedSelection::Field(Arc::new(field.normalize(parent_type, schema)))
             }
             NormalizedSelection::FragmentSpread(spread) => {
                 NormalizedSelection::FragmentSpread(Arc::new(spread.normalize(parent_type)))
@@ -1895,10 +1896,11 @@ impl NormalizedSelectionSet {
     pub(crate) fn normalize(
         &mut self,
         parent_type: &CompositeTypeDefinitionPosition,
+        schema: &ValidFederationSchema,
     ) -> NormalizedSelectionSet {
         let mut normalized_selection_map = NormalizedSelectionMap::new();
         self.selections.iter().for_each(|(_, s)| {
-            let normalized = s.normalize(parent_type);
+            let normalized = s.normalize(parent_type, schema);
             normalized_selection_map.insert(normalized);
         });
 
@@ -1985,7 +1987,58 @@ impl NormalizedFieldSelection {
     pub(crate) fn normalize(
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
-    ) -> NormalizedFieldSelection {
+        schema: &ValidFederationSchema,
+    ) -> Result<Option<NormalizedFieldSelection>, FederationError> {
+        if self.selection_set.is_none() {
+            return Ok(None);
+        }
+
+        // This could be an interface field, and if we're normalizing on one of the implementation of that
+        // interface, we want to make sure we use the field of the implementation, as it may in particular
+        // have a more specific type which should propagate to the recursive call to normalize.
+        let definition = if self.field.data().schema == *schema
+            && self.field.data().field_position.parent() == *parent_type
+        {
+            self.field.data().field_position.get(schema.schema())
+        } else {
+            parent_type
+                .field(self.field.data().name().clone())?
+                .get(schema.schema())
+        }?;
+
+        //     const definition = parentType === this.parentType
+        //       ? this.element.definition
+        //       : parentType.field(this.element.name);
+        //     assert(definition, `Cannot normalize ${this.element} at ${parentType} which does not have that field`)
+        //
+        //     const element = this.element.definition === definition ? this.element : this.element.withUpdatedDefinition(definition);
+        //     if (!this.selectionSet) {
+        //       return this.withUpdatedElement(element);  <== we don't store the definition on field element
+        //     }
+        //
+        //
+        //     const base = element.baseType();
+        //     assert(isCompositeType(base), () => `Field ${element} should not have a sub-selection`);
+        //     const normalizedSubSelection = (recursive ?? true) ? this.selectionSet.normalize({ parentType: base }) : this.selectionSet;
+        //     // In rare caes, it's possible that everything in the sub-selection was trimmed away and so the
+        //     // sub-selection is empty. Which suggest something may be wrong with this part of the query
+        //     // intent, but the query was valid while keeping an empty sub-selection isn't. So in that
+        //     // case, we just add some "non-included" __typename field just to keep the query valid.
+        //     if (normalizedSubSelection?.isEmpty()) {
+        //       return this.withUpdatedComponents(
+        //         element,
+        //         selectionSetOfElement(
+        //           new Field(
+        //             base.typenameField()!,
+        //             undefined,
+        //             [new Directive('include', { 'if': false })],
+        //           )
+        //         )
+        //       );
+        //     } else {
+        //       return this.withUpdatedComponents(element, normalizedSubSelection);
+        //     }
+
         // TODO
         self.clone()
     }
@@ -2298,6 +2351,91 @@ impl NormalizedInlineFragmentSelection {
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
     ) -> NormalizedInlineFragmentSelection {
+        //   protected normalizeKnowingItIntersects({ parentType, recursive }: { parentType: CompositeType, recursive? : boolean }): FragmentSelection | SelectionSet | undefined {
+        //     const thisCondition = this.element.typeCondition;
+        //
+        //     // We know the condition is "valid", but it may not be useful. That said, if the condition has directives,
+        //     // we preserve the fragment no matter what.
+        //     if (this.element.appliedDirectives.length === 0) {
+        //       // There is a number of cases where a fragment is not useful:
+        //       // 1. if there is not conditions (remember it also has no directives).
+        //       // 2. if it's the same type as the current type: it's not restricting types further.
+        //       // 3. if the current type is an object more generally: because in that case too the condition
+        //       //   cannot be restricting things further (it's typically a less precise interface/union).
+        //       if (!thisCondition || parentType === this.element.typeCondition || isObjectType(parentType)) {
+        //         const normalized = this.selectionSet.normalize({ parentType, recursive });
+        //         return normalized.isEmpty() ? undefined : normalized;
+        //       }
+        //     }
+        //
+        //     // We preserve the current fragment, so we only recurse within the sub-selection if we're asked to be recusive.
+        //     // (note that even if we're not recursive, we may still have some "lifting" to do)
+        //     let normalizedSelectionSet: SelectionSet;
+        //     if (recursive ?? true) {
+        //       normalizedSelectionSet = this.selectionSet.normalize({ parentType: thisCondition ?? parentType });
+        //
+        //       // It could be that everything was unsatisfiable.
+        //       if (normalizedSelectionSet.isEmpty()) {
+        //         if (this.element.appliedDirectives.length === 0) {
+        //           return undefined;
+        //         } else {
+        //           return this.withUpdatedComponents(
+        //             // We should be able to rebase, or there is a bug, so error if that is the case.
+        //             this.element.rebaseOnOrError(parentType),
+        //             selectionSetOfElement(
+        //               new Field(
+        //                 (this.element.typeCondition ?? parentType).typenameField()!,
+        //                 undefined,
+        //                 [new Directive('include', { 'if': false })],
+        //               )
+        //             )
+        //           );
+        //         }
+        //       }
+        //     } else {
+        //       normalizedSelectionSet = this.selectionSet;
+        //     }
+        //
+        //     // Second, we check if some of the sub-selection fragments can be "lifted" outside of this fragment. This can happen if:
+        //     // 1. the current fragment is an abstract type,
+        //     // 2. the sub-fragment is an object type,
+        //     // 3. the sub-fragment type is a valid runtime of the current type.
+        //     if (this.element.appliedDirectives.length === 0 && isAbstractType(thisCondition!)) {
+        //       assert(!isObjectType(parentType), () => `Should not have got here if ${parentType} is an object type`);
+        //       const currentRuntimes = possibleRuntimeTypes(parentType);
+        //       const liftableSelections: Selection[] = [];
+        //       for (const selection of normalizedSelectionSet.selections()) {
+        //         if (selection.kind === 'FragmentSelection'
+        //           && selection.element.typeCondition
+        //           && isObjectType(selection.element.typeCondition)
+        //           && currentRuntimes.includes(selection.element.typeCondition)
+        //         ) {
+        //           liftableSelections.push(selection);
+        //         }
+        //       }
+        //
+        //       // If we can lift all selections, then that just mean we can get rid of the current fragment altogether
+        //       if (liftableSelections.length === normalizedSelectionSet.selections().length) {
+        //         return normalizedSelectionSet;
+        //       }
+        //
+        //       // Otherwise, if there is "liftable" selections, we must return a set comprised of those lifted selection,
+        //       // and the current fragment _without_ those lifted selections.
+        //       if (liftableSelections.length > 0) {
+        //         const newSet = new SelectionSetUpdates();
+        //         newSet.add(liftableSelections);
+        //         newSet.add(this.withUpdatedSelectionSet(
+        //           normalizedSelectionSet.filter((s) => !liftableSelections.includes(s)),
+        //         ));
+        //         return newSet.toSelectionSet(parentType);
+        //       }
+        //     }
+        //
+        //     return this.parentType === parentType && this.selectionSet === normalizedSelectionSet
+        //       ? this
+        //       : this.withUpdatedComponents(this.element.rebaseOnOrError(parentType), normalizedSelectionSet);
+        //   }
+
         // todo!()
         self.clone()
     }
@@ -2629,24 +2767,34 @@ impl NamedFragments {
                 .get_type(fragment.type_condition_position.type_name().clone())
                 .and_then(CompositeTypeDefinitionPosition::try_from)
             {
-                if let Ok(mut rebased_selection) = fragment.selection_set.rebase_on(
+                let mut rebased_selection = fragment.selection_set.rebase_on(
                     &rebased_type,
                     &rebased_fragments,
                     schema,
                     &RebaseErrorHandlingOption::IgnoreError,
-                ) {
-                    // Rebasing can leave some inefficiencies in some case (particularly when a spread has to be "expanded", see `FragmentSpreadSelection.rebaseOn`),
-                    // so we do a top-level normalization to keep things clean.
-                    rebased_selection = rebased_selection.normalize(&rebased_type);
-                    if NamedFragments::is_selection_set_worth_using(&rebased_selection) {
-                        let fragment = NormalizedFragment {
-                            schema: schema.clone(),
-                            name: fragment.name.clone(),
-                            type_condition_position: rebased_type.clone(),
-                            directives: fragment.directives.clone(),
-                            selection_set: rebased_selection,
-                        };
-                        rebased_fragments.insert(fragment);
+                );
+                match rebased_selection {
+                    Ok(mut rebased_selection) => {
+                        // Rebasing can leave some inefficiencies in some case (particularly when a spread has to be "expanded", see `FragmentSpreadSelection.rebaseOn`),
+                        // so we do a top-level normalization to keep things clean.
+                        rebased_selection = rebased_selection.normalize(&rebased_type, schema);
+                        if NamedFragments::is_selection_set_worth_using(&rebased_selection) {
+                            let fragment = NormalizedFragment {
+                                schema: schema.clone(),
+                                name: fragment.name.clone(),
+                                type_condition_position: rebased_type.clone(),
+                                directives: fragment.directives.clone(),
+                                selection_set: rebased_selection,
+                            };
+                            rebased_fragments.insert(fragment);
+                        }
+                    }
+                    Err(error) => {
+                        // TODO log error here
+                        println!(
+                            "exception while rebasing/normalizing the selection: {}",
+                            error
+                        );
                     }
                 }
             }
