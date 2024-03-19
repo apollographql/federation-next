@@ -127,8 +127,8 @@ fn is_constant_condition(condition: &Conditions) -> bool {
     }
 }
 
-fn remove_conditions_from_selection_set(
-    selection_set: NormalizedSelectionSet,
+pub(crate) fn remove_conditions_from_selection_set(
+    selection_set: &NormalizedSelectionSet,
     conditions: &Conditions,
 ) -> NormalizedSelectionSet {
     match conditions {
@@ -138,7 +138,7 @@ fn remove_conditions_from_selection_set(
             // the input unchanged as a shortcut.
             // If the conditions are the constant true, then it means we have no conditions to remove and we can
             // keep the selection "as is".
-            selection_set
+            selection_set.clone()
         }
         Conditions::Variables(variable_conditions) => {
             let selection_map = selection_set
@@ -151,7 +151,7 @@ fn remove_conditions_from_selection_set(
                             remove_conditions_of_element(element.clone(), variable_conditions);
                         if let Ok(Some(selection_set)) = selection.1.selection_set() {
                             let updated_selection_set = remove_conditions_from_selection_set(
-                                selection_set.clone(),
+                                selection_set,
                                 conditions,
                             );
                             if updated_element == element {

@@ -4,7 +4,7 @@ use crate::query_graph::graph_path::{
 };
 use crate::query_graph::path_tree::{OpPathTree, PathTreeChild};
 use crate::query_graph::{QueryGraph, QueryGraphEdgeTransition};
-use crate::query_plan::conditions::Conditions;
+use crate::query_plan::conditions::{remove_conditions_from_selection_set, Conditions};
 use crate::query_plan::fetch_dependency_graph_processor::RebasedFragments;
 use crate::query_plan::operation::normalized_field_selection::{
     NormalizedField, NormalizedFieldData,
@@ -598,7 +598,7 @@ impl FetchDependencyGraphNode {
             return Ok(None);
         }
         let (selection, output_rewrites) =
-            self.finalize_selection(variable_definitions, handled_conditions);
+            self.finalize_selection(variable_definitions, handled_conditions, fragments)?;
         let input_nodes = self
             .inputs
             .as_ref()
@@ -652,9 +652,10 @@ impl FetchDependencyGraphNode {
 
     fn finalize_selection(
         &self,
-        _variable_definitions: &[Node<VariableDefinition>],
-        _handled_conditions: &Conditions,
-    ) -> (Arc<NormalizedSelectionSet>, Vec<Arc<FetchDataRewrite>>) {
+        variable_definitions: &[Node<VariableDefinition>],
+        handled_conditions: &Conditions,
+        fragments: Option<&mut RebasedFragments>,
+    ) -> Result<(Arc<NormalizedSelectionSet>, Vec<Arc<FetchDataRewrite>>), FederationError> {
         // Finalizing the selection involves the following:
         // 1. removing any @include/@skip that are not necessary
         //    because they are already handled earlier in the query plan
@@ -672,7 +673,18 @@ impl FetchDependencyGraphNode {
         //    If that is the case, we introduce aliases to the selection to make it valid,
         //    and then generate a rewrite on the output of the fetch
         //    so that data aliased this way is rewritten back to the original/proper response name.
-        todo!() // TODO: port from `FetchGroup.finalizeSelection`
+        let selection_without_conditions = remove_conditions_from_selection_set(
+            &*self.selection_set.selection_set,
+            handled_conditions,
+        );
+        let selection_with_typenames =
+            selection_without_conditions.add_typename_field_for_abstract_types(None, &fragments)?;
+
+        let (updated_selection, output_rewrites) =
+            selection_with_typenames.add_aliases_for_non_merging_fields();
+
+        updated_selection.validate(variable_definitions)?;
+        Ok((Arc::new(updated_selection), output_rewrites))
     }
 }
 

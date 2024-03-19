@@ -16,6 +16,8 @@ use crate::query_plan::operation::normalized_selection_map::{
     Entry, NormalizedFieldSelectionValue, NormalizedFragmentSpreadSelectionValue,
     NormalizedInlineFragmentSelectionValue, NormalizedSelectionMap, NormalizedSelectionValue,
 };
+use crate::schema::definitions::base_type;
+use crate::schema::definitions::AbstractType;
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, InterfaceTypeDefinitionPosition, SchemaRootDefinitionKind,
 };
@@ -33,6 +35,9 @@ use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
+
+use super::fetch_dependency_graph_processor::RebasedFragments;
+use super::FetchDataRewrite;
 
 pub(crate) const TYPENAME_FIELD: Name = name!("__typename");
 
@@ -1473,7 +1478,80 @@ impl NormalizedSelectionSet {
 
     pub(crate) fn add_typename_field_for_abstract_types(
         &self,
+        parent_type_if_abstract: Option<AbstractType>,
+        fragments: &Option<&mut RebasedFragments>,
     ) -> Result<NormalizedSelectionSet, FederationError> {
+        let handle_selection =
+            |(selection_key, selection): (&NormalizedSelectionKey, &NormalizedSelection)| {
+                let selection_set = match selection.selection_set()? {
+                    None => return Ok((selection_key.clone(), selection.clone())),
+                    Some(s) => s,
+                };
+
+                let type_if_abstract =
+                    subselection_type_if_abstract(&selection, &self.schema, fragments);
+                let updated_selection_set = selection_set
+                    .add_typename_field_for_abstract_types(type_if_abstract, &fragments)?;
+
+                if updated_selection_set == *selection_set {
+                    Ok((selection_key.clone(), selection.clone()))
+                } else {
+                    Ok((
+                        selection_key.clone(),
+                        selection.with_updated_selection_set(updated_selection_set),
+                    ))
+                }
+            };
+
+        if parent_type_if_abstract.is_none() || self.has_top_level_typename_field() {
+            let selection_map =
+                self.selections
+                    .iter()
+                    .map(handle_selection)
+                    .collect::<Result<
+                        IndexMap<NormalizedSelectionKey, NormalizedSelection>,
+                        FederationError,
+                    >>()?;
+
+            return Ok(NormalizedSelectionSet {
+                schema: self.schema,
+                type_position: self.type_position,
+                selections: Arc::new(NormalizedSelectionMap(selection_map)),
+            });
+        }
+
+        let mut selection_map = (*self.selections).clone();
+        let field_position = match parent_type_if_abstract.expect("already checked") {
+            AbstractType::Interface(interface) => {
+                crate::schema::position::FieldDefinitionPosition::Interface(
+                    interface.introspection_typename_field(),
+                )
+            }
+            AbstractType::Union(union) => crate::schema::position::FieldDefinitionPosition::Union(
+                union.introspection_typename_field(),
+            ),
+        };
+        let typename_selection = NormalizedFieldSelection {
+            field: NormalizedField::new(NormalizedFieldData {
+                schema: self.schema,
+                field_position,
+                alias: None,
+                arguments: Default::default(),
+                directives: Default::default(),
+                sibling_typename: None,
+            }),
+            selection_set: None,
+        };
+        selection_map.insert(NormalizedSelection::Field(Arc::new(typename_selection)));
+
+        Ok(NormalizedSelectionSet {
+            schema: self.schema.clone(),
+            type_position: self.type_position.clone(),
+            selections: Arc::new(selection_map),
+        })
+    }
+
+    fn has_top_level_typename_field(&self) -> bool {
         todo!()
     }
 
@@ -1489,9 +1567,72 @@ impl NormalizedSelectionSet {
         todo!()
     }
 
+    pub(crate) fn add_aliases_for_non_merging_fields(
+        &self,
+    ) -> (NormalizedSelectionSet, Vec<Arc<FetchDataRewrite>>) {
+        todo!()
+    }
+
     pub(crate) fn used_variables(&self) -> Vec<Name> {
         todo!();
         ();
+    }
+
+    pub(crate) fn validate(
+        &self,
+        variable_definitions: &[Node<VariableDefinition>],
+    ) -> Result<(), FederationError> {
+        todo!()
+    }
+}
+
+pub(crate) fn subselection_type_if_abstract(
+    selection: &NormalizedSelection,
+    schema: &ValidFederationSchema,
+    fragments: &Option<&mut RebasedFragments>,
+) -> Option<AbstractType> {
+    match selection {
+        NormalizedSelection::Field(field) => {
+            match schema
+                .get_type(field.field.data().field_position.type_name().clone())
+                .ok()?
+            {
+                crate::schema::position::TypeDefinitionPosition::Interface(i) => {
+                    Some(AbstractType::Interface(i))
+                }
+                crate::schema::position::TypeDefinitionPosition::Union(u) => {
+                    Some(AbstractType::Union(u))
+                }
+                _ => None,
+            }
+        }
+        NormalizedSelection::FragmentSpread(fragment_spread) => {
+            let fragment = fragments
+                .and_then(|r| r.query_fragments.get(&fragment_spread.data().fragment_name))
+                .ok_or(FederationError::SingleFederationError(
+                    crate::error::SingleFederationError::InvalidGraphQL {
+                        message: "missing fragment".to_string(),
+                    },
+                ))
+                //FIXME: return error
+                .ok()?;
+            match fragment.type_condition_position {
+                CompositeTypeDefinitionPosition::Interface(i) => Some(AbstractType::Interface(i)),
+                CompositeTypeDefinitionPosition::Union(u) => Some(AbstractType::Union(u)),
+                CompositeTypeDefinitionPosition::Object(_) => None,
+            }
+        }
+        NormalizedSelection::InlineFragment(inline_fragment) => {
+            match inline_fragment
+                .inline_fragment
+                .data()
+                .type_condition_position?
+            {
+                CompositeTypeDefinitionPosition::Interface(i) => Some(AbstractType::Interface(i)),
+                CompositeTypeDefinitionPosition::Union(u) => Some(AbstractType::Union(u)),
+                CompositeTypeDefinitionPosition::Object(_) => None,
+            }
+        }
     }
 }
 

@@ -55,7 +55,7 @@ pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
 
 #[derive(Default)]
 pub(crate) struct RebasedFragments {
-    query_fragments: NamedFragments,
+    pub(crate) query_fragments: NamedFragments,
     by_subgraph: HashMap<NodeStr, Option<NamedFragments>>,
 }
 
