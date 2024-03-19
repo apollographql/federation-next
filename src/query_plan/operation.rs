@@ -112,7 +112,9 @@ pub(crate) mod normalized_selection_map {
     /// module to prevent code from accidentally mutating the underlying map outside the mutation
     /// API.
     #[derive(Debug, Clone, PartialEq, Eq, Default)]
-    pub(crate) struct NormalizedSelectionMap(IndexMap<NormalizedSelectionKey, NormalizedSelection>);
+    pub(crate) struct NormalizedSelectionMap(
+        pub(crate) IndexMap<NormalizedSelectionKey, NormalizedSelection>,
+    );
 
     impl Deref for NormalizedSelectionMap {
         type Target = IndexMap<NormalizedSelectionKey, NormalizedSelection>;
@@ -541,6 +543,25 @@ impl NormalizedSelection {
     pub(crate) fn has_defer(&self) -> Result<bool, FederationError> {
         todo!()
     }
+
+    pub(crate) fn with_updated_selection_set(&self, selection_set: NormalizedSelectionSet) -> Self {
+        match self {
+            NormalizedSelection::Field(field) => NormalizedSelection::Field(Arc::new(
+                field.with_updated_selection_set(selection_set),
+            )),
+            NormalizedSelection::FragmentSpread(fragment_spread) => {
+                NormalizedSelection::FragmentSpread(Arc::new(
+                    fragment_spread.with_updated_selection_set(selection_set),
+                ))
+            }
+
+            NormalizedSelection::InlineFragment(inline_fragment) => {
+                NormalizedSelection::InlineFragment(Arc::new(
+                    inline_fragment.with_updated_selection_set(selection_set),
+                ))
+            }
+        }
+    }
 }
 
 impl HasNormalizedSelectionKey for NormalizedSelection {
@@ -625,6 +646,18 @@ pub(crate) mod normalized_field_selection {
         }
     }
 
+    impl NormalizedFieldSelection {
+        pub(crate) fn with_updated_selection_set(
+            &self,
+            selection_set: NormalizedSelectionSet,
+        ) -> Self {
+            Self {
+                field: self.field.clone(),
+                selection_set: Some(selection_set),
+            }
+        }
+    }
+
     /// The non-selection-set data of `NormalizedFieldSelection`, used with operation paths and graph
     /// paths.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -651,6 +684,12 @@ pub(crate) mod normalized_field_selection {
 
         pub(crate) fn sibling_typename_mut(&mut self) -> &mut Option<Name> {
             &mut self.data.sibling_typename
+        }
+
+        pub(crate) fn with_updated_directives(&self, directives: DirectiveList) -> NormalizedField {
+            let mut data = self.data.clone();
+            data.directives = Arc::new(directives);
+            Self::new(data)
         }
     }
 
@@ -710,6 +749,8 @@ pub(crate) mod normalized_fragment_spread_selection {
     use apollo_compiler::ast::{DirectiveList, Name};
     use std::sync::Arc;
 
+    use super::NormalizedSelectionSet;
+
     /// An analogue of the apollo-compiler type `FragmentSpread` with these changes:
     /// - Stores the schema (may be useful for directives).
     /// - Encloses collection types in `Arc`s to facilitate cheaper cloning.
@@ -729,6 +770,13 @@ pub(crate) mod normalized_fragment_spread_selection {
 
         pub(crate) fn data(&self) -> &NormalizedFragmentSpreadData {
             &self.data
+        }
+
+        pub(crate) fn with_updated_selection_set(
+            &self,
+            _selection_set: NormalizedSelectionSet,
+        ) -> Self {
+            unimplemented!("unsupported")
         }
     }
 
@@ -788,6 +836,18 @@ pub(crate) mod normalized_inline_fragment_selection {
         pub(crate) selection_set: NormalizedSelectionSet,
     }
 
+    impl NormalizedInlineFragmentSelection {
+        pub(crate) fn with_updated_selection_set(
+            &self,
+            selection_set: NormalizedSelectionSet,
+        ) -> Self {
+            Self {
+                inline_fragment: self.inline_fragment.clone(),
+                selection_set,
+            }
+        }
+    }
+
     impl HasNormalizedSelectionKey for NormalizedInlineFragmentSelection {
         fn key(&self) -> NormalizedSelectionKey {
             self.inline_fragment.key()
@@ -820,6 +880,15 @@ pub(crate) mod normalized_inline_fragment_selection {
         ) -> Self {
             let mut data = self.data().clone();
             data.type_condition_position = new;
+            Self::new(data)
+        }
+
+        pub(crate) fn with_updated_directives(
+            &self,
+            directives: DirectiveList,
+        ) -> NormalizedInlineFragment {
+            let mut data = self.data().clone();
+            data.directives = Arc::new(directives);
             Self::new(data)
         }
     }

@@ -14,7 +14,7 @@ use crate::query_plan::operation::normalized_field_selection::{
 use crate::query_plan::operation::normalized_inline_fragment_selection::{
     NormalizedInlineFragment, NormalizedInlineFragmentData,
 };
-use crate::query_plan::operation::{NormalizedSelectionSet, SelectionId};
+use crate::query_plan::operation::{NormalizedSelection, NormalizedSelectionSet, SelectionId};
 use crate::query_plan::{QueryPathElement, QueryPlanCost};
 use crate::schema::position::{
     AbstractTypeDefinitionPosition, CompositeTypeDefinitionPosition,
@@ -253,6 +253,26 @@ impl OpPathElement {
         }
         Ok(conditionals)
     }
+
+    pub(crate) fn with_updated_directives(&self, directives: DirectiveList) -> OpPathElement {
+        match self {
+            OpPathElement::Field(field) => {
+                OpPathElement::Field(field.with_updated_directives(directives))
+            }
+            OpPathElement::InlineFragment(inline_fragment) => {
+                OpPathElement::InlineFragment(inline_fragment.with_updated_directives(directives))
+            }
+        }
+    }
+}
+
+pub(crate) fn selection_of_element(
+    element: OpPathElement,
+    subSelection: Option<NormalizedSelectionSet>,
+) -> NormalizedSelection {
+    // TODO: validate that the subSelection is ok for the element
+    //return element.kind === 'Field' ? new FieldSelection(element, subSelection) : new InlineFragmentSelection(element, subSelection!);
+    todo!()
 }
 
 impl Display for OpPathElement {
