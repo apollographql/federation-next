@@ -150,19 +150,17 @@ pub(crate) fn remove_conditions_from_selection_set(
                         let updated_element =
                             remove_conditions_of_element(element.clone(), variable_conditions);
                         if let Ok(Some(selection_set)) = selection.1.selection_set() {
-                            let updated_selection_set = remove_conditions_from_selection_set(
-                                selection_set,
-                                conditions,
-                            );
+                            let updated_selection_set =
+                                remove_conditions_from_selection_set(selection_set, conditions);
                             if updated_element == element {
                                 if *selection_set == updated_selection_set {
                                     (selection.0.clone(), selection.1.clone())
                                 } else {
                                     (
                                         selection.0.clone(),
-                                        selection
-                                            .1
-                                            .with_updated_selection_set(updated_selection_set),
+                                        selection.1.with_updated_selection_set(Some(
+                                            updated_selection_set,
+                                        )),
                                     )
                                 }
                             } else {

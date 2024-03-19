@@ -681,7 +681,7 @@ impl FetchDependencyGraphNode {
             selection_without_conditions.add_typename_field_for_abstract_types(None, &fragments)?;
 
         let (updated_selection, output_rewrites) =
-            selection_with_typenames.add_aliases_for_non_merging_fields();
+            selection_with_typenames.add_aliases_for_non_merging_fields()?;
 
         updated_selection.validate(variable_definitions)?;
         Ok((Arc::new(updated_selection), output_rewrites))

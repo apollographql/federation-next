@@ -15,11 +15,11 @@ use crate::query_plan::operation::normalized_inline_fragment_selection::{
     NormalizedInlineFragment, NormalizedInlineFragmentData,
 };
 use crate::query_plan::operation::{NormalizedSelection, NormalizedSelectionSet, SelectionId};
-use crate::query_plan::{QueryPathElement, QueryPlanCost};
+use crate::query_plan::{FetchDataPathElement, QueryPathElement, QueryPlanCost};
 use crate::schema::position::{
-    AbstractTypeDefinitionPosition, CompositeTypeDefinitionPosition,
-    InterfaceFieldDefinitionPosition, ObjectTypeDefinitionPosition, OutputTypeDefinitionPosition,
-    TypeDefinitionPosition,
+    AbstractTypeDefinitionPosition, CompositeTypeDefinitionPosition, FieldDefinitionPosition,
+    InterfaceFieldDefinitionPosition, ObjectFieldDefinitionPosition, ObjectTypeDefinitionPosition,
+    OutputTypeDefinitionPosition, TypeDefinitionPosition,
 };
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::Value;
@@ -217,6 +217,13 @@ impl OpPathElement {
         }
     }
 
+    pub(crate) fn field_definition_position(&self) -> FieldDefinitionPosition {
+        match self {
+            OpPathElement::Field(field) => field.data().field_position,
+            OpPathElement::InlineFragment(inline_fragment) => todo!(),
+        }
+    }
+
     pub(crate) fn extract_operation_conditionals(
         &self,
     ) -> Result<Vec<OperationConditional>, FederationError> {
@@ -262,6 +269,13 @@ impl OpPathElement {
             OpPathElement::InlineFragment(inline_fragment) => {
                 OpPathElement::InlineFragment(inline_fragment.with_updated_directives(directives))
             }
+        }
+    }
+
+    pub(crate) fn as_path_element(&self) -> Option<FetchDataPathElement> {
+        match self {
+            OpPathElement::Field(field) => Some(field.as_path_element()),
+            OpPathElement::InlineFragment(inline_fragment) => inline_fragment.as_path_element(),
         }
     }
 }
