@@ -598,7 +598,7 @@ impl FetchDependencyGraphNode {
             return Ok(None);
         }
         let (selection, output_rewrites) =
-            self.finalize_selection(variable_definitions, handled_conditions, fragments)?;
+            self.finalize_selection(variable_definitions, handled_conditions, &fragments)?;
         let input_nodes = self
             .inputs
             .as_ref()
@@ -654,7 +654,7 @@ impl FetchDependencyGraphNode {
         &self,
         variable_definitions: &[Node<VariableDefinition>],
         handled_conditions: &Conditions,
-        fragments: Option<&mut RebasedFragments>,
+        fragments: &Option<&mut RebasedFragments>,
     ) -> Result<(Arc<NormalizedSelectionSet>, Vec<Arc<FetchDataRewrite>>), FederationError> {
         // Finalizing the selection involves the following:
         // 1. removing any @include/@skip that are not necessary
@@ -678,7 +678,7 @@ impl FetchDependencyGraphNode {
             handled_conditions,
         );
         let selection_with_typenames =
-            selection_without_conditions.add_typename_field_for_abstract_types(None, &fragments)?;
+            selection_without_conditions.add_typename_field_for_abstract_types(None, fragments)?;
 
         let (updated_selection, output_rewrites) =
             selection_with_typenames.add_aliases_for_non_merging_fields()?;

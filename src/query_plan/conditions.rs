@@ -191,8 +191,8 @@ pub(crate) fn remove_conditions_from_selection_set(
                 .collect();
 
             NormalizedSelectionSet {
-                schema: selection_set.schema,
-                type_position: selection_set.type_position,
+                schema: selection_set.schema.clone(),
+                type_position: selection_set.type_position.clone(),
                 selections: Arc::new(NormalizedSelectionMap(selection_map)),
             }
         }

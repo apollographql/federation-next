@@ -219,7 +219,7 @@ impl OpPathElement {
 
     pub(crate) fn field_definition_position(&self) -> FieldDefinitionPosition {
         match self {
-            OpPathElement::Field(field) => field.data().field_position,
+            OpPathElement::Field(field) => field.data().field_position.clone(),
             OpPathElement::InlineFragment(inline_fragment) => todo!(),
         }
     }

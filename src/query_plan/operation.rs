@@ -941,7 +941,7 @@ pub(crate) mod normalized_inline_fragment_selection {
         }
 
         pub(crate) fn as_path_element(&self) -> Option<FetchDataPathElement> {
-            let condition = self.data().type_condition_position?;
+            let condition = self.data().type_condition_position.clone()?;
 
             Some(FetchDataPathElement::TypenameEquals(
                 condition.type_name().clone().into(),
@@ -1565,8 +1565,8 @@ impl NormalizedSelectionSet {
                     >>()?;
 
             return Ok(NormalizedSelectionSet {
-                schema: self.schema,
-                type_position: self.type_position,
+                schema: self.schema.clone(),
+                type_position: self.type_position.clone(),
                 selections: Arc::new(NormalizedSelectionMap(selection_map)),
             });
         }
@@ -1584,7 +1584,7 @@ impl NormalizedSelectionSet {
         };
         let typename_selection = NormalizedFieldSelection {
             field: NormalizedField::new(NormalizedFieldData {
-                schema: self.schema,
+                schema: self.schema.clone(),
                 field_position,
                 alias: None,
                 arguments: Default::default(),
@@ -1666,7 +1666,10 @@ impl NormalizedSelectionSet {
             if alias.path.len() > 0 {
                 remaining.push(alias);
             } else {
-                at_current_level.insert(FetchDataPathElement::Key(alias.response_name), alias);
+                at_current_level.insert(
+                    FetchDataPathElement::Key(alias.response_name.clone()),
+                    alias,
+                );
             }
         }
 
@@ -1681,8 +1684,8 @@ impl NormalizedSelectionSet {
                         if alias.path.first() == path_element.as_ref() {
                             Some(FieldToAlias {
                                 path: (&alias.path[1..]).iter().cloned().collect(),
-                                response_name: alias.response_name,
-                                alias: alias.alias,
+                                response_name: alias.response_name.clone(),
+                                alias: alias.alias.clone(),
                             })
                         } else {
                             None
@@ -1703,7 +1706,7 @@ impl NormalizedSelectionSet {
                         } else {
                             let sel = field.with_updated_components(
                                 match alias {
-                                    Some(alias) => field.with_updated_alias(alias.alias),
+                                    Some(alias) => field.with_updated_alias(alias.alias.clone()),
                                     None => field.field.clone(),
                                 },
                                 updated_selection_set,
@@ -1786,6 +1789,7 @@ pub(crate) fn subselection_type_if_abstract(
         }
         NormalizedSelection::FragmentSpread(fragment_spread) => {
             let fragment = fragments
+                .as_ref()
                 .and_then(|r| r.query_fragments.get(&fragment_spread.data().fragment_name))
                 .ok_or(FederationError::SingleFederationError(
                     crate::error::SingleFederationError::InvalidGraphQL {
@@ -1794,7 +1798,7 @@ pub(crate) fn subselection_type_if_abstract(
                 ))
                 //FIXME: return error
                 .ok()?;
-            match fragment.type_condition_position {
+            match fragment.type_condition_position.clone() {
                 CompositeTypeDefinitionPosition::Interface(i) => Some(AbstractType::Interface(i)),
                 CompositeTypeDefinitionPosition::Union(u) => Some(AbstractType::Union(u)),
                 CompositeTypeDefinitionPosition::Object(_) => None,
@@ -1804,7 +1808,8 @@ pub(crate) fn subselection_type_if_abstract(
             match inline_fragment
                 .inline_fragment
                 .data()
-                .type_condition_position?
+                .type_condition_position
+                .clone()?
             {
                 CompositeTypeDefinitionPosition::Interface(i) => Some(AbstractType::Interface(i)),
                 CompositeTypeDefinitionPosition::Union(u) => Some(AbstractType::Union(u)),
