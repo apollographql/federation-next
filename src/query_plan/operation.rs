@@ -1,4 +1,5 @@
 use crate::error::FederationError;
+use crate::error::SingleFederationError;
 use crate::error::SingleFederationError::Internal;
 use crate::query_graph::graph_path::OpPath;
 use crate::query_graph::graph_path::OpPathElement;
@@ -18,11 +19,14 @@ use crate::query_plan::operation::normalized_selection_map::{
 };
 use crate::query_plan::FetchDataKeyRenamer;
 use crate::schema::definitions::base_type;
+use crate::schema::definitions::is_composite_type;
+use crate::schema::definitions::types_can_be_merged;
 use crate::schema::definitions::AbstractType;
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, InterfaceTypeDefinitionPosition, SchemaRootDefinitionKind,
 };
 use crate::schema::ValidFederationSchema;
+use apollo_compiler::ast::Type;
 use apollo_compiler::ast::{DirectiveList, Name, OperationType};
 use apollo_compiler::executable;
 use apollo_compiler::executable::{
@@ -1625,10 +1629,11 @@ impl NormalizedSelectionSet {
         compute_aliases_for_non_merging_fields(
             vec![SelectionSetAtPath {
                 path: Vec::new(),
-                selections: self.clone(),
+                selections: Some(self.clone()),
             }],
             &mut aliases,
-        );
+            &self.schema,
+        )?;
 
         let updated = self.with_field_aliased(&aliases)?;
         let output_rewrites = aliases
@@ -1699,7 +1704,6 @@ impl NormalizedSelectionSet {
 
                 match selection {
                     NormalizedSelection::Field(field) => {
-                        let field_element = selection.element()?;
                         let alias = path_element.and_then(|elem| at_current_level.get(&elem));
                         if alias.is_none() && selection_set == updated_selection_set.as_ref() {
                             Ok((key.clone(), selection.clone()))
@@ -1710,11 +1714,12 @@ impl NormalizedSelectionSet {
                                     None => field.field.clone(),
                                 },
                                 updated_selection_set,
-                            );
-                            todo!()
+                            )?;
+                            let key = sel.key();
+                            Ok((key, NormalizedSelection::Field(Arc::new(sel))))
                         }
                     }
-                    NormalizedSelection::InlineFragment(inline_fragment) => {
+                    NormalizedSelection::InlineFragment(_) => {
                         if selection_set == updated_selection_set.as_ref() {
                             Ok((key.clone(), selection.clone()))
                         } else {
@@ -1736,6 +1741,46 @@ impl NormalizedSelectionSet {
         })
     }
 
+    pub(crate) fn fields_in_set(&self) -> Vec<CollectedFieldInSet> {
+        let mut fields = Vec::new();
+
+        for (key, selection) in self.selections.iter() {
+            match selection {
+                NormalizedSelection::Field(field) => fields.push(CollectedFieldInSet {
+                    path: Vec::new(),
+                    field: field.clone(),
+                }),
+                NormalizedSelection::FragmentSpread(_fragment) => {
+                    todo!()
+                }
+                NormalizedSelection::InlineFragment(inline_fragment) => {
+                    let condition = inline_fragment
+                        .inline_fragment
+                        .data()
+                        .type_condition_position
+                        .as_ref();
+                    let header = match condition {
+                        Some(cond) => vec![FetchDataPathElement::TypenameEquals(
+                            cond.type_name().clone().into(),
+                        )],
+                        None => vec![],
+                    };
+                    for CollectedFieldInSet { path, field } in
+                        inline_fragment.selection_set.fields_in_set().into_iter()
+                    {
+                        let mut new_path = header.clone();
+                        new_path.extend(path);
+                        fields.push(CollectedFieldInSet {
+                            path: new_path,
+                            field,
+                        })
+                    }
+                }
+            }
+        }
+        fields
+    }
+
     pub(crate) fn used_variables(&self) -> Vec<Name> {
         todo!();
         ();
@@ -1749,9 +1794,10 @@ impl NormalizedSelectionSet {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct SelectionSetAtPath {
     path: Vec<FetchDataPathElement>,
-    selections: NormalizedSelectionSet,
+    selections: Option<NormalizedSelectionSet>,
 }
 
 pub(crate) struct FieldToAlias {
@@ -1760,11 +1806,175 @@ pub(crate) struct FieldToAlias {
     alias: Name,
 }
 
+pub(crate) struct SeenResponseName {
+    field_name: Name,
+    field_type: Type,
+    selections: Option<Vec<SelectionSetAtPath>>,
+}
+
+pub(crate) struct CollectedFieldInSet {
+    path: Vec<FetchDataPathElement>,
+    field: Arc<NormalizedFieldSelection>,
+}
+
+struct FieldInPath {
+    path: Vec<FetchDataPathElement>,
+    field: Arc<NormalizedFieldSelection>,
+}
+
 fn compute_aliases_for_non_merging_fields(
     selections: Vec<SelectionSetAtPath>,
     alias_collector: &mut Vec<FieldToAlias>,
-) {
-    todo!()
+    schema: &ValidFederationSchema,
+) -> Result<(), FederationError> {
+    let mut seen_response_names: HashMap<Name, SeenResponseName> = HashMap::new();
+
+    fn rebased_fields_in_set<'a>(
+        s: &'a SelectionSetAtPath,
+    ) -> impl Iterator<Item = FieldInPath> + 'a {
+        s.selections
+            .iter()
+            .map(|s2| {
+                s2.fields_in_set()
+                    .into_iter()
+                    .map(|CollectedFieldInSet { path, field }| {
+                        let mut new_path = s.path.clone();
+                        new_path.extend(path);
+                        FieldInPath {
+                            path: new_path,
+                            field,
+                        }
+                    })
+            })
+            .flatten()
+    }
+
+    for FieldInPath { mut path, field } in selections
+        .iter()
+        .map(|s| rebased_fields_in_set(s))
+        .flatten()
+    {
+        let field_name = field.field.data().name();
+        let response_name = field.field.data().response_name();
+        let field_type = &field.field.data().field_position.get(schema.schema())?.ty;
+
+        match seen_response_names.get(&response_name) {
+            Some(previous) => {
+                if &previous.field_name == field_name
+                    && types_can_be_merged(&previous.field_type, &field_type, schema.schema())?
+                {
+                    // If the type is non-composite, then we're all set. But if it is composite, we need to record the sub-selection to that response name
+                    // as we need to "recurse" on the merged of both the previous and this new field.
+                    if is_composite_type(base_type(&field_type), schema.schema())? {
+                        match &previous.selections {
+                            None => {
+                                return Err(SingleFederationError::Internal {
+                                    message: format!(
+                                        "Should have added selections for `'{:?}\'",
+                                        previous.field_type
+                                    ),
+                                }
+                                .into());
+                            }
+                            Some(s) => {
+                                let mut selections = s.clone();
+                                let mut p = path.clone();
+                                p.push(FetchDataPathElement::Key(response_name.clone().into()));
+                                selections.push(SelectionSetAtPath {
+                                    path: p,
+                                    selections: field.selection_set.clone(),
+                                });
+                                seen_response_names.insert(
+                                    response_name,
+                                    SeenResponseName {
+                                        field_name: previous.field_name.clone(),
+                                        field_type: previous.field_type.clone(),
+                                        selections: Some(selections),
+                                    },
+                                )
+                            }
+                        };
+                    }
+                } else {
+                    // We need to alias the new occurence.
+                    let alias = gen_alias_name(&response_name, &seen_response_names);
+
+                    // Given how we generate aliases, it's is very unlikely that the generated alias will conflict with any of the other response name
+                    // at the level, but it's theoretically possible. By adding the alias to the seen names, we ensure that in the remote change that
+                    // this ever happen, we'll avoid the conflict by giving another alias to the followup occurence.
+                    let selections = match field.selection_set.as_ref() {
+                        Some(s) => {
+                            let mut p = path.clone();
+                            p.push(FetchDataPathElement::Key(alias.clone().into()));
+                            Some(vec![SelectionSetAtPath {
+                                path: p,
+                                selections: Some(s.clone()),
+                            }])
+                        }
+                        None => None,
+                    };
+
+                    seen_response_names.insert(
+                        alias.clone(),
+                        SeenResponseName {
+                            field_name: field_name.clone(),
+                            field_type: field_type.clone(),
+                            selections,
+                        },
+                    );
+
+                    // Lastly, we record that the added alias need to be rewritten back to the proper response name post query.
+
+                    alias_collector.push(FieldToAlias {
+                        path,
+                        response_name: response_name.into(),
+                        alias,
+                    })
+                }
+            }
+            None => {
+                let selections: Option<Vec<SelectionSetAtPath>> = match field.selection_set.as_ref()
+                {
+                    Some(s) => {
+                        path.push(FetchDataPathElement::Key(response_name.clone().into()));
+                        Some(vec![SelectionSetAtPath {
+                            path,
+                            selections: Some(s.clone()),
+                        }])
+                    }
+                    None => None,
+                };
+                seen_response_names.insert(
+                    response_name,
+                    SeenResponseName {
+                        field_name: field_name.clone(),
+                        field_type: field_type.clone(),
+                        selections,
+                    },
+                );
+            }
+        }
+    }
+
+    for selections in seen_response_names.into_values() {
+        if let Some(selections) = selections.selections {
+            compute_aliases_for_non_merging_fields(selections, alias_collector, schema)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn gen_alias_name(base_name: &Name, unavailable_names: &HashMap<Name, SeenResponseName>) -> Name {
+    let mut counter = 0usize;
+    loop {
+        if let Ok(name) = Name::try_from(NodeStr::new(&format!("{base_name}__alias_{counter}"))) {
+            if !unavailable_names.contains_key(&name) {
+                return name;
+            }
+        }
+        counter += 1;
+    }
 }
 
 pub(crate) fn subselection_type_if_abstract(
