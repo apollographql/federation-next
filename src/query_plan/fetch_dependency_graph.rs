@@ -26,6 +26,8 @@ use petgraph::stable_graph::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::EdgeRef;
 use std::sync::Arc;
 
+use super::operation::normalized_selection_map::NormalizedSelectionMap;
+
 /// Represents a subgraph fetch of a query plan.
 // PORT_NOTE: The JS codebase called this `FetchGroup`, but this naming didn't make it apparent that
 // this was a node in a fetch dependency graph, so we've renamed it accordingly.
@@ -602,11 +604,18 @@ impl FetchDependencyGraphNode {
         let input_nodes = self
             .inputs
             .as_ref()
-            .map(|inputs| inputs.to_selection_set_nodes(variable_definitions, handled_conditions));
+            .map(|inputs| {
+                inputs.to_selection_set_nodes(
+                    variable_definitions,
+                    handled_conditions,
+                    &self.parent_type,
+                )
+            })
+            .transpose()?;
         let subgraph_schema = dependency_graph
             .federated_query_graph
             .schema_by_source(&self.subgraph_name)?;
-        let variable_usages = selection.used_variables();
+        let variable_usages = selection.used_variables()?;
         let mut operation = if self.is_entity_fetch {
             operation_for_entities_fetch(
                 subgraph_schema,
@@ -783,8 +792,38 @@ impl FetchInputs {
         &self,
         variable_definitions: &[Node<VariableDefinition>],
         handled_conditions: &Conditions,
-    ) -> NormalizedSelectionSet {
-        todo!() // TODO: port from `GroupInputs.toSelectionSetNode`
+        type_position: &CompositeTypeDefinitionPosition,
+    ) -> Result<NormalizedSelectionSet, FederationError> {
+        let selection_sets = self
+            .selection_sets_per_parent_type
+            .values()
+            .map(|selection_set| {
+                remove_conditions_from_selection_set(selection_set, handled_conditions)
+            })
+            .collect::<Vec<_>>();
+        // Making sure we're not generating something invalid.
+        let _: Result<(), FederationError> = selection_sets
+            .iter()
+            .map(|s| s.validate(variable_definitions))
+            .collect();
+        let selections = Arc::new(NormalizedSelectionMap(
+            selection_sets
+                .iter()
+                .map(|selection_set| {
+                    selection_set
+                        .selections
+                        .iter()
+                        .map(|(key, selection)| (key.clone(), selection.clone()))
+                })
+                .flatten()
+                .collect(),
+        ));
+
+        Ok(NormalizedSelectionSet {
+            schema: self.supergraph_schema.clone(),
+            type_position: type_position.clone(),
+            selections,
+        })
     }
 }
 

@@ -39,7 +39,9 @@ use apollo_compiler::{name, Node};
 use indexmap::{IndexMap, IndexSet};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
+use std::iter::once;
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
 
@@ -553,6 +555,19 @@ impl NormalizedSelection {
         }
     }
 
+    pub(crate) fn collect_variables<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+        match self {
+            NormalizedSelection::Field(field) => Box::new(field.collect_variables())
+                as Box<dyn Iterator<Item = Result<Name, FederationError>>>,
+            NormalizedSelection::InlineFragment(inline_fragment) => {
+                Box::new(inline_fragment.collect_variables())
+            }
+            NormalizedSelection::FragmentSpread(_) => unimplemented!("unsupported"),
+        }
+    }
+
     pub(crate) fn has_defer(&self) -> Result<bool, FederationError> {
         todo!()
     }
@@ -639,7 +654,7 @@ pub(crate) mod normalized_field_selection {
     use crate::query_plan::FetchDataPathElement;
     use crate::schema::position::{FieldDefinitionPosition, TypeDefinitionPosition};
     use crate::schema::ValidFederationSchema;
-    use apollo_compiler::ast::{Argument, DirectiveList, Name};
+    use apollo_compiler::ast::{Argument, Directive, DirectiveList, Name};
     use apollo_compiler::{Node, NodeStr};
     use std::sync::Arc;
 
@@ -702,6 +717,18 @@ pub(crate) mod normalized_field_selection {
             // this.copyAttachementsTo(newField);
             field
         }
+
+        pub(crate) fn collect_variables<'a>(
+            &'a self,
+        ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+            self.field.collect_variables().chain(
+                self.selection_set
+                    .as_ref()
+                    .into_iter()
+                    .map(|selection_set| selection_set.collect_variables())
+                    .flatten(),
+            )
+        }
     }
 
     /// The non-selection-set data of `NormalizedFieldSelection`, used with operation paths and graph
@@ -741,6 +768,42 @@ pub(crate) mod normalized_field_selection {
         pub(crate) fn as_path_element(&self) -> FetchDataPathElement {
             FetchDataPathElement::Key(self.data().response_name().into())
         }
+
+        pub(crate) fn collect_variables<'a>(
+            &'a self,
+        ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+            self.data()
+                .arguments
+                .iter()
+                .map(|argument| collect_variables_from_argument(&argument))
+                .flatten()
+                .chain(
+                    self.data()
+                        .directives
+                        .iter()
+                        .map(|directive| collect_variables_from_directive(&directive))
+                        .flatten(),
+                )
+        }
+    }
+
+    pub(crate) fn collect_variables_from_argument<'a>(
+        argument: &'a Argument,
+    ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+        match &*argument.value {
+            apollo_compiler::ast::Value::Variable(v) => Some(Ok(v.clone())).into_iter(),
+            _ => None.into_iter(),
+        }
+    }
+
+    pub(crate) fn collect_variables_from_directive<'a>(
+        directive: &'a Directive,
+    ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+        directive
+            .arguments
+            .iter()
+            .map(|argument| collect_variables_from_argument(&*argument))
+            .flatten()
     }
 
     impl HasNormalizedSelectionKey for NormalizedField {
@@ -870,8 +933,10 @@ pub(crate) mod normalized_inline_fragment_selection {
     use crate::query_plan::FetchDataPathElement;
     use crate::schema::position::CompositeTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
-    use apollo_compiler::ast::DirectiveList;
+    use apollo_compiler::ast::{DirectiveList, Name};
     use std::sync::Arc;
+
+    use super::normalized_field_selection::collect_variables_from_directive;
 
     /// An analogue of the apollo-compiler type `InlineFragment` with these changes:
     /// - Stores the inline fragment data (other than the selection set) in `NormalizedInlineFragment`,
@@ -897,6 +962,14 @@ pub(crate) mod normalized_inline_fragment_selection {
                 //FIXME
                 selection_set: selection_set.unwrap(),
             }
+        }
+
+        pub(crate) fn collect_variables<'a>(
+            &'a self,
+        ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+            self.inline_fragment
+                .collect_variables()
+                .chain(self.selection_set.collect_variables())
         }
     }
 
@@ -950,6 +1023,16 @@ pub(crate) mod normalized_inline_fragment_selection {
             Some(FetchDataPathElement::TypenameEquals(
                 condition.type_name().clone().into(),
             ))
+        }
+
+        pub(crate) fn collect_variables<'a>(
+            &'a self,
+        ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+            self.data
+                .directives
+                .iter()
+                .map(|directive| collect_variables_from_directive(&*directive))
+                .flatten()
         }
     }
 
@@ -1781,16 +1864,55 @@ impl NormalizedSelectionSet {
         fields
     }
 
-    pub(crate) fn used_variables(&self) -> Vec<Name> {
-        todo!();
-        ();
+    pub(crate) fn used_variables(&self) -> Result<Vec<Name>, FederationError> {
+        let mut v = self
+            .collect_variables()
+            .collect::<Result<HashSet<_>, _>>()?;
+        let mut res: Vec<Name> = v.into_iter().collect();
+        res.sort();
+        Ok(res)
+    }
+
+    pub(crate) fn collect_variables<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+        self.selections
+            .values()
+            .map(|selection| {
+                selection
+                    .collect_variables()
+                    .chain(match selection.selection_set() {
+                        Ok(opt_s) => Box::new(
+                            opt_s
+                                .into_iter()
+                                .map(|selection_set| selection_set.collect_variables())
+                                .flatten(),
+                        ),
+                        Err(e) => Box::new(once(Err(e)))
+                            as Box<dyn Iterator<Item = Result<Name, FederationError>>>,
+                    })
+            })
+            .flatten()
     }
 
     pub(crate) fn validate(
         &self,
         variable_definitions: &[Node<VariableDefinition>],
     ) -> Result<(), FederationError> {
-        todo!()
+        if self.selections.is_empty() {
+            Err(SingleFederationError::Internal {
+                message: "Invalid empty selection set".to_string(),
+            }
+            .into())
+        } else {
+            for selection in self.selections.values() {
+                if let Some(s) = selection.selection_set()? {
+                    s.validate(variable_definitions)?;
+                }
+            }
+
+            Ok(())
+        }
     }
 }
 
