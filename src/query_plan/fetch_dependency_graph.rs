@@ -4,7 +4,7 @@ use crate::query_graph::graph_path::{
 };
 use crate::query_graph::path_tree::{OpPathTree, PathTreeChild};
 use crate::query_graph::{QueryGraph, QueryGraphEdgeTransition};
-use crate::query_plan::conditions::Conditions;
+use crate::query_plan::conditions::{remove_conditions_from_selection_set, Conditions};
 use crate::query_plan::fetch_dependency_graph_processor::RebasedFragments;
 use crate::query_plan::operation::normalized_field_selection::{
     NormalizedField, NormalizedFieldData,
@@ -25,6 +25,8 @@ use indexmap::{IndexMap, IndexSet};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::EdgeRef;
 use std::sync::Arc;
+
+use super::operation::normalized_selection_map::NormalizedSelectionMap;
 
 /// Represents a subgraph fetch of a query plan.
 // PORT_NOTE: The JS codebase called this `FetchGroup`, but this naming didn't make it apparent that
@@ -598,15 +600,22 @@ impl FetchDependencyGraphNode {
             return Ok(None);
         }
         let (selection, output_rewrites) =
-            self.finalize_selection(variable_definitions, handled_conditions);
+            self.finalize_selection(variable_definitions, handled_conditions, &fragments)?;
         let input_nodes = self
             .inputs
             .as_ref()
-            .map(|inputs| inputs.to_selection_set_nodes(variable_definitions, handled_conditions));
+            .map(|inputs| {
+                inputs.to_selection_set_nodes(
+                    variable_definitions,
+                    handled_conditions,
+                    &self.parent_type,
+                )
+            })
+            .transpose()?;
         let subgraph_schema = dependency_graph
             .federated_query_graph
             .schema_by_source(&self.subgraph_name)?;
-        let variable_usages = selection.used_variables();
+        let variable_usages = selection.used_variables()?;
         let mut operation = if self.is_entity_fetch {
             operation_for_entities_fetch(
                 subgraph_schema,
@@ -652,9 +661,10 @@ impl FetchDependencyGraphNode {
 
     fn finalize_selection(
         &self,
-        _variable_definitions: &[Node<VariableDefinition>],
-        _handled_conditions: &Conditions,
-    ) -> (Arc<NormalizedSelectionSet>, Vec<Arc<FetchDataRewrite>>) {
+        variable_definitions: &[Node<VariableDefinition>],
+        handled_conditions: &Conditions,
+        fragments: &Option<&mut RebasedFragments>,
+    ) -> Result<(Arc<NormalizedSelectionSet>, Vec<Arc<FetchDataRewrite>>), FederationError> {
         // Finalizing the selection involves the following:
         // 1. removing any @include/@skip that are not necessary
         //    because they are already handled earlier in the query plan
@@ -672,7 +682,18 @@ impl FetchDependencyGraphNode {
         //    If that is the case, we introduce aliases to the selection to make it valid,
         //    and then generate a rewrite on the output of the fetch
         //    so that data aliased this way is rewritten back to the original/proper response name.
-        todo!() // TODO: port from `FetchGroup.finalizeSelection`
+        let selection_without_conditions = remove_conditions_from_selection_set(
+            &*self.selection_set.selection_set,
+            handled_conditions,
+        );
+        let selection_with_typenames =
+            selection_without_conditions.add_typename_field_for_abstract_types(None, fragments)?;
+
+        let (updated_selection, output_rewrites) =
+            selection_with_typenames.add_aliases_for_non_merging_fields()?;
+
+        updated_selection.validate(variable_definitions)?;
+        Ok((Arc::new(updated_selection), output_rewrites))
     }
 }
 
@@ -771,8 +792,38 @@ impl FetchInputs {
         &self,
         variable_definitions: &[Node<VariableDefinition>],
         handled_conditions: &Conditions,
-    ) -> NormalizedSelectionSet {
-        todo!() // TODO: port from `GroupInputs.toSelectionSetNode`
+        type_position: &CompositeTypeDefinitionPosition,
+    ) -> Result<NormalizedSelectionSet, FederationError> {
+        let selection_sets = self
+            .selection_sets_per_parent_type
+            .values()
+            .map(|selection_set| {
+                remove_conditions_from_selection_set(selection_set, handled_conditions)
+            })
+            .collect::<Vec<_>>();
+        // Making sure we're not generating something invalid.
+        let _: Result<(), FederationError> = selection_sets
+            .iter()
+            .map(|s| s.validate(variable_definitions))
+            .collect();
+        let selections = Arc::new(NormalizedSelectionMap(
+            selection_sets
+                .iter()
+                .map(|selection_set| {
+                    selection_set
+                        .selections
+                        .iter()
+                        .map(|(key, selection)| (key.clone(), selection.clone()))
+                })
+                .flatten()
+                .collect(),
+        ));
+
+        Ok(NormalizedSelectionSet {
+            schema: self.supergraph_schema.clone(),
+            type_position: type_position.clone(),
+            selections,
+        })
     }
 }
 
