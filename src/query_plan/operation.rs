@@ -2465,10 +2465,7 @@ impl NamedFragments {
         fragments.iter().for_each(|(_, fragment)| {
             let mut fragment_usages: HashMap<Name, i32> = HashMap::new();
             NamedFragments::collect_fragment_usages(&fragment.selection_set, &mut fragment_usages);
-            let usages: Vec<Name> = fragment_usages
-                .keys()
-                .map(|n| n.clone())
-                .collect::<Vec<Name>>();
+            let usages: Vec<Name> = fragment_usages.keys().cloned().collect::<Vec<Name>>();
             fragments_map.insert(
                 fragment.name.clone(),
                 FragmentDependencies {
@@ -3006,8 +3003,7 @@ mod tests {
 
     fn parse_schema(schema: &str) -> ValidFederationSchema {
         let parsed_schema = Schema::parse_and_validate(schema, "schema.graphql").unwrap();
-        let federation_schema = ValidFederationSchema::new(parsed_schema).unwrap();
-        federation_schema
+        ValidFederationSchema::new(parsed_schema).unwrap()
     }
 
     #[test]
