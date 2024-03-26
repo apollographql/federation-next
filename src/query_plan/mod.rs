@@ -193,7 +193,7 @@ pub struct FetchDataValueSetter {
     path: Vec<FetchDataPathElement>,
     /// The value to set at `path`. Note that the query planner currently only uses string values,
     /// but that may change in the future.
-    set_value_to: serde_json::Value,
+    set_value_to: serde_json_bytes::Value,
 }
 
 /// A rewrite that renames the key at the provided path of the data it is applied to.
