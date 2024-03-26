@@ -53,10 +53,6 @@ pub struct FetchNode {
     /// Optional identifier for the fetch for defer support. All fetches of a given plan will be
     /// guaranteed to have a unique `id`.
     pub id: Option<NodeStr>,
-    /// If query planner `@defer` support is enabled _and_ the subgraph named `subgraph_name`
-    /// supports `@defer`, then this boolean says whether `operation` contains some `@defer`. `None`
-    /// otherwise.
-    pub has_defers: Option<bool>,
     pub variable_usages: Vec<Name>,
     /// `Selection`s in apollo-rs _can_ have a `FragmentSpread`, but this `Selection` is
     /// specifically typing the `requires` key in a built query plan, where there can't be
