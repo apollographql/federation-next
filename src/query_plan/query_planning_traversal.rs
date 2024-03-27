@@ -90,17 +90,66 @@ struct OpenBranchAndSelections {
     selections: Vec<NormalizedSelection>,
 }
 
-struct BestQueryPlanInfo {
+pub(crate) struct BestQueryPlanInfo {
     /// The fetch dependency graph for this query plan.
-    fetch_dependency_graph: FetchDependencyGraph,
+    pub fetch_dependency_graph: FetchDependencyGraph,
     /// The path tree for the closed branch options chosen for this query plan.
-    path_tree: OpPathTree,
+    pub path_tree: OpPathTree,
     /// The cost of this query plan.
-    cost: QueryPlanCost,
+    pub cost: QueryPlanCost,
+}
+
+impl BestQueryPlanInfo {
+    pub fn empty(parameters: &QueryPlanningParameters) -> Self {
+        Self {
+            fetch_dependency_graph: FetchDependencyGraph::new(
+                parameters.supergraph_schema,
+                parameters.federated_query_graph.clone(),
+                None,
+                0,
+            ),
+            path_tree: OpPathTree::new(parameters.federated_query_graph, parameters.head),
+            cost: Default::default(),
+        }
+    }
 }
 
 impl QueryPlanningTraversal {
-    fn find_best_plan(&mut self) -> Result<Option<&BestQueryPlanInfo>, FederationError> {
+    pub fn new(
+        // TODO(@goto-bus-stop): take a reference here? the traversal struct should always be
+        // short-lived?
+        parameters: QueryPlanningParameters,
+        selection_set: NormalizedSelectionSet,
+        has_defers: bool,
+        root_kind: SchemaRootDefinitionKind,
+        cost_processor: FetchDependencyGraphToCostProcessor,
+    ) -> Self {
+        Self {
+            parameters,
+            root_kind,
+            has_defers,
+            starting_id_generation: 0,
+            cost_processor,
+            // TODO(@goto-bus-stop): Is this correct?
+            is_top_level: parameters.head_must_be_root,
+            // TODO Use resolve_condition_plan
+            condition_resolver: CachingConditionResolver,
+            open_branches: Default::default(),
+            closed_branches: Default::default(),
+            best_plan: None,
+        }
+    }
+
+    // PORT_NOTE: In JS, the traversal is still usable after finding the best plan.
+    // TODO(@goto-bus-stop): Do we still need it? It's easier if we can consume the traversal
+    // struct and return an owned BestQueryPlan. Alternatively, do we need to store the `best_plan`
+    // in `self`?
+    pub fn find_best_plan(mut self) -> Result<Option<BestQueryPlanInfo>, FederationError> {
+        self.find_best_plan_inner()?;
+        Ok(self.best_plan)
+    }
+
+    fn find_best_plan_inner(&mut self) -> Result<Option<&BestQueryPlanInfo>, FederationError> {
         while let Some(mut current_branch) = self.open_branches.pop() {
             let Some(current_selection) = current_branch.selections.pop() else {
                 return Err(FederationError::internal(

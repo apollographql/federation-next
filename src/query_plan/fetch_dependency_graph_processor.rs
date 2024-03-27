@@ -52,7 +52,13 @@ pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
 }
 
 // TODO
-pub(crate) struct RebasedFragments;
+pub(crate) struct RebasedFragments();
+
+impl RebasedFragments {
+    pub fn new(fragments) ->Self{
+        Self()
+    }
+}
 
 /// Computes the cost of a Plan.
 ///
