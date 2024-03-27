@@ -55,7 +55,10 @@ pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
 pub(crate) struct RebasedFragments();
 
 impl RebasedFragments {
-    pub fn new(fragments) ->Self{
+    // TODO(@goto-bus-stop): Remove post https://github.com/apollographql/federation-next/pull/239
+    pub fn new(
+        fragments: &Arc<indexmap::IndexMap<Name, Node<super::operation::NormalizedFragment>>>,
+    ) -> Self {
         Self()
     }
 }
