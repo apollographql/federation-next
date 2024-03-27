@@ -1,21 +1,32 @@
 use crate::error::FederationError;
+use crate::error::SingleFederationError;
 use crate::link::federation_spec_definition::FederationSpecDefinition;
 use crate::link::federation_spec_definition::FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC;
 use crate::link::spec::Identity;
 use crate::query_graph::build_federated_query_graph;
+use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
+use crate::query_plan::fetch_dependency_graph::FetchDependencyGraph;
+use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToCostProcessor;
+use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToQueryPlanProcessor;
 use crate::query_plan::operation::normalize_operation;
+use crate::query_plan::operation::NormalizedSelectionSet;
+use crate::query_plan::query_planning_traversal::BestQueryPlanInfo;
 use crate::query_plan::query_planning_traversal::QueryPlanningParameters;
+use crate::query_plan::query_planning_traversal::QueryPlanningTraversal;
 use crate::query_plan::FetchNode;
+use crate::query_plan::PlanNode;
 use crate::query_plan::QueryPlan;
 use crate::schema::position::AbstractTypeDefinitionPosition;
 use crate::schema::position::InterfaceTypeDefinitionPosition;
 use crate::schema::position::ObjectTypeDefinitionPosition;
+use crate::schema::position::SchemaRootDefinitionKind;
 use crate::schema::position::TypeDefinitionPosition;
 use crate::schema::ValidFederationSchema;
 use crate::ApiSchemaOptions;
 use crate::Supergraph;
 use apollo_compiler::schema::ExtendedType;
+use apollo_compiler::schema::Name;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::ExecutableDocument;
 use apollo_compiler::NodeStr;
@@ -266,10 +277,10 @@ impl QueryPlanner {
     pub fn build_query_plan(
         &self,
         document: &Valid<ExecutableDocument>,
-        operation_name: Option<&str>,
+        operation_name: Option<Name>,
     ) -> Result<QueryPlan, FederationError> {
         let operation = document
-            .get_operation(operation_name)
+            .get_operation(operation_name.as_ref().map(|name| name.as_str()))
             // TODO(@goto-bus-stop) this is not an internal error
             .map_err(|_| FederationError::internal("requested operation does not exist"))?;
 
@@ -290,16 +301,16 @@ impl QueryPlanner {
             let mut subgraphs = self
                 .federated_query_graph
                 .sources()
-                .filter(|(&name, _schema)| name != "_");
+                .filter(|&(name, _schema)| name != "_");
             if let (Some((subgraph_name, subgraph_schema)), None) =
                 (subgraphs.next(), subgraphs.next())
             {
                 let node = FetchNode {
                     subgraph_name: subgraph_name.clone(),
                     operation_document: document.clone(),
-                    operation_name: operation_name.map(|name| name.into()),
+                    operation_name: operation_name.as_deref().map(|name| name.clone()),
                     operation_kind: operation.operation_type,
-                    id: Some("single".into()),
+                    id: None,
                     has_defers: None,
                     variable_usages: operation
                         .variables
@@ -315,8 +326,8 @@ impl QueryPlanner {
             }
         }
 
+        let reuse_query_fragments = self.config.reuse_query_fragments;
         /*
-            const reuseQueryFragments = this.config.reuseQueryFragments ?? true;
             let fragments = operation.fragments;
             if (fragments && !fragments.isEmpty() && reuseQueryFragments) {
               // For all subgraph fetches we query `__typename` on every abstract types (see `FetchGroup.toPlanNode`) so if we want
@@ -334,72 +345,74 @@ impl QueryPlanner {
             &self.interface_types_with_interface_objects,
         )?;
 
-        /*
-            let assignedDeferLabels: Set<string> | undefined = undefined;
-            let hasDefers = false;
-            let deferConditions: SetMultiMap<string, string> | undefined = undefined;
-            if (this.config.incrementalDelivery.enableDefer) {
-              ({ operation, hasDefers, assignedDeferLabels, deferConditions } = operation.withNormalizedDefer());
-              if (isSubscription && hasDefers) {
-                throw new Error(`@defer is not supported on subscriptions`);
-              }
-            } else {
-              // If defer is not enabled, we remove all @defer from the query. This feels cleaner do this once here than
-              // having to guard all the code dealing with defer later, and is probably less error prone too (less likely
-              // to end up passing through a @defer to a subgraph by mistake).
-              operation = operation.withoutDefer();
+        let mut assigned_defer_labels = None;
+        let mut has_defers = false;
+        let mut defer_conditions = None;
+        let normalized_operation = if self.config.incremental_delivery.enable_defer {
+            let defer = normalized_operation.with_normalized_defer();
+            if defer.has_defers && is_subscription {
+                return Err(SingleFederationError::DeferredSubscriptionUnsupported.into());
             }
-        */
+            assigned_defer_labels = defer.assigned_defer_labels;
+            has_defers = defer.has_defers;
+            defer_conditions = defer.defer_conditions;
+            defer.operation
+        } else {
+            // If defer is not enabled, we remove all @defer from the query. This feels cleaner do this once here than
+            // having to guard all the code dealing with defer later, and is probably less error prone too (less likely
+            // to end up passing through a @defer to a subgraph by mistake).
+            normalized_operation.without_defer()
+        };
 
         if normalized_operation.selection_set.selections.is_empty() {
             return Ok(QueryPlan::default());
         }
 
-        let root = self
+        let Some(root) = self
             .federated_query_graph
-            .root(normalized_operation.root_kind);
+            .root_kinds_to_nodes()?
+            .get(&normalized_operation.root_kind)
+        else {
+            panic!(
+                "Shouldn't have a {0} operation if the subgraphs don't have a {0} root",
+                normalized_operation.root_kind
+            );
+        };
 
-        let processor = fetch_group_to_plan_processor(/* TODO */);
+        let processor = FetchDependencyGraphToQueryPlanProcessor::new(
+            Arc::new(self.config.clone()),
+            operation.variables.clone(),
+            None, // RebasedFragments::new(normalized_operation.fragments),
+            operation_name.clone(),
+            assigned_defer_labels,
+        );
         let parameters = QueryPlanningParameters {
             supergraph_schema: self.supergraph_schema.clone(),
             federated_query_graph: self.federated_query_graph.clone(),
             operation: Arc::new(normalized_operation),
             processor,
-            head: todo!(),
-            head_must_be_root: todo!(),
+            head: root.clone(),
+            // TODO(@goto-bus-stop): Is hardcoding this correct?
+            head_must_be_root: true,
+            statistics,
             abstract_types_with_inconsistent_runtime_types: self
                 .abstract_types_with_inconsistent_runtime_types
                 .clone()
                 .into(),
             config: self.config.clone(),
+            // TODO(@goto-bus-stop): what about `override_conditions`?
+        };
+
+        let root_node = match defer_conditions {
+            Some(defer_conditions) if !defer_conditions.is_empty() => {
+                compute_plan_for_defer_conditionals(parameters, defer_conditions)
+            }
+            _ => compute_plan_internal(parameters, has_defers),
         };
 
         todo!();
 
         /*
-            this._lastGeneratedPlanStatistics = statistics;
-
-            const root = this.federatedQueryGraph.root(operation.rootKind);
-            assert(root, () => `Shouldn't have a ${operation.rootKind} operation if the subgraphs don't have a ${operation.rootKind} root`);
-            const processor = fetchGroupToPlanProcessor({
-              config: this.config,
-              variableDefinitions: operation.variableDefinitions,
-              fragments: fragments ? new RebasedFragments(fragments) : undefined,
-              operationName: operation.name,
-              assignedDeferLabels,
-            });
-
-            const parameters: PlanningParameters<RootVertex> = {
-              supergraphSchema: this.supergraph.schema,
-              federatedQueryGraph: this.federatedQueryGraph,
-              operation,
-              processor,
-              root,
-              statistics,
-              inconsistentAbstractTypesRuntimes: this.inconsistentAbstractTypesRuntimes,
-              config: this.config,
-            }
-
             let rootNode: PlanNode | SubscriptionNode | undefined;
             if (deferConditions && deferConditions.size > 0) {
               assert(hasDefers, 'Should not have defer conditions without @defer');
@@ -449,6 +462,81 @@ impl QueryPlanner {
             return { kind: 'QueryPlan', node: rootNode };
         */
     }
+}
+
+fn compute_root_serial_dependency_graph(
+    parameters: QueryPlanningParameters,
+    has_defers: bool,
+) -> Result<Vec<FetchDependencyGraph>, FederationError> {
+    todo!()
+}
+
+fn compute_root_parallel_dependency_graph(
+    parameters: QueryPlanningParameters,
+    has_defers: bool,
+) -> Result<FetchDependencyGraph, FederationError> {
+    let selection_set = parameters.operation.selection_set.clone();
+    let best_plan = compute_root_parallel_best_plan(parameters, selection_set, has_defers)?;
+    Ok(best_plan.fetch_dependency_graph)
+}
+
+fn compute_root_parallel_best_plan(
+    parameters: QueryPlanningParameters,
+    selection: NormalizedSelectionSet,
+    has_defers: bool,
+) -> Result<BestQueryPlanInfo, FederationError> {
+    let planning_traversal = QueryPlanningTraversal::new(
+        parameters,
+        selection,
+        has_defers,
+        todo!(), // parameters.head,
+        // TODO
+        FetchDependencyGraphToCostProcessor,
+    );
+
+    // Getting no plan means the query is essentially unsatisfiable (it's a valid query, but we can prove it will never return a result),
+    // so we just return an empty plan.
+    Ok(planning_traversal
+        .find_best_plan()?
+        .unwrap_or_else(|| BestQueryPlanInfo::empty(&parameters)))
+}
+
+fn compute_plan_internal(
+    parameters: QueryPlanningParameters,
+    has_defers: bool,
+) -> Result<Option<PlanNode>, FederationError> {
+    let mut main = None;
+    let mut primary_selection = None::<Arc<NormalizedSelectionSet>>;
+    let mut deferred = vec![];
+
+    let root_kind = parameters.operation.root_kind;
+
+    if root_kind == SchemaRootDefinitionKind::Mutation {
+        let dependency_graphs = compute_root_serial_dependency_graph(parameters, has_defers)?;
+        for mut dependency_graph in dependency_graphs {
+            let (local_main, local_deferred) =
+                dependency_graph.process(parameters.processor, root_kind)?;
+            main = match main {
+                Some(unlocal_main) => parameters
+                    .processor
+                    .reduce_sequence(unlocal_main, local_main),
+                None => local_main,
+            };
+            deferred.extend(local_deferred);
+            let new_selection = dependency_graph.defer_tracking.primary_selection.clone();
+            match primary_selection.as_mut() {
+                Some(selection) => selection.merge_into(new_selection.into_iter())?,
+                None => primary_selection = new_selection,
+            }
+        }
+        todo!()
+    } else {
+        let mut dependency_graph = compute_root_parallel_dependency_graph(parameters, has_defers)?;
+        (main, deferred) =
+            dependency_graph.process(parameters.processor, parameters.operation.root_kind)?;
+        primary_selection = dependency_graph.defer_tracking.primary_selection.clone();
+    }
+    todo!()
 }
 
 #[cfg(test)]

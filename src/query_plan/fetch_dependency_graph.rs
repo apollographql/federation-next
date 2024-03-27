@@ -5,6 +5,7 @@ use crate::query_graph::graph_path::{
 use crate::query_graph::path_tree::{OpPathTree, PathTreeChild};
 use crate::query_graph::{QueryGraph, QueryGraphEdgeTransition};
 use crate::query_plan::conditions::Conditions;
+use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphProcessor;
 use crate::query_plan::fetch_dependency_graph_processor::RebasedFragments;
 use crate::query_plan::operation::normalized_field_selection::{
     NormalizedField, NormalizedFieldData,
@@ -125,7 +126,7 @@ pub(crate) struct FetchDependencyGraph {
     /// the subgraphs.
     root_nodes_by_subgraph: IndexMap<NodeStr, NodeIndex>,
     /// Tracks metadata about deferred blocks and their dependencies on one another.
-    defer_tracking: DeferTracking,
+    pub(crate) defer_tracking: DeferTracking,
     /// The initial fetch ID generation (used when handling `@defer`).
     starting_id_generation: u64,
     /// The current fetch ID generation (used when handling `@defer`).
@@ -140,9 +141,9 @@ pub(crate) struct FetchDependencyGraph {
 // TODO: Write docstrings
 #[derive(Debug, Clone)]
 pub(crate) struct DeferTracking {
-    top_level_deferred: IndexSet<NodeStr>,
-    deferred: IndexMap<NodeStr, DeferredInfo>,
-    primary_selection: Option<Arc<NormalizedSelectionSet>>,
+    pub(crate) top_level_deferred: IndexSet<NodeStr>,
+    pub(crate) deferred: IndexMap<NodeStr, DeferredInfo>,
+    pub(crate) primary_selection: Option<Arc<NormalizedSelectionSet>>,
 }
 
 // TODO: Write docstrings
@@ -553,6 +554,17 @@ impl FetchDependencyGraph {
         self.supergraph_schema
             .get_type(type_name.clone())?
             .try_into()
+    }
+
+    /// Processes the "plan" represented by this query graph using the provided `processor`.
+    ///
+    /// Returns a main part and a (potentially empty) deferred part.
+    pub(crate) fn process<TProcessed, TDeferred>(
+        &mut self,
+        processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
+        root_kind: SchemaRootDefinitionKind,
+    ) -> Result<(TProcessed, Vec<TDeferred>), FederationError> {
+        todo!()
     }
 }
 

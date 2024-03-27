@@ -180,6 +180,8 @@ pub enum SingleFederationError {
     InterfaceKeyNotOnImplementation { message: String },
     #[error("{message}")]
     InterfaceKeyMissingImplementationType { message: String },
+    #[error("@defer is not supported on subscriptions")]
+    DeferredSubscriptionUnsupported,
 }
 
 impl SingleFederationError {
@@ -350,6 +352,7 @@ impl SingleFederationError {
             SingleFederationError::InterfaceKeyMissingImplementationType { .. } => {
                 ErrorCode::InterfaceKeyMissingImplementationType
             }
+            SingleFederationError::DeferredSubscriptionUnsupported => ErrorCode::Internal,
         }
     }
 }
