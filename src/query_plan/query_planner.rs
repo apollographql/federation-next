@@ -353,9 +353,9 @@ impl QueryPlanner {
             if defer.has_defers && is_subscription {
                 return Err(SingleFederationError::DeferredSubscriptionUnsupported.into());
             }
-            assigned_defer_labels = defer.assigned_defer_labels;
+            assigned_defer_labels = Some(defer.assigned_defer_labels);
             has_defers = defer.has_defers;
-            defer_conditions = defer.defer_conditions;
+            defer_conditions = Some(defer.defer_conditions);
             defer.operation
         } else {
             // If defer is not enabled, we remove all @defer from the query. This feels cleaner do this once here than
@@ -536,6 +536,13 @@ fn compute_plan_internal(
             dependency_graph.process(parameters.processor, parameters.operation.root_kind)?;
         primary_selection = dependency_graph.defer_tracking.primary_selection.clone();
     }
+    todo!()
+}
+
+fn compute_plan_for_defer_conditionals(
+    _parameters: QueryPlanningParameters,
+    _defer_conditions: IndexMap<String, IndexSet<String>>,
+) -> Result<Option<PlanNode>, FederationError> {
     todo!()
 }
 

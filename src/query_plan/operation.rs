@@ -25,9 +25,11 @@ use apollo_compiler::executable::{
     Field, Fragment, FragmentSpread, InlineFragment, Operation, Selection, SelectionSet,
     VariableDefinition,
 };
+use apollo_compiler::NodeStr;
 use apollo_compiler::{name, Node};
 use indexmap::{IndexMap, IndexSet};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
@@ -66,6 +68,61 @@ pub struct NormalizedOperation {
     pub(crate) directives: Arc<DirectiveList>,
     pub(crate) selection_set: NormalizedSelectionSet,
     pub(crate) fragments: Arc<IndexMap<Name, Node<NormalizedFragment>>>,
+}
+
+pub(crate) struct NormalizedDefer {
+    pub operation: NormalizedOperation,
+    pub has_defers: bool,
+    pub assigned_defer_labels: HashSet<NodeStr>,
+    pub defer_conditions: IndexMap<String, IndexSet<String>>,
+}
+
+impl NormalizedOperation {
+    // PORT_NOTE(@goto-bus-stop): It might make sense for the returned data structure to *be* the
+    // `DeferNormalizer` from the JS side
+    pub(crate) fn with_normalized_defer(self) -> NormalizedDefer {
+        todo!()
+    }
+
+    pub(crate) fn without_defer(mut self) -> Self {
+        fn field_has_defer(field: &NormalizedFieldSelection) -> bool {
+            field.field.data().directives.has("defer")
+                || field
+                    .selection_set
+                    .as_ref()
+                    .is_some_and(selection_set_has_defer)
+        }
+        fn fragment_spread_has_defer(fragment: &NormalizedFragmentSpreadSelection) -> bool {
+            fragment.data().directives.has("defer")
+        }
+        fn inline_fragment_has_defer(inline: &NormalizedInlineFragmentSelection) -> bool {
+            inline.inline_fragment.data().directives.has("defer")
+                || selection_set_has_defer(&inline.selection_set)
+        }
+        fn selection_has_defer(selection: &NormalizedSelection) -> bool {
+            match selection {
+                NormalizedSelection::Field(field) => field_has_defer(field),
+                NormalizedSelection::FragmentSpread(fragment) => {
+                    fragment_spread_has_defer(fragment)
+                }
+                NormalizedSelection::InlineFragment(inline) => inline_fragment_has_defer(inline),
+            }
+        }
+        fn selection_set_has_defer(set: &NormalizedSelectionSet) -> bool {
+            set.selections.values().any(selection_has_defer)
+        }
+        fn fragment_definition_has_defer(fragment: &Node<NormalizedFragment>) -> bool {
+            selection_set_has_defer(&fragment.selection_set)
+        }
+
+        if selection_set_has_defer(&self.selection_set)
+            || self.fragments.values().any(fragment_definition_has_defer)
+        {
+            todo!("@defer not implemented");
+        }
+
+        self
+    }
 }
 
 /// An analogue of the apollo-compiler type `SelectionSet` with these changes:
