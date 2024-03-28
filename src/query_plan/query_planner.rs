@@ -500,14 +500,13 @@ fn compute_plan_internal(
     mut parameters: QueryPlanningParameters,
     has_defers: bool,
 ) -> Result<Option<PlanNode>, FederationError> {
-    let mut main = None::<PlanNode>;
-    let mut primary_selection = None::<Arc<NormalizedSelectionSet>>;
-    let mut deferred = vec![];
-
     let root_kind = parameters.operation.root_kind;
 
-    if root_kind == SchemaRootDefinitionKind::Mutation {
+    let (main, deferred, primary_selection) = if root_kind == SchemaRootDefinitionKind::Mutation {
         let dependency_graphs = compute_root_serial_dependency_graph(&parameters, has_defers)?;
+        let mut main = None;
+        let mut deferred = vec![];
+        let mut primary_selection = None::<NormalizedSelectionSet>;
         for mut dependency_graph in dependency_graphs {
             let (local_main, local_deferred) =
                 dependency_graph.process(&mut parameters.processor, root_kind)?;
@@ -518,21 +517,26 @@ fn compute_plan_internal(
                 None => local_main,
             };
             deferred.extend(local_deferred);
-            let new_selection = dependency_graph.defer_tracking.primary_selection.clone();
+            let new_selection = dependency_graph.defer_tracking.primary_selection.as_deref();
             match primary_selection.as_mut() {
-                Some(selection) => {
-                    Arc::make_mut(selection).merge_into(new_selection.as_deref().into_iter())?
-                }
-                None => primary_selection = new_selection,
+                Some(selection) => selection.merge_into(new_selection.into_iter())?,
+                None => primary_selection = new_selection.cloned(),
             }
         }
         todo!()
     } else {
         let mut dependency_graph = compute_root_parallel_dependency_graph(&parameters, has_defers)?;
-        (main, deferred) =
-            dependency_graph.process(&mut parameters.processor, parameters.operation.root_kind)?;
-        primary_selection = dependency_graph.defer_tracking.primary_selection.clone();
-    }
+
+        let (main, deferred) = dependency_graph.process(&mut parameters.processor, root_kind)?;
+        // XXX(@goto-bus-stop) Maybe `.defer_tracking` should be on the return value of `process()`..?
+        let primary_selection = dependency_graph
+            .defer_tracking
+            .primary_selection
+            .as_deref()
+            .cloned();
+
+        (main, deferred, primary_selection)
+    };
 
     if deferred.is_empty() {
         Ok(main)
