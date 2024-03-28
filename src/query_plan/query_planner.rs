@@ -521,7 +521,7 @@ fn compute_plan_internal(
                 None => primary_selection = new_selection.cloned(),
             }
         }
-        todo!()
+        (main, deferred, primary_selection)
     } else {
         let mut dependency_graph = compute_root_parallel_dependency_graph(&parameters, has_defers)?;
 
