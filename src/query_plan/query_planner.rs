@@ -283,7 +283,7 @@ impl QueryPlanner {
     ) -> Result<QueryPlan, FederationError> {
         let operation = document
             .get_operation(operation_name.as_ref().map(|name| name.as_str()))
-            // TODO(@goto-bus-stop) this is not an internal error
+            // TODO(@goto-bus-stop) this is not an internal error, but a user error
             .map_err(|_| FederationError::internal("requested operation does not exist"))?;
 
         // TODO(@goto-bus-stop) this isn't valid GraphQL so it should not return Ok()?
@@ -395,7 +395,7 @@ impl QueryPlanner {
             operation: Arc::new(normalized_operation),
             processor,
             head: *root,
-            // TODO(@goto-bus-stop): Is hardcoding this correct?
+            // FIXME(@goto-bus-stop): Is hardcoding this correct?
             head_must_be_root: true,
             statistics,
             abstract_types_with_inconsistent_runtime_types: self
@@ -403,7 +403,7 @@ impl QueryPlanner {
                 .clone()
                 .into(),
             config: self.config.clone(),
-            // TODO(@goto-bus-stop): what about `override_conditions`?
+            // XXX(@goto-bus-stop): what about `override_conditions`?
         };
 
         let root_node = match defer_conditions {

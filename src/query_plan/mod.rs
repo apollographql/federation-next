@@ -35,7 +35,7 @@ pub enum TopLevelPlanNode {
 #[derive(Debug, Clone)]
 pub struct SubscriptionNode {
     pub primary: Box<FetchNode>,
-    // TODO(@goto-bus-stop) Is this not just always a SequenceNode?
+    // XXX(@goto-bus-stop) Is this not just always a SequenceNode?
     pub rest: Option<Box<PlanNode>>,
 }
 

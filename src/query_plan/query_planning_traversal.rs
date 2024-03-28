@@ -126,7 +126,7 @@ impl<'a> QueryPlanningTraversal<'a> {
         root_kind: SchemaRootDefinitionKind,
         cost_processor: FetchDependencyGraphToCostProcessor,
     ) -> Self {
-        // TODO(@goto-bus-stop): Is this correct?
+        // FIXME(@goto-bus-stop): Is this correct?
         let is_top_level = parameters.head_must_be_root;
         Self {
             parameters,
@@ -135,7 +135,7 @@ impl<'a> QueryPlanningTraversal<'a> {
             starting_id_generation: 0,
             cost_processor,
             is_top_level,
-            // TODO Use self.resolve_condition_plan()
+            // TODO(@goto-bus-stop): Use `self.resolve_condition_plan()` once it exists
             condition_resolver: CachingConditionResolver,
             open_branches: Default::default(),
             closed_branches: Default::default(),
@@ -143,10 +143,12 @@ impl<'a> QueryPlanningTraversal<'a> {
         }
     }
 
-    // PORT_NOTE: In JS, the traversal is still usable after finding the best plan.
-    // TODO(@goto-bus-stop): Do we still need it? It's easier if we can consume the traversal
+    // PORT_NOTE: In JS, the traversal is still usable after finding the best plan. Here we consume
+    // the struct so we do not need to return a reference.
+    //
+    // XXX(@goto-bus-stop): Do we still need it? It's easier if we can consume the traversal
     // struct and return an owned BestQueryPlan. Alternatively, do we need to store the `best_plan`
-    // in `self`?
+    // in `self` at all?
     pub fn find_best_plan(mut self) -> Result<Option<BestQueryPlanInfo>, FederationError> {
         self.find_best_plan_inner()?;
         Ok(self.best_plan)
