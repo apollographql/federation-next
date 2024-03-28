@@ -53,9 +53,9 @@ pub(crate) struct QueryPlanningParameters {
     pub(crate) statistics: QueryPlanningStatistics,
 }
 
-pub(crate) struct QueryPlanningTraversal {
+pub(crate) struct QueryPlanningTraversal<'a> {
     /// The parameters given to query planning.
-    parameters: QueryPlanningParameters,
+    parameters: &'a QueryPlanningParameters,
     /// The root kind of the operation.
     root_kind: SchemaRootDefinitionKind,
     /// True if query planner `@defer` support is enabled and the operation contains some `@defer`
@@ -114,12 +114,13 @@ impl BestQueryPlanInfo {
     }
 }
 
-impl QueryPlanningTraversal {
+impl<'a> QueryPlanningTraversal<'a> {
     pub fn new(
-        // TODO(@goto-bus-stop): take a reference here? the traversal struct should always be
-        // short-lived? It's kind of big to copy but if the lifetime is statically knowable we
-        // should not Arc it.
-        parameters: QueryPlanningParameters,
+        // TODO(@goto-bus-stop): This probably needs a mutable reference for some of the
+        // yet-unimplemented methods, and storing a mutable ref in `Self` here smells bad.
+        // The ownership of `QueryPlanningParameters` is awkward and should probably be
+        // refactored.
+        parameters: &'a QueryPlanningParameters,
         _selection_set: NormalizedSelectionSet,
         has_defers: bool,
         root_kind: SchemaRootDefinitionKind,
