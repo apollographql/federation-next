@@ -1378,7 +1378,7 @@ impl OpGraphPath {
                             {
                                 let edge_weight = self.graph.edge_weight(edge)?;
                                 return Err(FederationError::internal(format!(
-                                    "Unexpectedly missing {} for {} from {}",
+                                    "Unexpectedly missing {} for {} from path {}",
                                     operation_field, edge_weight, self,
                                 )));
                             }
@@ -2011,8 +2011,14 @@ impl OpGraphPath {
 }
 
 impl Display for OpGraphPath {
-    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        let mut iter = self.edges.iter();
+        if let Some(edge) = iter.next() {
+            write!(f, "{edge:?}")?;
+            iter.try_for_each(|edge| write!(f, ", {edge:?}"))?;
+        }
+        write!(f, "]")
     }
 }
 
