@@ -383,6 +383,8 @@ impl QueryPlanner {
         let processor = FetchDependencyGraphToQueryPlanProcessor::new(
             Arc::new(self.config.clone()),
             operation.variables.clone(),
+            // TODO(@goto-bus-stop): Use the new RebasedFragments type from
+            // https://github.com/apollographql/federation-next/pull/239
             None, // RebasedFragments::new(normalized_operation.fragments),
             operation_name.clone(),
             assigned_defer_labels,
