@@ -483,9 +483,7 @@ fn compute_root_parallel_best_plan(
         parameters,
         selection,
         has_defers,
-        // TODO
-        SchemaRootDefinitionKind::Query, // parameters.head,
-        // TODO
+        parameters.operation.root_kind,
         FetchDependencyGraphToCostProcessor,
     );
 

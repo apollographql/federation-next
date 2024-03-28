@@ -14,6 +14,7 @@ use crate::query_plan::operation::{
     NormalizedOperation, NormalizedSelection, NormalizedSelectionSet,
 };
 use crate::query_plan::query_planner::QueryPlannerConfig;
+use crate::query_plan::query_planner::QueryPlanningStatistics;
 use crate::query_plan::QueryPlanCost;
 use crate::schema::position::ObjectTypeDefinitionPosition;
 use crate::schema::position::SchemaRootDefinitionKind;
@@ -22,8 +23,6 @@ use crate::schema::ValidFederationSchema;
 use indexmap::IndexSet;
 use petgraph::graph::NodeIndex;
 use std::sync::Arc;
-
-use super::query_planner::QueryPlanningStatistics;
 
 // PORT_NOTE: Named `PlanningParameters` in the JS codebase, but there was no particular reason to
 // leave out to the `Query` prefix, so it's been added for consistency. Similar to `GraphPath`, we
@@ -100,6 +99,7 @@ pub(crate) struct BestQueryPlanInfo {
 }
 
 impl BestQueryPlanInfo {
+    // PORT_NOTE: The equivalent of `createEmptyPlan` in the JS codebase.
     pub fn empty(parameters: &QueryPlanningParameters) -> Self {
         Self {
             fetch_dependency_graph: FetchDependencyGraph::new(
