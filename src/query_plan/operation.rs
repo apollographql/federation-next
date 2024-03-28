@@ -1129,146 +1129,138 @@ impl NormalizedSelectionSet {
     /// Merges the given normalized selection sets into this one.
     pub(crate) fn merge_into<'op>(
         &mut self,
-        others: impl Iterator<Item = &'op NormalizedSelectionSet> + ExactSizeIterator,
+        others: impl Iterator<Item = &'op NormalizedSelectionSet>,
     ) -> Result<(), FederationError> {
-        if others.len() > 0 {
-            let mut selections_to_merge = vec![];
-            for other in others {
-                if other.schema != self.schema {
-                    return Err(Internal {
-                        message: "Cannot merge selection sets from different schemas".to_owned(),
-                    }
-                    .into());
+        let mut selections_to_merge = vec![];
+        for other in others {
+            if other.schema != self.schema {
+                return Err(Internal {
+                    message: "Cannot merge selection sets from different schemas".to_owned(),
                 }
-                if other.type_position != self.type_position {
-                    return Err(Internal {
+                .into());
+            }
+            if other.type_position != self.type_position {
+                return Err(Internal {
                         message: format!(
                             "Cannot merge selection set for type \"{}\" into a selection set for type \"{}\"",
                             other.type_position,
                             self.type_position,
                         ),
                     }.into());
-                }
-                let selections = Arc::try_unwrap(other.selections)
-                    .unwrap_or_else(|selections| selections.deref().clone());
-                selections_to_merge.extend(selections.values());
             }
-            self.merge_selections_into(selections_to_merge.into_iter())?;
+            selections_to_merge.extend(other.selections.values());
         }
-        Ok(())
+        self.merge_selections_into(selections_to_merge.into_iter())
     }
 
     /// A helper function for merging the given selections into this one.
     fn merge_selections_into<'op>(
         &mut self,
-        others: impl Iterator<Item = &'op NormalizedSelection> + ExactSizeIterator,
+        others: impl Iterator<Item = &'op NormalizedSelection>,
     ) -> Result<(), FederationError> {
-        if others.len() > 0 {
-            let mut fields = IndexMap::new();
-            let mut fragment_spreads = IndexMap::new();
-            let mut inline_fragments = IndexMap::new();
-            for other_selection in others {
-                let other_key = other_selection.key();
-                match Arc::make_mut(&mut self.selections).entry(other_key.clone()) {
-                    Entry::Occupied(existing) => match existing.get() {
-                        NormalizedSelection::Field(self_field_selection) => {
-                            let NormalizedSelection::Field(other_field_selection) = other_selection
-                            else {
-                                return Err(Internal {
-                                        message: format!(
-                                            "Field selection key for field \"{}\" references non-field selection",
-                                            self_field_selection.field.data().field_position,
-                                        ),
-                                    }.into());
-                            };
-                            fields
-                                .entry(other_key)
-                                .or_insert_with(Vec::new)
-                                .push(other_field_selection);
-                        }
-                        NormalizedSelection::FragmentSpread(self_fragment_spread_selection) => {
-                            let NormalizedSelection::FragmentSpread(
-                                other_fragment_spread_selection,
-                            ) = other_selection
-                            else {
-                                return Err(Internal {
-                                        message: format!(
-                                            "Fragment spread selection key for fragment \"{}\" references non-field selection",
-                                            self_fragment_spread_selection.data().fragment_name,
-                                        ),
-                                    }.into());
-                            };
-                            fragment_spreads
-                                .entry(other_key)
-                                .or_insert_with(Vec::new)
-                                .push(other_fragment_spread_selection);
-                        }
-                        NormalizedSelection::InlineFragment(self_inline_fragment_selection) => {
-                            let NormalizedSelection::InlineFragment(
-                                other_inline_fragment_selection,
-                            ) = other_selection
-                            else {
-                                return Err(Internal {
-                                        message: format!(
-                                            "Inline fragment selection key under parent type \"{}\" {}references non-field selection",
-                                            self_inline_fragment_selection.inline_fragment.data().parent_type_position,
-                                            self_inline_fragment_selection.inline_fragment.data().type_condition_position.clone()
-                                                .map_or_else(
-                                                    String::new,
-                                                    |cond| format!("(type condition: {}) ", cond),
-                                                ),
-                                        ),
-                                    }.into());
-                            };
-                            inline_fragments
-                                .entry(other_key)
-                                .or_insert_with(Vec::new)
-                                .push(other_inline_fragment_selection);
-                        }
-                    },
-                    Entry::Vacant(vacant) => {
-                        vacant.insert(other_selection.clone())?;
+        let mut fields = IndexMap::new();
+        let mut fragment_spreads = IndexMap::new();
+        let mut inline_fragments = IndexMap::new();
+
+        let target = Arc::make_mut(&mut self.selections);
+
+        for other_selection in others {
+            let other_key = other_selection.key();
+            match target.entry(other_key.clone()) {
+                Entry::Occupied(existing) => match existing.get() {
+                    NormalizedSelection::Field(self_field_selection) => {
+                        let NormalizedSelection::Field(other_field_selection) = other_selection
+                        else {
+                            return Err(Internal {
+                                    message: format!(
+                                        "Field selection key for field \"{}\" references non-field selection",
+                                        self_field_selection.field.data().field_position,
+                                    ),
+                                }.into());
+                        };
+                        fields
+                            .entry(other_key)
+                            .or_insert_with(Vec::new)
+                            .push(other_field_selection);
                     }
+                    NormalizedSelection::FragmentSpread(self_fragment_spread_selection) => {
+                        let NormalizedSelection::FragmentSpread(other_fragment_spread_selection) =
+                            other_selection
+                        else {
+                            return Err(Internal {
+                                    message: format!(
+                                        "Fragment spread selection key for fragment \"{}\" references non-field selection",
+                                        self_fragment_spread_selection.data().fragment_name,
+                                    ),
+                                }.into());
+                        };
+                        fragment_spreads
+                            .entry(other_key)
+                            .or_insert_with(Vec::new)
+                            .push(other_fragment_spread_selection);
+                    }
+                    NormalizedSelection::InlineFragment(self_inline_fragment_selection) => {
+                        let NormalizedSelection::InlineFragment(other_inline_fragment_selection) =
+                            other_selection
+                        else {
+                            return Err(Internal {
+                                    message: format!(
+                                        "Inline fragment selection key under parent type \"{}\" {}references non-field selection",
+                                        self_inline_fragment_selection.inline_fragment.data().parent_type_position,
+                                        self_inline_fragment_selection.inline_fragment.data().type_condition_position.clone()
+                                            .map_or_else(
+                                                String::new,
+                                                |cond| format!("(type condition: {}) ", cond),
+                                            ),
+                                    ),
+                                }.into());
+                        };
+                        inline_fragments
+                            .entry(other_key)
+                            .or_insert_with(Vec::new)
+                            .push(other_inline_fragment_selection);
+                    }
+                },
+                Entry::Vacant(vacant) => {
+                    vacant.insert(other_selection.clone())?;
                 }
             }
-            for (key, self_selection) in Arc::make_mut(&mut self.selections).iter_mut() {
-                match self_selection {
-                    NormalizedSelectionValue::Field(mut self_field_selection) => {
-                        if let Some(other_field_selections) = fields.shift_remove(key) {
-                            self_field_selection.merge_into(
-                                other_field_selections.iter().map(|selection| &***selection),
-                            )?;
-                        }
+        }
+
+        for (key, self_selection) in target.iter_mut() {
+            match self_selection {
+                NormalizedSelectionValue::Field(mut self_field_selection) => {
+                    if let Some(other_field_selections) = fields.shift_remove(key) {
+                        self_field_selection.merge_into(
+                            other_field_selections.iter().map(|selection| &***selection),
+                        )?;
                     }
-                    NormalizedSelectionValue::FragmentSpread(
-                        mut self_fragment_spread_selection,
-                    ) => {
-                        if let Some(other_fragment_spread_selections) =
-                            fragment_spreads.shift_remove(key)
-                        {
-                            self_fragment_spread_selection.merge_into(
-                                other_fragment_spread_selections
-                                    .iter()
-                                    .map(|selection| &***selection),
-                            )?;
-                        }
+                }
+                NormalizedSelectionValue::FragmentSpread(mut self_fragment_spread_selection) => {
+                    if let Some(other_fragment_spread_selections) =
+                        fragment_spreads.shift_remove(key)
+                    {
+                        self_fragment_spread_selection.merge_into(
+                            other_fragment_spread_selections
+                                .iter()
+                                .map(|selection| &***selection),
+                        )?;
                     }
-                    NormalizedSelectionValue::InlineFragment(
-                        mut self_inline_fragment_selection,
-                    ) => {
-                        if let Some(other_inline_fragment_selections) =
-                            inline_fragments.shift_remove(key)
-                        {
-                            self_inline_fragment_selection.merge_into(
-                                other_inline_fragment_selections
-                                    .iter()
-                                    .map(|selection| &***selection),
-                            )?;
-                        }
+                }
+                NormalizedSelectionValue::InlineFragment(mut self_inline_fragment_selection) => {
+                    if let Some(other_inline_fragment_selections) =
+                        inline_fragments.shift_remove(key)
+                    {
+                        self_inline_fragment_selection.merge_into(
+                            other_inline_fragment_selections
+                                .iter()
+                                .map(|selection| &***selection),
+                        )?;
                     }
                 }
             }
         }
+
         Ok(())
     }
 
@@ -1532,52 +1524,50 @@ impl<'a> NormalizedFieldSelectionValue<'a> {
     /// already match).
     pub(crate) fn merge_into<'op>(
         &mut self,
-        others: impl Iterator<Item = &'op NormalizedFieldSelection> + ExactSizeIterator,
+        others: impl Iterator<Item = &'op NormalizedFieldSelection>,
     ) -> Result<(), FederationError> {
-        if others.len() > 0 {
-            let self_field = &self.get().field;
-            let mut selection_sets = vec![];
-            for other in others {
-                let other_field = &other.field;
-                if other_field.data().schema != self_field.data().schema {
-                    return Err(Internal {
-                        message: "Cannot merge field selections from different schemas".to_owned(),
-                    }
-                    .into());
+        let self_field = &self.get().field;
+        let mut selection_sets = vec![];
+        for other in others {
+            let other_field = &other.field;
+            if other_field.data().schema != self_field.data().schema {
+                return Err(Internal {
+                    message: "Cannot merge field selections from different schemas".to_owned(),
                 }
-                if other_field.data().field_position != self_field.data().field_position {
-                    return Err(Internal {
+                .into());
+            }
+            if other_field.data().field_position != self_field.data().field_position {
+                return Err(Internal {
                         message: format!(
                             "Cannot merge field selection for field \"{}\" into a field selection for field \"{}\"",
                             other_field.data().field_position,
                             self_field.data().field_position,
                         ),
                     }.into());
-                }
-                if self.get().selection_set.is_some() {
-                    let Some(other_selection_set) = other.selection_set else {
-                        return Err(Internal {
-                            message: format!(
-                                "Field \"{}\" has composite type but not a selection set",
-                                other_field.data().field_position,
-                            ),
-                        }
-                        .into());
-                    };
-                    selection_sets.push(other_selection_set);
-                } else if other.selection_set.is_some() {
+            }
+            if self.get().selection_set.is_some() {
+                let Some(other_selection_set) = &other.selection_set else {
                     return Err(Internal {
                         message: format!(
-                            "Field \"{}\" has non-composite type but also has a selection set",
+                            "Field \"{}\" has composite type but not a selection set",
                             other_field.data().field_position,
                         ),
                     }
                     .into());
+                };
+                selection_sets.push(other_selection_set);
+            } else if other.selection_set.is_some() {
+                return Err(Internal {
+                    message: format!(
+                        "Field \"{}\" has non-composite type but also has a selection set",
+                        other_field.data().field_position,
+                    ),
                 }
+                .into());
             }
-            if let Some(self_selection_set) = self.get_selection_set_mut() {
-                self_selection_set.merge_into(selection_sets.iter())?;
-            }
+        }
+        if let Some(self_selection_set) = self.get_selection_set_mut() {
+            self_selection_set.merge_into(selection_sets.into_iter())?;
         }
         Ok(())
     }
@@ -1662,22 +1652,20 @@ impl<'a> NormalizedFragmentSpreadSelectionValue<'a> {
     /// the keys already match).
     pub(crate) fn merge_into<'op>(
         &mut self,
-        others: impl Iterator<Item = &'op NormalizedFragmentSpreadSelection> + ExactSizeIterator,
+        others: impl Iterator<Item = &'op NormalizedFragmentSpreadSelection>,
     ) -> Result<(), FederationError> {
-        if others.len() > 0 {
-            for other in others {
-                if other.data().schema != self.get().data().schema {
-                    return Err(Internal {
-                        message: "Cannot merge fragment spread from different schemas".to_owned(),
-                    }
-                    .into());
+        for other in others {
+            if other.data().schema != self.get().data().schema {
+                return Err(Internal {
+                    message: "Cannot merge fragment spread from different schemas".to_owned(),
                 }
-                // Nothing to do since the fragment spread is already part of the selection set.
-                // Fragment spreads are uniquely identified by fragment name and applied directives.
-                // Since there is already an entry for the same fragment spread, there is no point
-                // in attempting to merge its sub-selections, as the underlying entry should be
-                // exactly the same as the currently processed one.
+                .into());
             }
+            // Nothing to do since the fragment spread is already part of the selection set.
+            // Fragment spreads are uniquely identified by fragment name and applied directives.
+            // Since there is already an entry for the same fragment spread, there is no point
+            // in attempting to merge its sub-selections, as the underlying entry should be
+            // exactly the same as the currently processed one.
         }
         Ok(())
     }
@@ -1744,35 +1732,33 @@ impl<'a> NormalizedInlineFragmentSelectionValue<'a> {
     /// the keys already match).
     pub(crate) fn merge_into<'op>(
         &mut self,
-        others: impl Iterator<Item = &'op NormalizedInlineFragmentSelection> + ExactSizeIterator,
+        others: impl Iterator<Item = &'op NormalizedInlineFragmentSelection>,
     ) -> Result<(), FederationError> {
-        if others.len() > 0 {
-            let self_inline_fragment = &self.get().inline_fragment;
-            let mut selection_sets = vec![];
-            for other in others {
-                let other_inline_fragment = &other.inline_fragment;
-                if other_inline_fragment.data().schema != self_inline_fragment.data().schema {
-                    return Err(Internal {
-                        message: "Cannot merge inline fragment from different schemas".to_owned(),
-                    }
-                    .into());
+        let self_inline_fragment = &self.get().inline_fragment;
+        let mut selection_sets = vec![];
+        for other in others {
+            let other_inline_fragment = &other.inline_fragment;
+            if other_inline_fragment.data().schema != self_inline_fragment.data().schema {
+                return Err(Internal {
+                    message: "Cannot merge inline fragment from different schemas".to_owned(),
                 }
-                if other_inline_fragment.data().parent_type_position
-                    != self_inline_fragment.data().parent_type_position
-                {
-                    return Err(Internal {
-                        message: format!(
-                            "Cannot merge inline fragment of parent type \"{}\" into an inline fragment of parent type \"{}\"",
-                            other_inline_fragment.data().parent_type_position,
-                            self_inline_fragment.data().parent_type_position,
-                        ),
-                    }.into());
-                }
-                selection_sets.push(other.selection_set);
+                .into());
             }
-            self.get_selection_set_mut()
-                .merge_into(selection_sets.iter())?;
+            if other_inline_fragment.data().parent_type_position
+                != self_inline_fragment.data().parent_type_position
+            {
+                return Err(Internal {
+                    message: format!(
+                        "Cannot merge inline fragment of parent type \"{}\" into an inline fragment of parent type \"{}\"",
+                        other_inline_fragment.data().parent_type_position,
+                        self_inline_fragment.data().parent_type_position,
+                    ),
+                }.into());
+            }
+            selection_sets.push(&other.selection_set);
         }
+        self.get_selection_set_mut()
+            .merge_into(selection_sets.into_iter())?;
         Ok(())
     }
 }
