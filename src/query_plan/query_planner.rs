@@ -17,6 +17,8 @@ use crate::query_plan::query_planning_traversal::QueryPlanningTraversal;
 use crate::query_plan::FetchNode;
 use crate::query_plan::PlanNode;
 use crate::query_plan::QueryPlan;
+use crate::query_plan::SequenceNode;
+use crate::query_plan::TopLevelPlanNode;
 use crate::schema::position::AbstractTypeDefinitionPosition;
 use crate::schema::position::InterfaceTypeDefinitionPosition;
 use crate::schema::position::ObjectTypeDefinitionPosition;
@@ -291,7 +293,7 @@ impl QueryPlanner {
 
         let is_subscription = operation.is_subscription();
 
-        let mut statistics = QueryPlanningStatistics {
+        let statistics = QueryPlanningStatistics {
             evaluated_plan_count: 0,
         };
 
@@ -302,7 +304,7 @@ impl QueryPlanner {
                 .federated_query_graph
                 .sources()
                 .filter(|&(name, _schema)| name != "_");
-            if let (Some((subgraph_name, subgraph_schema)), None) =
+            if let (Some((subgraph_name, _subgraph_schema)), None) =
                 (subgraphs.next(), subgraphs.next())
             {
                 let node = FetchNode {
@@ -326,7 +328,7 @@ impl QueryPlanner {
             }
         }
 
-        let reuse_query_fragments = self.config.reuse_query_fragments;
+        let _reuse_query_fragments = self.config.reuse_query_fragments;
         /*
             let fragments = operation.fragments;
             if (fragments && !fragments.isEmpty() && reuseQueryFragments) {
@@ -405,31 +407,58 @@ impl QueryPlanner {
 
         let root_node = match defer_conditions {
             Some(defer_conditions) if !defer_conditions.is_empty() => {
-                compute_plan_for_defer_conditionals(parameters, defer_conditions)
+                compute_plan_for_defer_conditionals(parameters, defer_conditions)?
             }
-            _ => compute_plan_internal(parameters, has_defers),
+            _ => compute_plan_internal(parameters, has_defers)?,
         };
 
-        todo!();
-
-        /*
-            let rootNode: PlanNode | SubscriptionNode | undefined;
-            if (deferConditions && deferConditions.size > 0) {
-              assert(hasDefers, 'Should not have defer conditions without @defer');
-              rootNode = computePlanForDeferConditionals({
-                parameters,
-                deferConditions,
-              })
-            } else {
-              rootNode = computePlanInternal({
-                parameters,
-                hasDefers,
-              });
-            }
-
+        let root_node = match root_node {
             // If this is a subscription, we want to make sure that we return a SubscriptionNode rather than a PlanNode
             // We potentially will need to separate "primary" from "rest"
             // Note that if it is a subscription, we are guaranteed that nothing is deferred.
+            Some(PlanNode::Fetch(root_node)) if is_subscription => Some(
+                TopLevelPlanNode::Subscription(crate::query_plan::SubscriptionNode {
+                    primary: *root_node,
+                    rest: None,
+                }),
+            ),
+            Some(PlanNode::Sequence(root_node)) if is_subscription => {
+                let Some((primary, rest)) = root_node.nodes.split_first() else {
+                    unreachable!("Sequence must have at least one node");
+                };
+                let PlanNode::Fetch(primary) = primary.clone() else {
+                    unreachable!("Primary node of a subscription is not a Fetch");
+                };
+                let rest = PlanNode::Sequence(
+                    SequenceNode {
+                        nodes: rest.to_vec(),
+                    }
+                    .into(),
+                );
+                Some(TopLevelPlanNode::Subscription(
+                    crate::query_plan::SubscriptionNode {
+                        primary: *primary,
+                        rest: Some(rest),
+                    },
+                ))
+            }
+            Some(node) if is_subscription => {
+                unreachable!(
+                    "Unexpected top level PlanNode: '{node:?}' when processing subscription"
+                )
+            }
+            Some(PlanNode::Fetch(inner)) => Some(TopLevelPlanNode::Fetch(*inner)),
+            Some(PlanNode::Sequence(inner)) => Some(TopLevelPlanNode::Sequence(*inner)),
+            Some(PlanNode::Parallel(inner)) => Some(TopLevelPlanNode::Parallel(*inner)),
+            Some(PlanNode::Flatten(inner)) => Some(TopLevelPlanNode::Flatten(*inner)),
+            Some(PlanNode::Defer(inner)) => Some(TopLevelPlanNode::Defer(*inner)),
+            Some(PlanNode::Condition(inner)) => Some(TopLevelPlanNode::Condition(*inner)),
+            None => None,
+        };
+
+        Ok(QueryPlan { node: root_node })
+
+        /*
             if (rootNode && isSubscription) {
               switch (rootNode.kind) {
                 case 'Fetch': {
@@ -489,7 +518,8 @@ fn compute_root_parallel_best_plan(
         parameters,
         selection,
         has_defers,
-        todo!(), // parameters.head,
+        // TODO
+        SchemaRootDefinitionKind::Query, // parameters.head,
         // TODO
         FetchDependencyGraphToCostProcessor,
     );
