@@ -530,10 +530,20 @@ fn compute_plan_internal(
     } else {
         let mut dependency_graph = compute_root_parallel_dependency_graph(&parameters, has_defers)?;
         (main, deferred) =
-            dependency_graph.process(parameters.processor, parameters.operation.root_kind)?;
+            dependency_graph.process(&mut parameters.processor, parameters.operation.root_kind)?;
         primary_selection = dependency_graph.defer_tracking.primary_selection.clone();
     }
-    todo!()
+
+    if deferred.is_empty() {
+        Ok(main)
+    } else {
+        let Some(primary_selection) = primary_selection else {
+            unreachable!("Should have had a primary selection created");
+        };
+        parameters
+            .processor
+            .reduce_defer(main, &primary_selection, deferred)
+    }
 }
 
 fn compute_plan_for_defer_conditionals(
