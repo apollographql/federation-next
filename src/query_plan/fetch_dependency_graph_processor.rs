@@ -52,16 +52,7 @@ pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
 }
 
 // TODO
-pub(crate) struct RebasedFragments();
-
-impl RebasedFragments {
-    // TODO(@goto-bus-stop): Remove after https://github.com/apollographql/federation-next/pull/239
-    pub fn new(
-        _fragments: &Arc<indexmap::IndexMap<Name, Node<super::operation::NormalizedFragment>>>,
-    ) -> Self {
-        Self()
-    }
-}
+pub(crate) struct RebasedFragments;
 
 /// Computes the cost of a Plan.
 ///
