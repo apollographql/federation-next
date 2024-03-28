@@ -306,15 +306,15 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
             Conditions::Variables(variables) => {
                 for (name, negated) in variables.0.iter() {
                     let (if_clause, else_clause) = if *negated {
-                        (None, Some(value))
+                        (None, Some(Box::new(value)))
                     } else {
-                        (Some(value), None)
+                        (Some(Box::new(value)), None)
                     };
-                    value = PlanNode::Condition(Arc::new(ConditionNode {
+                    value = PlanNode::from(ConditionNode {
                         condition_variable: name.clone(),
                         if_clause,
                         else_clause,
-                    }));
+                    });
                 }
                 Some(value)
             }
@@ -369,7 +369,7 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
             } else {
                 None
             },
-            node,
+            node: node.map(Box::new),
         })
     }
 
@@ -379,16 +379,16 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
         sub_selection: &NormalizedSelectionSet,
         deferred: Vec<DeferredDeferBlock>,
     ) -> Result<Option<PlanNode>, FederationError> {
-        Ok(Some(PlanNode::Defer(Arc::new(DeferNode {
+        Ok(Some(PlanNode::Defer(DeferNode {
             primary: PrimaryDeferBlock {
                 sub_selection: sub_selection
                     .without_empty_branches()?
                     .map(|filtered| filtered.as_ref().try_into())
                     .transpose()?,
-                node: main,
+                node: main.map(Box::new),
             },
             deferred,
-        }))))
+        })))
     }
 }
 
@@ -456,7 +456,7 @@ fn flat_wrap_nodes(
         }
     }
     Some(match kind {
-        NodeKind::Parallel => PlanNode::Parallel(Arc::new(ParallelNode { nodes })),
-        NodeKind::Sequence => PlanNode::Sequence(Arc::new(SequenceNode { nodes })),
+        NodeKind::Parallel => PlanNode::Parallel(ParallelNode { nodes }),
+        NodeKind::Sequence => PlanNode::Sequence(SequenceNode { nodes }),
     })
 }

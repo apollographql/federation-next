@@ -313,7 +313,6 @@ impl QueryPlanner {
                     operation_name: operation_name.as_deref().map(|name| name.clone()),
                     operation_kind: operation.operation_type,
                     id: None,
-                    has_defers: None,
                     variable_usages: operation
                         .variables
                         .iter()
@@ -418,7 +417,7 @@ impl QueryPlanner {
             // Note that if it is a subscription, we are guaranteed that nothing is deferred.
             Some(PlanNode::Fetch(root_node)) if is_subscription => Some(
                 TopLevelPlanNode::Subscription(crate::query_plan::SubscriptionNode {
-                    primary: *root_node,
+                    primary: root_node,
                     rest: None,
                 }),
             ),
@@ -437,8 +436,8 @@ impl QueryPlanner {
                 );
                 Some(TopLevelPlanNode::Subscription(
                     crate::query_plan::SubscriptionNode {
-                        primary: *primary,
-                        rest: Some(rest),
+                        primary,
+                        rest: Some(Box::new(rest)),
                     },
                 ))
             }
@@ -447,49 +446,16 @@ impl QueryPlanner {
                     "Unexpected top level PlanNode: '{node:?}' when processing subscription"
                 )
             }
-            Some(PlanNode::Fetch(inner)) => Some(TopLevelPlanNode::Fetch(*inner)),
-            Some(PlanNode::Sequence(inner)) => Some(TopLevelPlanNode::Sequence(*inner)),
-            Some(PlanNode::Parallel(inner)) => Some(TopLevelPlanNode::Parallel(*inner)),
-            Some(PlanNode::Flatten(inner)) => Some(TopLevelPlanNode::Flatten(*inner)),
-            Some(PlanNode::Defer(inner)) => Some(TopLevelPlanNode::Defer(*inner)),
-            Some(PlanNode::Condition(inner)) => Some(TopLevelPlanNode::Condition(*inner)),
+            Some(PlanNode::Fetch(inner)) => Some(TopLevelPlanNode::Fetch(inner)),
+            Some(PlanNode::Sequence(inner)) => Some(TopLevelPlanNode::Sequence(inner)),
+            Some(PlanNode::Parallel(inner)) => Some(TopLevelPlanNode::Parallel(inner)),
+            Some(PlanNode::Flatten(inner)) => Some(TopLevelPlanNode::Flatten(inner)),
+            Some(PlanNode::Defer(inner)) => Some(TopLevelPlanNode::Defer(inner)),
+            Some(PlanNode::Condition(inner)) => Some(TopLevelPlanNode::Condition(inner)),
             None => None,
         };
 
         Ok(QueryPlan { node: root_node })
-
-        /*
-            if (rootNode && isSubscription) {
-              switch (rootNode.kind) {
-                case 'Fetch': {
-                  rootNode = {
-                    kind: 'Subscription',
-                    primary: rootNode,
-                  };
-                }
-                break;
-                case 'Sequence': {
-                  const [primary, ...rest] = rootNode.nodes;
-                  assert(primary.kind === 'Fetch', 'Primary node of a subscription is not a Fetch');
-                  rootNode = {
-                    kind: 'Subscription',
-                    primary,
-                    rest: {
-                      kind: 'Sequence',
-                      nodes: rest,
-                    },
-                  };
-                }
-                break;
-                default:
-                  throw new Error(`Unexpected top level PlanNode kind: '${rootNode.kind}' when processing subscription`);
-              }
-            }
-
-            debug.groupEnd('Query plan computed');
-
-            return { kind: 'QueryPlan', node: rootNode };
-        */
     }
 }
 
