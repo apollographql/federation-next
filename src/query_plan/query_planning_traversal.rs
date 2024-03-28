@@ -103,12 +103,12 @@ impl BestQueryPlanInfo {
     pub fn empty(parameters: &QueryPlanningParameters) -> Self {
         Self {
             fetch_dependency_graph: FetchDependencyGraph::new(
-                parameters.supergraph_schema,
+                parameters.supergraph_schema.clone(),
                 parameters.federated_query_graph.clone(),
                 None,
                 0,
             ),
-            path_tree: OpPathTree::new(parameters.federated_query_graph, parameters.head),
+            path_tree: OpPathTree::new(parameters.federated_query_graph.clone(), parameters.head),
             cost: Default::default(),
         }
     }
@@ -117,22 +117,24 @@ impl BestQueryPlanInfo {
 impl QueryPlanningTraversal {
     pub fn new(
         // TODO(@goto-bus-stop): take a reference here? the traversal struct should always be
-        // short-lived?
+        // short-lived? It's kind of big to copy but if the lifetime is statically knowable we
+        // should not Arc it.
         parameters: QueryPlanningParameters,
-        selection_set: NormalizedSelectionSet,
+        _selection_set: NormalizedSelectionSet,
         has_defers: bool,
         root_kind: SchemaRootDefinitionKind,
         cost_processor: FetchDependencyGraphToCostProcessor,
     ) -> Self {
+        // TODO(@goto-bus-stop): Is this correct?
+        let is_top_level = parameters.head_must_be_root;
         Self {
             parameters,
             root_kind,
             has_defers,
             starting_id_generation: 0,
             cost_processor,
-            // TODO(@goto-bus-stop): Is this correct?
-            is_top_level: parameters.head_must_be_root,
-            // TODO Use resolve_condition_plan
+            is_top_level,
+            // TODO Use self.resolve_condition_plan()
             condition_resolver: CachingConditionResolver,
             open_branches: Default::default(),
             closed_branches: Default::default(),

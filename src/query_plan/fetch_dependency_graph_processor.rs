@@ -118,6 +118,44 @@ pub(crate) trait FetchDependencyGraphProcessor<TProcessed, TDeferred> {
     ) -> Result<TProcessed, FederationError>;
 }
 
+// So you can use `&mut processor` as an `impl Processor`.
+impl<TProcessed, TDeferred, T> FetchDependencyGraphProcessor<TProcessed, TDeferred> for &mut T
+where
+    T: FetchDependencyGraphProcessor<TProcessed, TDeferred>,
+{
+    fn on_node(
+        &mut self,
+        node: &mut FetchDependencyGraphNode,
+        handled_conditions: &Conditions,
+    ) -> Result<TProcessed, FederationError> {
+        (*self).on_node(node, handled_conditions)
+    }
+    fn on_conditions(&mut self, conditions: &Conditions, value: TProcessed) -> TProcessed {
+        (*self).on_conditions(conditions, value)
+    }
+    fn reduce_parallel(&mut self, values: impl IntoIterator<Item = TProcessed>) -> TProcessed {
+        (*self).reduce_parallel(values)
+    }
+    fn reduce_sequence(&mut self, values: impl IntoIterator<Item = TProcessed>) -> TProcessed {
+        (*self).reduce_sequence(values)
+    }
+    fn reduce_deferred(
+        &mut self,
+        defer_info: &DeferredInfo,
+        value: TProcessed,
+    ) -> Result<TDeferred, FederationError> {
+        (*self).reduce_deferred(defer_info, value)
+    }
+    fn reduce_defer(
+        &mut self,
+        main: TProcessed,
+        sub_selection: &NormalizedSelectionSet,
+        deferred_blocks: Vec<TDeferred>,
+    ) -> Result<TProcessed, FederationError> {
+        (*self).reduce_defer(main, sub_selection, deferred_blocks)
+    }
+}
+
 impl FetchDependencyGraphProcessor<QueryPlanCost, QueryPlanCost>
     for FetchDependencyGraphToCostProcessor
 {
