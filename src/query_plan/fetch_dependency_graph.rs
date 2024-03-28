@@ -556,6 +556,35 @@ impl FetchDependencyGraph {
             .try_into()
     }
 
+    /// Do a transitive reduction (https://en.wikipedia.org/wiki/Transitive_reduction) of the graph
+    /// We keep it simple and do a DFS from each vertex. The complexity is not amazing, but dependency
+    /// graphs between fetch groups will almost surely never be huge and query planning performance
+    /// is not paramount so this is almost surely "good enough".
+    fn reduce(&mut self) {
+        if std::mem::replace(&mut self.is_reduced, true) {
+            return;
+        }
+
+        for _node in self.graph.node_weights_mut() {
+            // TODO Reduce: FED-16
+        }
+    }
+
+    /// Reduce the graph (see `reduce`) and then do a some additional traversals to optimize for:
+    ///  1) fetches with no selection: this can happen when we have a require if the only field requested
+    ///     was the one with the require and that forced some dependencies. Those fetch should have
+    ///     no dependents and we can just remove them.
+    ///  2) fetches that are made in parallel to the same subgraph and the same path, and merge those.
+    fn reduce_and_optimize(&mut self) {
+        if std::mem::replace(&mut self.is_optimized, true) {
+            return;
+        }
+
+        self.reduce();
+
+        // TODO Optimize: FED-55
+    }
+
     /// Processes the "plan" represented by this query graph using the provided `processor`.
     ///
     /// Returns a main part and a (potentially empty) deferred part.
@@ -564,7 +593,9 @@ impl FetchDependencyGraph {
         _processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
         _root_kind: SchemaRootDefinitionKind,
     ) -> Result<(TProcessed, Vec<TDeferred>), FederationError> {
-        todo!()
+        self.reduce_and_optimize();
+
+        todo!("FED-62") // I think this is FED-62?
     }
 }
 
