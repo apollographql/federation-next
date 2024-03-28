@@ -4,9 +4,9 @@ use crate::link::federation_spec_definition::FederationSpecDefinition;
 use crate::link::federation_spec_definition::FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC;
 use crate::link::spec::Identity;
 use crate::query_graph::build_federated_query_graph;
-use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::QueryGraph;
 use crate::query_plan::fetch_dependency_graph::FetchDependencyGraph;
+use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphProcessor;
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToCostProcessor;
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToQueryPlanProcessor;
 use crate::query_plan::operation::normalize_operation;
@@ -502,10 +502,10 @@ fn compute_root_parallel_best_plan(
 }
 
 fn compute_plan_internal(
-    parameters: QueryPlanningParameters,
+    mut parameters: QueryPlanningParameters,
     has_defers: bool,
 ) -> Result<Option<PlanNode>, FederationError> {
-    let mut main = None;
+    let mut main = None::<PlanNode>;
     let mut primary_selection = None::<Arc<NormalizedSelectionSet>>;
     let mut deferred = vec![];
 
@@ -515,11 +515,11 @@ fn compute_plan_internal(
         let dependency_graphs = compute_root_serial_dependency_graph(parameters, has_defers)?;
         for mut dependency_graph in dependency_graphs {
             let (local_main, local_deferred) =
-                dependency_graph.process(parameters.processor, root_kind)?;
+                dependency_graph.process(&mut parameters.processor, root_kind)?;
             main = match main {
                 Some(unlocal_main) => parameters
                     .processor
-                    .reduce_sequence(unlocal_main, local_main),
+                    .reduce_sequence([Some(unlocal_main), local_main]),
                 None => local_main,
             };
             deferred.extend(local_deferred);
