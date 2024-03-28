@@ -310,7 +310,7 @@ impl QueryPlanner {
                 let node = FetchNode {
                     subgraph_name: subgraph_name.clone(),
                     operation_document: document.clone(),
-                    operation_name: operation_name.as_deref().map(|name| name.clone()),
+                    operation_name: operation_name.as_deref().cloned(),
                     operation_kind: operation.operation_type,
                     id: None,
                     variable_usages: operation
@@ -394,7 +394,7 @@ impl QueryPlanner {
             federated_query_graph: self.federated_query_graph.clone(),
             operation: Arc::new(normalized_operation),
             processor,
-            head: root.clone(),
+            head: *root,
             // TODO(@goto-bus-stop): Is hardcoding this correct?
             head_must_be_root: true,
             statistics,
@@ -430,12 +430,9 @@ impl QueryPlanner {
                 let PlanNode::Fetch(primary) = primary.clone() else {
                     unreachable!("Primary node of a subscription is not a Fetch");
                 };
-                let rest = PlanNode::Sequence(
-                    SequenceNode {
-                        nodes: rest.to_vec(),
-                    }
-                    .into(),
-                );
+                let rest = PlanNode::Sequence(SequenceNode {
+                    nodes: rest.to_vec(),
+                });
                 Some(TopLevelPlanNode::Subscription(
                     crate::query_plan::SubscriptionNode {
                         primary,
@@ -496,7 +493,7 @@ fn compute_root_parallel_best_plan(
     // so we just return an empty plan.
     Ok(planning_traversal
         .find_best_plan()?
-        .unwrap_or_else(|| BestQueryPlanInfo::empty(&parameters)))
+        .unwrap_or_else(|| BestQueryPlanInfo::empty(parameters)))
 }
 
 fn compute_plan_internal(

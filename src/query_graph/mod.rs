@@ -1,5 +1,4 @@
 use crate::error::{FederationError, SingleFederationError};
-use crate::query_graph::field_set::parse_field_set;
 use crate::query_plan::operation::normalized_field_selection::NormalizedField;
 use crate::query_plan::operation::normalized_inline_fragment_selection::NormalizedInlineFragment;
 use crate::query_plan::operation::NormalizedSelectionSet;
@@ -595,7 +594,7 @@ impl QueryGraph {
 
     pub(crate) fn get_locally_satisfiable_key(
         &self,
-        node: NodeIndex,
+        _node: NodeIndex,
     ) -> Result<Option<NormalizedSelectionSet>, FederationError> {
         todo!()
         // let node = self.graph.node_weight(node).unwrap();
