@@ -561,8 +561,8 @@ impl FetchDependencyGraph {
     /// Returns a main part and a (potentially empty) deferred part.
     pub(crate) fn process<TProcessed, TDeferred>(
         &mut self,
-        processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
-        root_kind: SchemaRootDefinitionKind,
+        _processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
+        _root_kind: SchemaRootDefinitionKind,
     ) -> Result<(TProcessed, Vec<TDeferred>), FederationError> {
         todo!()
     }
