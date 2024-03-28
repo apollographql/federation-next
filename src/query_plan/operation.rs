@@ -84,7 +84,7 @@ impl NormalizedOperation {
         todo!()
     }
 
-    pub(crate) fn without_defer(mut self) -> Self {
+    pub(crate) fn without_defer(self) -> Self {
         fn field_has_defer(field: &NormalizedFieldSelection) -> bool {
             field.field.data().directives.has("defer")
                 || field
