@@ -178,6 +178,15 @@ pub(crate) enum OpGraphPathTrigger {
     Context(OpGraphPathContext),
 }
 
+impl Display for OpGraphPathTrigger {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OpGraphPathTrigger::OpPathElement(ele) => ele.fmt(f),
+            OpGraphPathTrigger::Context(ctx) => ctx.fmt(f),
+        }
+    }
+}
+
 /// A path of operation elements within a GraphQL operation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub(crate) struct OpPath(pub(crate) Vec<Arc<OpPathElement>>);
@@ -302,6 +311,18 @@ impl OpGraphPathContext {
                 .extend(new_conditionals.into_iter().map(Arc::new));
         }
         Ok(new_context)
+    }
+}
+
+impl Display for OpGraphPathContext {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        let mut iter = self.conditionals.iter();
+        if let Some(cond) = iter.next() {
+            write!(f, "@{}(if: {})", cond.kind, cond.value)?;
+            iter.try_for_each(|cond| write!(f, ", @{}(if: {})", cond.kind, cond.value))?;
+        }
+        write!(f, "]")
     }
 }
 
@@ -2012,13 +2033,33 @@ impl OpGraphPath {
 
 impl Display for OpGraphPath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[")?;
-        let mut iter = self.edges.iter();
-        if let Some(edge) = iter.next() {
-            write!(f, "{edge:?}")?;
-            iter.try_for_each(|edge| write!(f, ", {edge:?}"))?;
+        // If the path is length is 0 return "[]"
+        // Traverse the path, getting the of the edge.
+        let head = &self.graph.graph()[self.head];
+        if head.root_kind.is_some() && self.edges.is_empty() {
+            return write!(f, "[]");
         }
-        write!(f, "]")
+        if head.root_kind.is_some() {
+            write!(f, "{head}")?;
+        }
+        self.edges
+            .iter()
+            .cloned()
+            .enumerate()
+            .try_for_each(|(i, e)| match e {
+                Some(e) => {
+                    let tail = self.graph.graph().edge_endpoints(e).unwrap().1;
+                    let node = &self.graph.graph()[tail];
+                    if head.root_kind.is_some() && i == 0 {
+                        write!(f, "{node}")
+                    } else {
+                        let edge = &self.graph.graph()[e];
+                        let label = edge.transition.to_string();
+                        write!(f, "--[{label}]--> {node}")
+                    }
+                }
+                None => write!(f, "({})", self.edge_triggers[i].as_ref()),
+            })
     }
 }
 

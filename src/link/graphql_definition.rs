@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::error::FederationError;
 use crate::link::argument::{
     directive_optional_string_argument, directive_optional_variable_boolean_argument,
@@ -52,4 +54,13 @@ pub(crate) enum OperationConditionalKind {
 pub(crate) enum BooleanOrVariable {
     Boolean(bool),
     Variable(Name),
+}
+
+impl Display for BooleanOrVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BooleanOrVariable::Boolean(b) => b.fmt(f),
+            BooleanOrVariable::Variable(name) => name.fmt(f),
+        }
+    }
 }
