@@ -2371,6 +2371,7 @@ pub(crate) fn merge_selection_sets(
 }
 
 /// Options for handling rebasing errors.
+#[derive(Clone, Copy)]
 pub(crate) enum RebaseErrorHandlingOption {
     IgnoreError,
     ThrowError,
@@ -2956,9 +2957,7 @@ fn runtime_types_intersect(
         schema.possible_runtime_types(type1.clone()),
         schema.possible_runtime_types(type2.clone()),
     ) {
-        return runtimes_1
-            .iter()
-            .any(|r1| runtimes_2.iter().any(|r2| r1.type_name == r2.type_name));
+        return runtimes_1.intersection(&runtimes_2).next().is_some();
     }
 
     false
@@ -4079,15 +4078,15 @@ type U {
                     .unwrap();
                 let rebased_fragment = rebased_fragments.fragments.get("FragOnT").unwrap();
 
-                let expected = r#"fragment FragOnT on T {
-  v1
-  u1 {
-    v3
-    v5
-  }
-}"#;
-                let actual = rebased_fragment.to_string();
-                assert_eq!(actual, expected);
+                insta::assert_snapshot!(rebased_fragment, @r###"
+                    fragment FragOnT on T {
+                      v1
+                      u1 {
+                        v3
+                        v5
+                      }
+                    }
+                "###);
             }
         }
 
