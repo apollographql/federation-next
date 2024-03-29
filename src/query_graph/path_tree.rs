@@ -2,7 +2,7 @@ use crate::error::FederationError;
 use crate::query_graph::graph_path::GraphPathItem;
 use crate::query_graph::graph_path::OpGraphPath;
 use crate::query_graph::graph_path::OpGraphPathTrigger;
-use crate::query_graph::QueryGraph;
+use crate::query_graph::{QueryGraph, QueryGraphNode};
 use crate::query_plan::operation::NormalizedSelectionSet;
 use apollo_compiler::NodeStr;
 use indexmap::map::Entry;
@@ -111,6 +111,45 @@ impl OpPathTree {
         }
         Ok(true)
     }
+
+    fn fmt_internal(
+        &self,
+        f: &mut Formatter<'_>,
+        indent: &String,
+        include_conditions: bool,
+    ) -> std::fmt::Result {
+        if self.is_leaf() {
+            return writeln!(f, "{}", self.vertex());
+        }
+        writeln!(f, "{}:", self.vertex())?;
+        let child_indent = indent.to_owned() + "  ";
+        for child in self.childs.iter() {
+            let index = match child.edge {
+                Some(index) => index,
+                None => EdgeIndex::end(),
+            };
+            write!(f, "{indent} -> [{}] ", index.index())?;
+            if include_conditions {
+                if let Some(ref child_cond) = child.conditions {
+                    write!(f, "!! {{\n{indent} ")?;
+                    child_cond.fmt_internal(f, &child_indent, /*include_conditions*/ true)?;
+                    write!(f, "\n{indent} }}")?;
+                }
+            }
+            write!(f, "{} = ", child.trigger)?;
+            child
+                .tree
+                .fmt_internal(f, &child_indent, include_conditions)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for OpPathTree {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let indent = "".to_owned(); // Empty indent at the root level
+        self.fmt_internal(f, &indent, /*include_conditions*/ false)
+    }
 }
 
 impl<TTrigger, TEdge> PathTree<TTrigger, TEdge>
@@ -118,6 +157,13 @@ where
     TTrigger: Eq + Hash,
     TEdge: Copy + Hash + Eq + Into<Option<EdgeIndex>>,
 {
+    /// Returns the `QueryGraphNode` represented by `self.node`.
+    /// - Note: This is named after the JS implementation's `vertex` field.
+    ///         But, it may make sense to rename it once porting is over.
+    pub(crate) fn vertex(&self) -> &QueryGraphNode {
+        self.graph.node_weight(self.node).unwrap()
+    }
+
     fn from_paths<'inputs>(
         graph: Arc<QueryGraph>,
         node: NodeIndex,
@@ -296,16 +342,6 @@ where
                 .collect(),
             childs,
         })
-    }
-}
-
-impl<TTrigger, TEdge> Display for PathTree<TTrigger, TEdge>
-where
-    TTrigger: Eq + Hash,
-    TEdge: Copy + Eq + Hash + Into<Option<EdgeIndex>>,
-{
-    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
     }
 }
 
