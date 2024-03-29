@@ -23,6 +23,7 @@ pub(crate) mod extract_subgraphs_from_supergraph;
 mod field_set;
 pub(crate) mod graph_path;
 pub(crate) mod path_tree;
+pub mod output;
 
 pub use build_query_graph::build_federated_query_graph;
 
