@@ -116,15 +116,13 @@ impl FederationSchema {
             CompositeTypeDefinitionPosition::Object(pos) => IndexSet::from([pos]),
             CompositeTypeDefinitionPosition::Interface(pos) => {
                 let interface_type = self.referencers().get_interface_type(&pos.type_name)?;
-                let mut possible_runtimes: IndexSet<ObjectTypeDefinitionPosition> = IndexSet::new();
-                interface_type.interface_types.iter().for_each(|i| {
-                    let _ = self
-                        .possible_runtime_types(CompositeTypeDefinitionPosition::Interface(
-                            i.clone(),
-                        ))
-                        .map(|r| possible_runtimes.extend(r));
-                });
-                possible_runtimes.extend(interface_type.object_types.clone());
+                let mut possible_runtimes = interface_type.object_types.clone();
+                for i in interface_type.interface_types.clone() {
+                    self.possible_runtime_types(CompositeTypeDefinitionPosition::Interface(
+                        i.clone(),
+                    ))
+                    .map(|r| possible_runtimes.extend(r))?;
+                }
                 possible_runtimes
             }
             CompositeTypeDefinitionPosition::Union(pos) => pos

@@ -543,7 +543,7 @@ impl NormalizedSelection {
         todo!()
     }
 
-    fn collect_used_fragment_names(&self, aggregator: &mut Arc<HashMap<Name, i32>>) {
+    fn collect_used_fragment_names(&self, aggregator: &mut HashMap<Name, i32>) {
         match self {
             NormalizedSelection::Field(field_selection) => {
                 if let Some(s) = field_selection.selection_set.clone() {
@@ -554,7 +554,7 @@ impl NormalizedSelection {
                 inline.selection_set.collect_used_fragment_names(aggregator);
             }
             NormalizedSelection::FragmentSpread(fragment) => {
-                let current_count = Arc::make_mut(aggregator)
+                let current_count = aggregator
                     .entry(fragment.spread.data().fragment_name.clone())
                     .or_default();
                 *current_count += 1;
@@ -629,8 +629,8 @@ impl NormalizedFragment {
     }
 
     // PORT NOTE: in JS code this is stored on the fragment
-    fn fragment_usages(&self) -> Arc<HashMap<Name, i32>> {
-        let mut usages = Arc::new(HashMap::new());
+    fn fragment_usages(&self) -> HashMap<Name, i32> {
+        let mut usages = HashMap::new();
         self.selection_set.collect_used_fragment_names(&mut usages);
         usages
     }
@@ -1779,7 +1779,7 @@ impl NormalizedSelectionSet {
         todo!()
     }
 
-    fn collect_used_fragment_names(&self, aggregator: &mut Arc<HashMap<Name, i32>>) {
+    fn collect_used_fragment_names(&self, aggregator: &mut HashMap<Name, i32>) {
         self.selections
             .iter()
             .for_each(|(_, s)| s.collect_used_fragment_names(aggregator));
@@ -2439,7 +2439,7 @@ impl NamedFragments {
     /**
      * Collect the usages of fragments that are used within the selection of other fragments.
      */
-    pub(crate) fn collect_used_fragment_names(&self, aggregator: &mut Arc<HashMap<Name, i32>>) {
+    pub(crate) fn collect_used_fragment_names(&self, aggregator: &mut HashMap<Name, i32>) {
         self.fragments.iter().for_each(|(_, fragment)| {
             fragment
                 .selection_set
