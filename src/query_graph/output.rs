@@ -104,7 +104,7 @@ fn to_dot_federated(graph: &QueryGraph) -> String {
     for i in stable_graph.node_indices() {
         let node = &stable_graph[i];
         if node.source == graph.name() {
-            dot_str.push_str(&format!("  {} [{}]\n", i.index(), label_node(&node)));
+            dot_str.push_str(&format!("  {} [{}]\n", i.index(), label_node(node)));
         }
     }
 
@@ -119,6 +119,6 @@ fn to_dot_federated(graph: &QueryGraph) -> String {
         }
     }
 
-    dot_str.push_str("}");
+    dot_str.push('}');
     dot_str
 }
