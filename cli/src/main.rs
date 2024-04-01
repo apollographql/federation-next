@@ -37,27 +37,24 @@ enum Command {
 fn main() -> ExitCode {
     let args = Args::parse();
     match args.command {
-        Command::Api { supegraph_schema } =>
-            run_federation_task( &|| { to_api_schema(&supegraph_schema) } ),
-        Command::QueryGraph { schemas } => {
-            run_federation_task( &|| { dot_query_graph(&schemas) } )
-        },
+        Command::Api { supegraph_schema } => {
+            run_federation_task(&|| to_api_schema(&supegraph_schema))
+        }
+        Command::QueryGraph { schemas } => run_federation_task(&|| dot_query_graph(&schemas)),
         Command::FederatedGraph { schemas } => {
-            run_federation_task( &|| { dot_federated_graph(&schemas) } )
-        },
+            run_federation_task(&|| dot_federated_graph(&schemas))
+        }
     }
 }
 
-fn run_federation_task( func: &dyn Fn() -> Result<(), FederationError> ) -> ExitCode {
+fn run_federation_task(func: &dyn Fn() -> Result<(), FederationError>) -> ExitCode {
     match func() {
         Err(error) => {
             eprintln!("{error}");
             ExitCode::FAILURE
-        },
-
-        Ok(_) => {
-            ExitCode::SUCCESS
         }
+
+        Ok(_) => ExitCode::SUCCESS,
     }
 }
 
@@ -68,44 +65,46 @@ fn to_api_schema(input_path: &PathBuf) -> Result<(), FederationError> {
         fs::read_to_string(input_path).unwrap()
     };
     let supergraph = apollo_federation::Supergraph::new(&input)?;
-    let api_schema = supergraph
-        .to_api_schema(apollo_federation::ApiSchemaOptions {
-            include_defer: true,
-            include_stream: false,
-        })?;
+    let api_schema = supergraph.to_api_schema(apollo_federation::ApiSchemaOptions {
+        include_defer: true,
+        include_stream: false,
+    })?;
     println!("{}", api_schema.schema());
     Ok(())
 }
 
 /// Load either single supergraph schema file or compose one from multiple subgraph files.
-fn load_supergraph(file_paths: &Vec<PathBuf>) -> Result<apollo_federation::Supergraph, FederationError> {
+fn load_supergraph(
+    file_paths: &Vec<PathBuf>,
+) -> Result<apollo_federation::Supergraph, FederationError> {
     if file_paths.len() == 0 {
         panic!("Error: missing command arguments");
-    }
-    else if file_paths.len() == 1 {
+    } else if file_paths.len() == 1 {
         let doc_str = std::fs::read_to_string(&file_paths[0]).unwrap();
         apollo_federation::Supergraph::new(&doc_str)
-    }
-    else {
-        let schemas: Vec<_>
-            = file_paths.iter().map(|pathname| {
+    } else {
+        let schemas: Vec<_> = file_paths
+            .iter()
+            .map(|pathname| {
                 let doc_str = std::fs::read_to_string(&pathname).unwrap();
                 let url = "file://".to_string() + pathname.to_str().unwrap();
                 let basename = pathname.file_stem().unwrap().to_str().unwrap();
                 subgraph::Subgraph::parse_and_expand(basename, &url, &doc_str).unwrap()
-            }).collect();
+            })
+            .collect();
         Ok(apollo_federation::Supergraph::compose(schemas.iter().collect()).unwrap())
     }
 }
 
 fn dot_query_graph(file_paths: &Vec<PathBuf>) -> Result<(), FederationError> {
     let supergraph = load_supergraph(file_paths)?;
-    let name : &str = if file_paths.len() == 1 {
-                        file_paths[0].file_stem().unwrap().to_str().unwrap()
-                      } else {
-                        "supergraph"
-                      };
-    let query_graph = query_graph::build_query_graph::build_query_graph(name.into(), supergraph.schema)?;
+    let name: &str = if file_paths.len() == 1 {
+        file_paths[0].file_stem().unwrap().to_str().unwrap()
+    } else {
+        "supergraph"
+    };
+    let query_graph =
+        query_graph::build_query_graph::build_query_graph(name.into(), supergraph.schema)?;
     println!("{}", query_graph::output::to_dot(&query_graph));
     Ok(())
 }
@@ -113,7 +112,8 @@ fn dot_query_graph(file_paths: &Vec<PathBuf>) -> Result<(), FederationError> {
 fn dot_federated_graph(file_paths: &Vec<PathBuf>) -> Result<(), FederationError> {
     let supergraph = load_supergraph(file_paths)?;
     let api_schema = supergraph.to_api_schema(Default::default())?;
-    let query_graph = query_graph::build_federated_query_graph(supergraph.schema, api_schema, None, None)?;
+    let query_graph =
+        query_graph::build_federated_query_graph(supergraph.schema, api_schema, None, None)?;
     println!("{}", query_graph::output::to_dot(&query_graph));
     Ok(())
 }
