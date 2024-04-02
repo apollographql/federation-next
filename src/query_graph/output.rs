@@ -6,6 +6,7 @@ use apollo_compiler::NodeStr;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DiGraph, EdgeIndex};
 use petgraph::stable_graph::StableGraph;
+use std::fmt::Write;
 
 type InnerGraph = DiGraph<QueryGraphNode, QueryGraphEdge>;
 type StableInnerGraph = StableGraph<QueryGraphNode, QueryGraphEdge>;
@@ -28,7 +29,7 @@ fn label_node(node: &QueryGraphNode) -> String {
 
 pub fn to_dot(graph: &QueryGraph) -> String {
     if graph.sources.len() > 1 {
-        return to_dot_federated(graph);
+        return to_dot_federated(graph).expect("Failed to generate the federated graph");
     }
 
     // Note: Use label_edge/label_node as `attr_getters` in order to create custom label
@@ -43,7 +44,7 @@ pub fn to_dot(graph: &QueryGraph) -> String {
     .to_string()
 }
 
-fn to_dot_federated(graph: &QueryGraph) -> String {
+fn to_dot_federated(graph: &QueryGraph) -> Result<String, std::fmt::Error> {
     fn edge_within_cluster(
         graph: &StableInnerGraph,
         cluster_name: &NodeStr,
@@ -67,7 +68,7 @@ fn to_dot_federated(graph: &QueryGraph) -> String {
     }
 
     fn label_cluster_node(node: &QueryGraphNode) -> String {
-        format!("label=\"{}@{}\"", node.type_, node.source)
+        format!(r#"label="{}@{}""#, node.type_, node.source)
     }
 
     // Build a stable graph, so we can derive subgraph clusters with the same indices.
@@ -78,7 +79,8 @@ fn to_dot_federated(graph: &QueryGraph) -> String {
         Config::GraphContentOnly,
     ];
 
-    let mut dot_str: String = format!("digraph \"{}\" {{\n", graph.name());
+    let mut dot_str = String::new();
+    writeln!(dot_str, r#"digraph "{}" {{"#, graph.name())?;
 
     // Subgraph clusters
     for (cluster_name, _) in graph.sources.iter() {
@@ -110,22 +112,19 @@ fn to_dot_federated(graph: &QueryGraph) -> String {
         )
         .to_string();
 
-        dot_str.push_str(&format!("  subgraph \"cluster_{}\" {{\n", &cluster_name));
-        dot_str.push_str(&format!(
-            "    label = \"Subgraph \\\"{}\\\"\";\n",
-            &cluster_name
-        ));
-        dot_str.push_str("    color = \"black;\"\n");
-        dot_str.push_str("    style = \"\"\n");
+        writeln!(dot_str, r#"  subgraph "cluster_{}" {{"#, &cluster_name)?;
+        writeln!(dot_str, r#"    label = "Subgraph \"{}\"";"#, &cluster_name)?;
+        writeln!(dot_str, r#"    color = "black";"#)?;
+        writeln!(dot_str, r#"    style = """#)?;
         dot_str.push_str(&s);
-        dot_str.push_str("  }\n");
+        writeln!(dot_str, "  }}")?;
     }
 
     // Supergraph nodes
     for i in stable_graph.node_indices() {
         let node = &stable_graph[i];
         if node.source == graph.name() {
-            dot_str.push_str(&format!("  {} [{}]\n", i.index(), label_node(node)));
+            writeln!(dot_str, "  {} [{}]", i.index(), label_node(node))?;
         }
     }
 
@@ -134,16 +133,17 @@ fn to_dot_federated(graph: &QueryGraph) -> String {
         if edge_across_clusters(&stable_graph, i) {
             if let Some((n1, n2)) = stable_graph.edge_endpoints(i) {
                 let edge = &stable_graph[i];
-                dot_str.push_str(&format!(
-                    "  {} -> {} [{}]\n",
+                writeln!(
+                    dot_str,
+                    "  {} -> {} [{}]",
                     n1.index(),
                     n2.index(),
                     label_edge(edge)
-                ));
+                )?;
             }
         }
     }
 
-    dot_str.push('}');
-    dot_str
+    writeln!(dot_str, "}}")?;
+    Ok(dot_str)
 }
