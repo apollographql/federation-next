@@ -35,8 +35,6 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
 
-use super::{QueryGraphEdge, QueryGraphNode};
-
 /// An immutable path in a query graph.
 ///
 /// A "path" here is mostly understood in the graph-theoretical sense of the term, i.e. as "a
