@@ -462,7 +462,7 @@ fn compute_root_serial_dependency_graph(
     _parameters: &QueryPlanningParameters,
     _has_defers: bool,
 ) -> Result<Vec<FetchDependencyGraph>, FederationError> {
-    todo!()
+    todo!("FED-127")
 }
 
 fn compute_root_parallel_dependency_graph(
