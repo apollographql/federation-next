@@ -32,6 +32,7 @@ use indexmap::{IndexMap, IndexSet};
 use lazy_static::lazy_static;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -89,24 +90,23 @@ pub(crate) fn extract_subgraphs_from_supergraph(
     }
 
     let mut valid_subgraphs = ValidFederationSubgraphs::new();
-    for (_, subgraph) in subgraphs {
+    for (_, mut subgraph) in subgraphs {
         let valid_subgraph_schema = if validate_extracted_subgraphs {
-            match subgraph.schema.validate() {
+            match subgraph.schema.validate_or_return_self() {
                 Ok(schema) => schema,
-                Err(error) => {
-                    // TODO: Implement maybeDumpSubgraphSchema() for better error messaging
+                Err((schema, error)) => {
+                    subgraph.schema = schema;
                     if is_fed_1 {
                         // See message above about Fed 1 supergraphs
                         todo!()
                     } else {
-                        return Err(
-                            SingleFederationError::InvalidFederationSupergraph {
-                                message: format!(
-                                    "Unexpected error extracting {} from the supergraph: this is either a bug, or the supergraph has been corrupted.\n\nDetails:\n{}",
+                        let mut message = format!(
+                                    "Unexpected error extracting {} from the supergraph: this is either a bug, or the supergraph has been corrupted.\n\nDetails:\n{error}",
                                     subgraph.name,
-                                    error,
-                                ),
-                            }.into()
+                                    );
+                        maybe_dump_subgraph_schema(subgraph, &mut message);
+                        return Err(
+                            SingleFederationError::InvalidFederationSupergraph { message }.into(),
                         );
                     }
                 }
@@ -2035,4 +2035,32 @@ fn is_external_or_has_external_implementations(
         }
     }
     Ok(false)
+}
+
+static DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME: &str = "APOLLO_FEDERATION_DEBUG_SUBGRAPHS";
+
+fn maybe_dump_subgraph_schema(subgraph: FederationSubgraph, message: &mut String) {
+    // NOTE: The std::fmt::write returns an error, but writing to a string will never return an
+    // error, so it is dropped when called.
+
+    if let Some(true) = std::env::var(DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME)
+        .ok()
+        .and_then(|v| v.parse::<bool>().ok())
+    {
+        let _ = write!(message, "Re-run with environment variable '{DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME}' set to 'true' to extract the invalid subgraph");
+        return;
+    }
+    let filename = format!("extracted-subgraph-{}.graphql", subgraph.name);
+    let contents = format!("{:?}", subgraph.schema);
+    let _ = match std::fs::write(&filename, contents) {
+        Ok(_) => write!(
+            message,
+            "The (invalid) extracted subgraph has been written in: {filename}."
+        ),
+        Err(e) => write!(
+            message,
+            r#"Was not able to print generated subgraph for "{}" because: {e}"#,
+            subgraph.name
+        ),
+    };
 }
