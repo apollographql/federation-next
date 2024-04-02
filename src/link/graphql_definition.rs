@@ -13,6 +13,12 @@ pub(crate) struct DeferDirectiveArguments {
     if_: Option<BooleanOrVariable>,
 }
 
+impl DeferDirectiveArguments {
+    pub(crate) fn label(&self) -> Option<&NodeStr> {
+        self.label.as_ref()
+    }
+}
+
 pub(crate) fn defer_directive_arguments(
     application: &Node<Directive>,
 ) -> Result<DeferDirectiveArguments, FederationError> {
