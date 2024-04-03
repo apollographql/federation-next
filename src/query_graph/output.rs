@@ -50,25 +50,23 @@ fn to_dot_federated(graph: &QueryGraph) -> Result<String, std::fmt::Error> {
         cluster_name: &NodeStr,
         edge_index: EdgeIndex,
     ) -> bool {
-        match graph.edge_endpoints(edge_index) {
-            None => false,
-
-            Some((n1, n2)) => {
-                graph[n1].source == *cluster_name && graph[n2].source == *cluster_name
-            }
-        }
+        graph.edge_endpoints(edge_index).is_some_and(|(n1, n2)| {
+            graph[n1].source == *cluster_name && graph[n2].source == *cluster_name
+        })
     }
 
     fn edge_across_clusters(graph: &StableInnerGraph, edge_index: EdgeIndex) -> bool {
-        match graph.edge_endpoints(edge_index) {
-            None => false,
-
-            Some((n1, n2)) => graph[n1].source != graph[n2].source,
-        }
+        graph
+            .edge_endpoints(edge_index)
+            .is_some_and(|(n1, n2)| graph[n1].source != graph[n2].source)
     }
 
     fn label_cluster_node(node: &QueryGraphNode) -> String {
-        format!(r#"label="{}@{}""#, node.type_, node.source)
+        let provide_id = match node.provide_id {
+            Some(id) => format!("#{}", id),
+            None => String::new(),
+        };
+        format!(r#"label="{}{}@{}""#, node.type_, provide_id, node.source)
     }
 
     // Build a stable graph, so we can derive subgraph clusters with the same indices.
@@ -115,7 +113,7 @@ fn to_dot_federated(graph: &QueryGraph) -> Result<String, std::fmt::Error> {
         writeln!(dot_str, r#"  subgraph "cluster_{}" {{"#, &cluster_name)?;
         writeln!(dot_str, r#"    label = "Subgraph \"{}\"";"#, &cluster_name)?;
         writeln!(dot_str, r#"    color = "black";"#)?;
-        writeln!(dot_str, r#"    style = """#)?;
+        writeln!(dot_str, r#"    style = "";"#)?;
         dot_str.push_str(&s);
         writeln!(dot_str, "  }}")?;
     }

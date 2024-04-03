@@ -80,7 +80,7 @@ fn load_supergraph(
             .iter()
             .map(|pathname| {
                 let doc_str = std::fs::read_to_string(pathname).unwrap();
-                let url = "file://".to_string() + pathname.to_str().unwrap();
+                let url = format!("file://{}", pathname.to_str().unwrap());
                 let basename = pathname.file_stem().unwrap().to_str().unwrap();
                 subgraph::Subgraph::parse_and_expand(basename, &url, &doc_str).unwrap()
             })
