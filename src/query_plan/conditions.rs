@@ -172,15 +172,13 @@ pub(crate) fn remove_conditions_from_selection_set(
                                     ),
                                 )
                             }
+                        } else if updated_element == element {
+                            (selection.0.clone(), selection.1.clone())
                         } else {
-                            if updated_element == element {
-                                (selection.0.clone(), selection.1.clone())
-                            } else {
-                                (
-                                    selection.0.clone(),
-                                    selection_of_element(updated_element, None),
-                                )
-                            }
+                            (
+                                selection.0.clone(),
+                                selection_of_element(updated_element, None),
+                            )
                         }
                     }
                     //FIXME: what is the expected behaviour here if element() returns an error?

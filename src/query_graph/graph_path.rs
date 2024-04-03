@@ -17,9 +17,9 @@ use crate::query_plan::operation::normalized_inline_fragment_selection::{
 use crate::query_plan::operation::{NormalizedSelection, NormalizedSelectionSet, SelectionId};
 use crate::query_plan::{FetchDataPathElement, QueryPathElement, QueryPlanCost};
 use crate::schema::position::{
-    AbstractTypeDefinitionPosition, CompositeTypeDefinitionPosition, FieldDefinitionPosition,
-    InterfaceFieldDefinitionPosition, ObjectFieldDefinitionPosition, ObjectTypeDefinitionPosition,
-    OutputTypeDefinitionPosition, TypeDefinitionPosition,
+    AbstractTypeDefinitionPosition, CompositeTypeDefinitionPosition,
+    InterfaceFieldDefinitionPosition, ObjectTypeDefinitionPosition, OutputTypeDefinitionPosition,
+    TypeDefinitionPosition,
 };
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::Value;
@@ -274,8 +274,8 @@ impl OpPathElement {
 }
 
 pub(crate) fn selection_of_element(
-    element: OpPathElement,
-    subSelection: Option<NormalizedSelectionSet>,
+    _element: OpPathElement,
+    _sub_selection: Option<NormalizedSelectionSet>,
 ) -> NormalizedSelection {
     // TODO: validate that the subSelection is ok for the element
     //return element.kind === 'Field' ? new FieldSelection(element, subSelection) : new InlineFragmentSelection(element, subSelection!);

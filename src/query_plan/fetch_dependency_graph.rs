@@ -683,7 +683,7 @@ impl FetchDependencyGraphNode {
         //    and then generate a rewrite on the output of the fetch
         //    so that data aliased this way is rewritten back to the original/proper response name.
         let selection_without_conditions = remove_conditions_from_selection_set(
-            &*self.selection_set.selection_set,
+            &self.selection_set.selection_set,
             handled_conditions,
         );
         let selection_with_typenames =
@@ -698,20 +698,20 @@ impl FetchDependencyGraphNode {
 }
 
 fn operation_for_entities_fetch(
-    subgraph_schema: &ValidFederationSchema,
-    selection: Arc<NormalizedSelectionSet>,
-    variable_definitions: &[Node<VariableDefinition>],
-    operation_name: &Option<NodeStr>,
+    _subgraph_schema: &ValidFederationSchema,
+    _selection: Arc<NormalizedSelectionSet>,
+    _variable_definitions: &[Node<VariableDefinition>],
+    _operation_name: &Option<NodeStr>,
 ) -> NormalizedOperation {
     todo!() // TODO: port from `operationForEntitiesFetch` in `buildPlan.ts`
 }
 
 fn operation_for_query_fetch(
-    subgraph_schema: &ValidFederationSchema,
-    root_kind: SchemaRootDefinitionKind,
-    selection: Arc<NormalizedSelectionSet>,
-    variable_definitions: &[Node<VariableDefinition>],
-    operation_name: &Option<NodeStr>,
+    _subgraph_schema: &ValidFederationSchema,
+    _root_kind: SchemaRootDefinitionKind,
+    _selection: Arc<NormalizedSelectionSet>,
+    _variable_definitions: &[Node<VariableDefinition>],
+    _operation_name: &Option<NodeStr>,
 ) -> NormalizedOperation {
     todo!() // TODO: port from `operationForQueryFetch` in `buildPlan.ts`
 }
@@ -804,18 +804,16 @@ impl FetchInputs {
         // Making sure we're not generating something invalid.
         let _: Result<(), FederationError> = selection_sets
             .iter()
-            .map(|s| s.validate(variable_definitions))
-            .collect();
+            .try_for_each(|s| s.validate(variable_definitions));
         let selections = Arc::new(NormalizedSelectionMap(
             selection_sets
                 .iter()
-                .map(|selection_set| {
+                .flat_map(|selection_set| {
                     selection_set
                         .selections
                         .iter()
                         .map(|(key, selection)| (key.clone(), selection.clone()))
                 })
-                .flatten()
                 .collect(),
         ));
 

@@ -1,6 +1,5 @@
 use apollo_compiler::{
     ast::{NamedType, Type},
-    schema::{InterfaceType, UnionType},
     Schema,
 };
 
@@ -30,27 +29,25 @@ pub(crate) fn base_type(ty: &Type) -> &NamedType {
 }
 
 pub(crate) fn is_abstract_type(ty: TypeDefinitionPosition) -> bool {
-    match ty {
+    matches!(
+        ty,
         crate::schema::position::TypeDefinitionPosition::Interface(_)
-        | crate::schema::position::TypeDefinitionPosition::Union(_) => true,
-        _ => false,
-    }
+            | crate::schema::position::TypeDefinitionPosition::Union(_)
+    )
 }
 
 pub(crate) fn is_composite_type(ty: &NamedType, schema: &Schema) -> Result<bool, FederationError> {
-    Ok(
-        match schema
+    Ok(matches!(
+        schema
             .types
             .get(ty)
             .ok_or_else(|| SingleFederationError::Internal {
                 message: format!("Cannot find type `'{}\'", ty),
-            })? {
-            apollo_compiler::schema::ExtendedType::Object(_)
+            })?,
+        apollo_compiler::schema::ExtendedType::Object(_)
             | apollo_compiler::schema::ExtendedType::Interface(_)
-            | apollo_compiler::schema::ExtendedType::Union(_) => true,
-            _ => false,
-        },
-    )
+            | apollo_compiler::schema::ExtendedType::Union(_)
+    ))
 }
 
 /**
@@ -79,8 +76,8 @@ pub(crate) fn types_can_be_merged(
         });
     }
 
-    if is_composite_type(&t1.inner_named_type(), schema)? {
-        return is_composite_type(&t2.inner_named_type(), schema);
+    if is_composite_type(t1.inner_named_type(), schema)? {
+        return is_composite_type(t2.inner_named_type(), schema);
     }
 
     Ok(same_type(t1, t2))

@@ -555,9 +555,9 @@ impl NormalizedSelection {
         }
     }
 
-    pub(crate) fn collect_variables<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+    pub(crate) fn collect_variables(
+        &self,
+    ) -> impl Iterator<Item = Result<Name, FederationError>> + '_ {
         match self {
             NormalizedSelection::Field(field) => Box::new(field.collect_variables())
                 as Box<dyn Iterator<Item = Result<Name, FederationError>>>,
@@ -655,7 +655,7 @@ pub(crate) mod normalized_field_selection {
     use crate::schema::position::{FieldDefinitionPosition, TypeDefinitionPosition};
     use crate::schema::ValidFederationSchema;
     use apollo_compiler::ast::{Argument, Directive, DirectiveList, Name};
-    use apollo_compiler::{Node, NodeStr};
+    use apollo_compiler::Node;
     use std::sync::Arc;
 
     /// An analogue of the apollo-compiler type `Field` with these changes:
@@ -700,7 +700,7 @@ pub(crate) mod normalized_field_selection {
             selection_set: Option<NormalizedSelectionSet>,
         ) -> Result<NormalizedFieldSelection, FederationError> {
             if self.field == field && self.selection_set == selection_set {
-                return Ok(self.clone());
+                Ok(self.clone())
             } else {
                 Ok(NormalizedFieldSelection {
                     field,
@@ -712,21 +712,22 @@ pub(crate) mod normalized_field_selection {
         pub(crate) fn with_updated_alias(&self, alias: Name) -> NormalizedField {
             let mut data = self.field.data().clone();
             data.alias = Some(alias);
-            let field = NormalizedField::new(data);
+            NormalizedField::new(data)
             // FIXME: what is copyAttachments?
+            // let field = NormalizedField::new(data);
+
             // this.copyAttachementsTo(newField);
-            field
+            //field
         }
 
-        pub(crate) fn collect_variables<'a>(
-            &'a self,
-        ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+        pub(crate) fn collect_variables(
+            &self,
+        ) -> impl Iterator<Item = Result<Name, FederationError>> + '_ {
             self.field.collect_variables().chain(
                 self.selection_set
                     .as_ref()
                     .into_iter()
-                    .map(|selection_set| selection_set.collect_variables())
-                    .flatten(),
+                    .flat_map(|selection_set| selection_set.collect_variables()),
             )
         }
     }
@@ -769,41 +770,38 @@ pub(crate) mod normalized_field_selection {
             FetchDataPathElement::Key(self.data().response_name().into())
         }
 
-        pub(crate) fn collect_variables<'a>(
-            &'a self,
-        ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+        pub(crate) fn collect_variables(
+            &self,
+        ) -> impl Iterator<Item = Result<Name, FederationError>> + '_ {
             self.data()
                 .arguments
                 .iter()
-                .map(|argument| collect_variables_from_argument(&argument))
-                .flatten()
+                .flat_map(|argument| collect_variables_from_argument(argument))
                 .chain(
                     self.data()
                         .directives
                         .iter()
-                        .map(|directive| collect_variables_from_directive(&directive))
-                        .flatten(),
+                        .flat_map(|directive| collect_variables_from_directive(directive)),
                 )
         }
     }
 
-    pub(crate) fn collect_variables_from_argument<'a>(
-        argument: &'a Argument,
-    ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+    pub(crate) fn collect_variables_from_argument(
+        argument: &Argument,
+    ) -> impl Iterator<Item = Result<Name, FederationError>> + '_ {
         match &*argument.value {
             apollo_compiler::ast::Value::Variable(v) => Some(Ok(v.clone())).into_iter(),
             _ => None.into_iter(),
         }
     }
 
-    pub(crate) fn collect_variables_from_directive<'a>(
-        directive: &'a Directive,
-    ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+    pub(crate) fn collect_variables_from_directive(
+        directive: &Directive,
+    ) -> impl Iterator<Item = Result<Name, FederationError>> + '_ {
         directive
             .arguments
             .iter()
-            .map(|argument| collect_variables_from_argument(&*argument))
-            .flatten()
+            .flat_map(|argument| collect_variables_from_argument(argument))
     }
 
     impl HasNormalizedSelectionKey for NormalizedField {
@@ -964,9 +962,9 @@ pub(crate) mod normalized_inline_fragment_selection {
             }
         }
 
-        pub(crate) fn collect_variables<'a>(
-            &'a self,
-        ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+        pub(crate) fn collect_variables(
+            &self,
+        ) -> impl Iterator<Item = Result<Name, FederationError>> + '_ {
             self.inline_fragment
                 .collect_variables()
                 .chain(self.selection_set.collect_variables())
@@ -1025,14 +1023,13 @@ pub(crate) mod normalized_inline_fragment_selection {
             ))
         }
 
-        pub(crate) fn collect_variables<'a>(
-            &'a self,
-        ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
+        pub(crate) fn collect_variables(
+            &self,
+        ) -> impl Iterator<Item = Result<Name, FederationError>> + '_ {
             self.data
                 .directives
                 .iter()
-                .map(|directive| collect_variables_from_directive(&*directive))
-                .flatten()
+                .flat_map(|directive| collect_variables_from_directive(directive))
         }
     }
 
@@ -1099,7 +1096,6 @@ impl NormalizedOperation {
         );
 
         todo!(); // TODO: port JS `Operation.optimize` from `operations.ts`
-        ();
     }
 }
 
@@ -1627,9 +1623,9 @@ impl NormalizedSelectionSet {
                 };
 
                 let type_if_abstract =
-                    subselection_type_if_abstract(&selection, &self.schema, fragments);
+                    subselection_type_if_abstract(selection, &self.schema, fragments);
                 let updated_selection_set = selection_set
-                    .add_typename_field_for_abstract_types(type_if_abstract, &fragments)?;
+                    .add_typename_field_for_abstract_types(type_if_abstract, fragments)?;
 
                 if updated_selection_set == *selection_set {
                     Ok((selection_key.clone(), selection.clone()))
@@ -1751,7 +1747,7 @@ impl NormalizedSelectionSet {
         let mut remaining: Vec<&FieldToAlias> = Vec::new();
 
         for alias in aliases {
-            if alias.path.len() > 0 {
+            if !alias.path.is_empty() {
                 remaining.push(alias);
             } else {
                 at_current_level.insert(
@@ -1771,7 +1767,7 @@ impl NormalizedSelectionSet {
                     .filter_map(|alias| {
                         if alias.path.first() == path_element.as_ref() {
                             Some(FieldToAlias {
-                                path: (&alias.path[1..]).iter().cloned().collect(),
+                                path: alias.path[1..].to_vec(),
                                 response_name: alias.response_name.clone(),
                                 alias: alias.alias.clone(),
                             })
@@ -1827,7 +1823,7 @@ impl NormalizedSelectionSet {
     pub(crate) fn fields_in_set(&self) -> Vec<CollectedFieldInSet> {
         let mut fields = Vec::new();
 
-        for (key, selection) in self.selections.iter() {
+        for (_key, selection) in self.selections.iter() {
             match selection {
                 NormalizedSelection::Field(field) => fields.push(CollectedFieldInSet {
                     path: Vec::new(),
@@ -1865,7 +1861,7 @@ impl NormalizedSelectionSet {
     }
 
     pub(crate) fn used_variables(&self) -> Result<Vec<Name>, FederationError> {
-        let mut v = self
+        let v = self
             .collect_variables()
             .collect::<Result<HashSet<_>, _>>()?;
         let mut res: Vec<Name> = v.into_iter().collect();
@@ -1873,31 +1869,27 @@ impl NormalizedSelectionSet {
         Ok(res)
     }
 
-    pub(crate) fn collect_variables<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = Result<Name, FederationError>> + 'a {
-        self.selections
-            .values()
-            .map(|selection| {
-                selection
-                    .collect_variables()
-                    .chain(match selection.selection_set() {
-                        Ok(opt_s) => Box::new(
-                            opt_s
-                                .into_iter()
-                                .map(|selection_set| selection_set.collect_variables())
-                                .flatten(),
-                        ),
-                        Err(e) => Box::new(once(Err(e)))
-                            as Box<dyn Iterator<Item = Result<Name, FederationError>>>,
-                    })
-            })
-            .flatten()
+    pub(crate) fn collect_variables(
+        &self,
+    ) -> impl Iterator<Item = Result<Name, FederationError>> + '_ {
+        self.selections.values().flat_map(|selection| {
+            selection
+                .collect_variables()
+                .chain(match selection.selection_set() {
+                    Ok(opt_s) => Box::new(
+                        opt_s
+                            .into_iter()
+                            .flat_map(|selection_set| selection_set.collect_variables()),
+                    ),
+                    Err(e) => Box::new(once(Err(e)))
+                        as Box<dyn Iterator<Item = Result<Name, FederationError>>>,
+                })
+        })
     }
 
     pub(crate) fn validate(
         &self,
-        variable_definitions: &[Node<VariableDefinition>],
+        _variable_definitions: &[Node<VariableDefinition>],
     ) -> Result<(), FederationError> {
         if self.selections.is_empty() {
             Err(SingleFederationError::Internal {
@@ -1907,7 +1899,7 @@ impl NormalizedSelectionSet {
         } else {
             for selection in self.selections.values() {
                 if let Some(s) = selection.selection_set()? {
-                    s.validate(variable_definitions)?;
+                    s.validate(_variable_definitions)?;
                 }
             }
 
@@ -1951,31 +1943,22 @@ fn compute_aliases_for_non_merging_fields(
 ) -> Result<(), FederationError> {
     let mut seen_response_names: HashMap<Name, SeenResponseName> = HashMap::new();
 
-    fn rebased_fields_in_set<'a>(
-        s: &'a SelectionSetAtPath,
-    ) -> impl Iterator<Item = FieldInPath> + 'a {
-        s.selections
-            .iter()
-            .map(|s2| {
-                s2.fields_in_set()
-                    .into_iter()
-                    .map(|CollectedFieldInSet { path, field }| {
-                        let mut new_path = s.path.clone();
-                        new_path.extend(path);
-                        FieldInPath {
-                            path: new_path,
-                            field,
-                        }
-                    })
-            })
-            .flatten()
+    fn rebased_fields_in_set(s: &SelectionSetAtPath) -> impl Iterator<Item = FieldInPath> + '_ {
+        s.selections.iter().flat_map(|s2| {
+            s2.fields_in_set()
+                .into_iter()
+                .map(|CollectedFieldInSet { path, field }| {
+                    let mut new_path = s.path.clone();
+                    new_path.extend(path);
+                    FieldInPath {
+                        path: new_path,
+                        field,
+                    }
+                })
+        })
     }
 
-    for FieldInPath { mut path, field } in selections
-        .iter()
-        .map(|s| rebased_fields_in_set(s))
-        .flatten()
-    {
+    for FieldInPath { mut path, field } in selections.iter().flat_map(rebased_fields_in_set) {
         let field_name = field.field.data().name();
         let response_name = field.field.data().response_name();
         let field_type = &field.field.data().field_position.get(schema.schema())?.ty;
@@ -1983,11 +1966,11 @@ fn compute_aliases_for_non_merging_fields(
         match seen_response_names.get(&response_name) {
             Some(previous) => {
                 if &previous.field_name == field_name
-                    && types_can_be_merged(&previous.field_type, &field_type, schema.schema())?
+                    && types_can_be_merged(&previous.field_type, field_type, schema.schema())?
                 {
                     // If the type is non-composite, then we're all set. But if it is composite, we need to record the sub-selection to that response name
                     // as we need to "recurse" on the merged of both the previous and this new field.
-                    if is_composite_type(base_type(&field_type), schema.schema())? {
+                    if is_composite_type(base_type(field_type), schema.schema())? {
                         match &previous.selections {
                             None => {
                                 return Err(SingleFederationError::Internal {
@@ -2152,7 +2135,7 @@ pub(crate) fn subselection_type_if_abstract(
 }
 
 impl From<NormalizedSelectionSet> for executable::SelectionSet {
-    fn from(value: NormalizedSelectionSet) -> Self {
+    fn from(_value: NormalizedSelectionSet) -> Self {
         todo!()
     }
 }
@@ -2657,7 +2640,7 @@ impl From<&NormalizedFragmentSpreadSelection> for FragmentSpread {
 impl TryFrom<NormalizedOperation> for Valid<executable::ExecutableDocument> {
     type Error = FederationError;
 
-    fn try_from(value: NormalizedOperation) -> Result<Self, Self::Error> {
+    fn try_from(_value: NormalizedOperation) -> Result<Self, Self::Error> {
         todo!()
     }
 }
