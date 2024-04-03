@@ -2050,8 +2050,12 @@ fn maybe_dump_subgraph_schema(subgraph: FederationSubgraph, message: &mut String
         let _ = write!(message, "Re-run with environment variable '{DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME}' set to 'true' to extract the invalid subgraph");
         return;
     }
-    let filename = format!("extracted-subgraph-{}.graphql", subgraph.name);
-    let contents = format!("{:?}", subgraph.schema);
+    let filename = format!(
+        "extracted-subgraph-{}-{}.graphql",
+        subgraph.name,
+        chrono::Local::now()
+    );
+    let contents = format!("{}", subgraph.schema.schema());
     let _ = match std::fs::write(&filename, contents) {
         Ok(_) => write!(
             message,
