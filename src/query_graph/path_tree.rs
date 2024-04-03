@@ -356,3 +356,165 @@ fn merge_conditions(
         (None, None) => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use apollo_compiler::{executable::DirectiveList, ExecutableDocument};
+    use petgraph::{stable_graph::NodeIndex, visit::EdgeRef};
+
+    use crate::{
+        error::FederationError,
+        query_graph::{
+            build_query_graph::build_query_graph,
+            condition_resolver::ConditionResolution,
+            graph_path::{OpGraphPath, OpGraphPathTrigger, OpPathElement},
+            path_tree::OpPathTree,
+            QueryGraph, QueryGraphEdgeTransition,
+        },
+        query_plan::operation::{
+            normalize_operation,
+            normalized_field_selection::{NormalizedField, NormalizedFieldData},
+        },
+        schema::{position::SchemaRootDefinitionKind, ValidFederationSchema},
+    };
+
+    // NB: stole from operation.rs
+    fn parse_schema_and_operation(
+        schema_and_operation: &str,
+    ) -> (ValidFederationSchema, ExecutableDocument) {
+        let (schema, executable_document) =
+            apollo_compiler::parse_mixed_validate(schema_and_operation, "document.graphql")
+                .unwrap();
+        let executable_document = executable_document.into_inner();
+        let schema = ValidFederationSchema::new(schema).unwrap();
+        (schema, executable_document)
+    }
+
+    fn trivial_condition() -> ConditionResolution {
+        ConditionResolution::Satisfied {
+            cost: 0,
+            path_tree: None,
+        }
+    }
+
+    // A helper function that builds a graph path from a sequence of field names
+    fn build_graph_path(
+        query_graph: &Arc<QueryGraph>,
+        op_kind: SchemaRootDefinitionKind,
+        path: &[&str],
+    ) -> Result<OpGraphPath, FederationError> {
+        let nodes_by_kind = query_graph.root_kinds_to_nodes()?;
+        let root_node_idx = nodes_by_kind[&op_kind];
+        let mut graph_path = OpGraphPath::new(query_graph.clone(), root_node_idx)?;
+        let mut curr_node_idx = root_node_idx;
+        for field_name in path.iter() {
+            // find the edge that matches `field_name`
+            let (edge_ref, field_def) = query_graph
+                .out_edges(curr_node_idx)
+                .find_map(|e_ref| {
+                    let edge = e_ref.weight();
+                    match &edge.transition {
+                        QueryGraphEdgeTransition::FieldCollection {
+                            field_definition_position,
+                            ..
+                        } => {
+                            if field_definition_position.field_name() == *field_name {
+                                Some((e_ref, field_definition_position))
+                            } else {
+                                None
+                            }
+                        }
+
+                        _ => None,
+                    }
+                })
+                .unwrap();
+
+            // build the trigger for the edge
+            let data = NormalizedFieldData {
+                schema: query_graph.schema().unwrap().clone(),
+                field_position: field_def.clone(),
+                alias: None,
+                arguments: Arc::new(Vec::new()),
+                directives: Arc::new(DirectiveList::new()),
+                sibling_typename: None,
+            };
+            let trigger =
+                OpGraphPathTrigger::OpPathElement(OpPathElement::Field(NormalizedField::new(data)));
+
+            // add the edge to the path
+            graph_path = graph_path
+                .add(trigger, Some(edge_ref.id()), trivial_condition(), None)
+                .unwrap();
+
+            // prepare for the next iteration
+            curr_node_idx = edge_ref.target();
+        }
+        Ok(graph_path)
+    }
+
+    #[test]
+    fn path_tree_display() {
+        let src = r#"
+        type Query
+        {
+            t: T
+        }
+
+        type T
+        {
+            otherId: ID!
+            id: ID!
+        }
+
+        query Test
+        {
+            t {
+                id
+            }
+        }
+        "#;
+
+        let (schema, mut executable_document) = parse_schema_and_operation(src);
+        let (op_name, operation) = executable_document.named_operations.first_mut().unwrap();
+
+        let query_graph =
+            Arc::new(build_query_graph(op_name.to_string().into(), schema.clone()).unwrap());
+
+        let path1 =
+            build_graph_path(&query_graph, SchemaRootDefinitionKind::Query, &["t", "id"]).unwrap();
+        assert_eq!(
+            path1.to_string(),
+            "Query(Test)* --[t]--> T(Test) --[id]--> ID(Test)"
+        );
+
+        let path2 = build_graph_path(
+            &query_graph,
+            SchemaRootDefinitionKind::Query,
+            &["t", "otherId"],
+        )
+        .unwrap();
+        assert_eq!(
+            path2.to_string(),
+            "Query(Test)* --[t]--> T(Test) --[otherId]--> ID(Test)"
+        );
+
+        let normalized_operation =
+            normalize_operation(operation, &Default::default(), &schema, &Default::default())
+                .unwrap();
+        let selection_set = Arc::new(normalized_operation.selection_set);
+
+        let paths = vec![(&path1, &selection_set), (&path2, &selection_set)];
+        let path_tree =
+            OpPathTree::from_op_paths(query_graph.to_owned(), NodeIndex::new(0), &paths).unwrap();
+        let computed = path_tree.to_string();
+        let expected = r#"Query(Test)*:
+ -> [3] t = T(Test):
+   -> [1] id = ID(Test)
+   -> [0] otherId = ID(Test)
+"#;
+        assert_eq!(computed, expected);
+    }
+}
