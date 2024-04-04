@@ -35,6 +35,7 @@ use std::fmt;
 use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
+use time::OffsetDateTime;
 
 /// Assumes the given schema has been validated.
 ///
@@ -2054,10 +2055,8 @@ fn maybe_dump_subgraph_schema(subgraph: FederationSubgraph, message: &mut String
             return;
         }
     }
-    let filename = match time::OffsetDateTime::now_local() {
-        Ok(time) => format!("extracted-subgraph-{}-{time}.graphql", subgraph.name,),
-        Err(_) => format!("extracted-subgraph-{}.graphql", subgraph.name,),
-    };
+    let time = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let filename = format!("extracted-subgraph-{}-{time}.graphql", subgraph.name,);
     let contents = format!("{}", subgraph.schema.schema());
     _ = match std::fs::write(&filename, contents) {
         Ok(_) => write!(
