@@ -2,6 +2,7 @@ use crate::subgraph::spec::FederationSpecError;
 use apollo_compiler::validation::DiagnosticList;
 use apollo_compiler::{ast::InvalidNameError, validation::WithErrors};
 use lazy_static::lazy_static;
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter, Write};
 
 // What we really needed here was the string representations in enum form, this isn't meant to
@@ -484,6 +485,22 @@ impl FederationError {
             message: message.into(),
         }
         .into()
+    }
+}
+
+// Converts a SingleFederationError array into `Result<(), FederationError>`.
+// The return value can be either Ok, Err with a SingleFederationError or MultipleFederationErrors,
+// depending on the number of errors in the input.
+pub(crate) fn check_federation_errors(
+    errors: &[SingleFederationError],
+) -> Result<(), FederationError> {
+    match errors.len().cmp(&1) {
+        Ordering::Less => Ok(()),
+        Ordering::Equal => Err(errors[0].clone().into()),
+        Ordering::Greater => Err(MultipleFederationErrors {
+            errors: errors.to_vec(),
+        }
+        .into()),
     }
 }
 

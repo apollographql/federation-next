@@ -1,4 +1,4 @@
-use crate::error::FederationError;
+use crate::error::{check_federation_errors, FederationError, SingleFederationError};
 use crate::query_plan::operation::{FragmentSpreadNormalizationOption, NormalizedSelectionSet};
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::executable::{FieldSet, SelectionSet};
@@ -7,8 +7,28 @@ use apollo_compiler::validation::Valid;
 use apollo_compiler::{NodeStr, Schema};
 use indexmap::IndexMap;
 
-// TODO: In the JS codebase, this optionally runs an additional validation to forbid aliases, and
-// has some error-rewriting to help give the user better hints around non-existent fields.
+// Federation spec does not allow the alias syntax in field set strings.
+// However, since `parse_field_set` uses the standard GraphQL parser, which allows aliases,
+// we need this secondary check to ensure that aliases are not used.
+fn check_absence_of_aliases(
+    field_set: &Valid<FieldSet>,
+    code_str: &NodeStr,
+) -> Result<(), FederationError> {
+    let alias_errors: Vec<_> = field_set.selection_set.fields().filter_map(|field| {
+        field.alias.as_ref().map(|alias|
+            SingleFederationError::UnsupportedFeature {
+                // PORT_NOTE: The JS version also quotes the directive name in the error message.
+                //            For example, "aliases are not currently supported in @requires".
+                message: format!(
+                    r#"Cannot use alias "{}" in "{}": aliases are not currently supported in the used directive"#,
+                    alias, code_str)
+            })
+    }).collect();
+    check_federation_errors(&alias_errors)
+}
+
+// TODO: In the JS codebase, this has some error-rewriting to help give the user better hints around
+// non-existent fields.
 pub(super) fn parse_field_set(
     schema: &ValidFederationSchema,
     parent_type_name: NamedType,
@@ -22,6 +42,10 @@ pub(super) fn parse_field_set(
         value.as_str(),
         "field_set.graphql",
     )?;
+
+    // Validate the field set has no aliases.
+    check_absence_of_aliases(&field_set, &value)?;
+
     NormalizedSelectionSet::normalize_and_expand_fragments(
         &field_set.selection_set,
         &IndexMap::new(),
