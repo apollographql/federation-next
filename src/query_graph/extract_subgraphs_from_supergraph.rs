@@ -2043,20 +2043,23 @@ fn maybe_dump_subgraph_schema(subgraph: FederationSubgraph, message: &mut String
     // NOTE: The std::fmt::write returns an error, but writing to a string will never return an
     // error, so it is dropped when called.
 
-    if let Some(true) = std::env::var(DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME)
+    match std::env::var(DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME)
         .ok()
         .and_then(|v| v.parse::<bool>().ok())
     {
-        let _ = write!(message, "Re-run with environment variable '{DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME}' set to 'true' to extract the invalid subgraph");
-        return;
+        Some(true) => {}
+        _ => {
+            _ = write!(message, "Re-run with environment variable '{}' set to 'true' to extract the invalid subgraph",
+                           DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME);
+            return;
+        }
     }
-    let filename = format!(
-        "extracted-subgraph-{}-{}.graphql",
-        subgraph.name,
-        chrono::Local::now()
-    );
+    let filename = match time::OffsetDateTime::now_local() {
+        Ok(time) => format!("extracted-subgraph-{}-{time}.graphql", subgraph.name,),
+        Err(_) => format!("extracted-subgraph-{}.graphql", subgraph.name,),
+    };
     let contents = format!("{}", subgraph.schema.schema());
-    let _ = match std::fs::write(&filename, contents) {
+    _ = match std::fs::write(&filename, contents) {
         Ok(_) => write!(
             message,
             "The (invalid) extracted subgraph has been written in: {filename}."
