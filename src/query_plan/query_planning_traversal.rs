@@ -144,11 +144,7 @@ impl<'a> QueryPlanningTraversal<'a> {
     }
 
     // PORT_NOTE: In JS, the traversal is still usable after finding the best plan. Here we consume
-    // the struct so we do not need to return a reference.
-    //
-    // XXX(@goto-bus-stop): Do we still need it? It's easier if we can consume the traversal
-    // struct and return an owned BestQueryPlan. Alternatively, do we need to store the `best_plan`
-    // in `self` at all?
+    // the struct so we do not need to return a reference, which is very unergonomic.
     pub fn find_best_plan(mut self) -> Result<Option<BestQueryPlanInfo>, FederationError> {
         self.find_best_plan_inner()?;
         Ok(self.best_plan)
