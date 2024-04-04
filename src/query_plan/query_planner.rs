@@ -286,9 +286,12 @@ impl QueryPlanner {
             // TODO(@goto-bus-stop) this is not an internal error, but a user error
             .map_err(|_| FederationError::internal("requested operation does not exist"))?;
 
-        // TODO(@goto-bus-stop) this isn't valid GraphQL so it should not return Ok()?
         if operation.selection_set.selections.is_empty() {
-            return Ok(QueryPlan::default());
+            // This should never happen because `operation` comes from a known-valid document.
+            return Err(SingleFederationError::InvalidGraphQL {
+                message: "Invalid operation: empty selection set".to_string(),
+            }
+            .into());
         }
 
         let is_subscription = operation.is_subscription();
