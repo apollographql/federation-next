@@ -70,8 +70,7 @@ impl SubgraphMetadata {
 // more accurate.
 #[derive(Debug, Clone)]
 pub(crate) struct ExternalMetadata {
-    schema: Arc<Valid<FederationSchema>>,
-    external_directive_definition: Node<DirectiveDefinition>,
+    external_fields: IndexSet<FieldDefinitionPosition>,
     fake_external_fields: IndexSet<FieldDefinitionPosition>,
     provided_fields: IndexSet<FieldDefinitionPosition>,
     fields_on_external_types: IndexSet<FieldDefinitionPosition>,
@@ -83,6 +82,7 @@ impl ExternalMetadata {
         federation_spec_definition: &'static FederationSpecDefinition,
         is_fed2: bool,
     ) -> Result<Self, FederationError> {
+        let external_fields = Self::collect_external_fields(federation_spec_definition, &schema)?;
         let fake_external_fields =
             Self::collect_fake_externals(federation_spec_definition, &schema)?;
         let provided_fields = Self::collect_provided_fields(federation_spec_definition, &schema)?;
@@ -97,17 +97,43 @@ impl ExternalMetadata {
             Default::default()
         };
 
-        let external_directive_definition = federation_spec_definition
-            .external_directive_definition(&schema)?
-            .clone();
-
         Ok(Self {
-            schema,
-            external_directive_definition,
+            external_fields,
             fake_external_fields,
             provided_fields,
             fields_on_external_types,
         })
+    }
+
+    fn collect_external_fields(
+        federation_spec_definition: &'static FederationSpecDefinition,
+        schema: &Valid<FederationSchema>,
+    ) -> Result<IndexSet<FieldDefinitionPosition>, FederationError> {
+        let external_directive_definition = federation_spec_definition
+            .external_directive_definition(&schema)?
+            .clone();
+
+        let external_directive_referencers = schema
+            .referencers
+            .get_directive(&external_directive_definition.name)?;
+
+        let mut external_fields = IndexSet::new();
+
+        external_fields.extend(
+            external_directive_referencers
+                .object_fields
+                .iter()
+                .map(|field| field.clone().into()),
+        );
+
+        external_fields.extend(
+            external_directive_referencers
+                .interface_fields
+                .iter()
+                .map(|field| field.clone().into()),
+        );
+
+        Ok(external_fields)
     }
 
     fn collect_fake_externals(
@@ -231,10 +257,7 @@ impl ExternalMetadata {
         &self,
         field_definition_position: &FieldDefinitionPosition,
     ) -> Result<bool, FederationError> {
-        let field = field_definition_position.get(self.schema.schema())?;
-        Ok((field
-            .directives
-            .has(&self.external_directive_definition.name)
+        Ok((self.external_fields.contains(field_definition_position)
             || self
                 .fields_on_external_types
                 .contains(field_definition_position))
