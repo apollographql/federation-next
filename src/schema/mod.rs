@@ -207,10 +207,8 @@ impl ValidFederationSchema {
             if let Ok(federation_spec_definition) =
                 get_federation_spec_definition_from_subgraph(schema)
             {
-                let valid_schema = Valid::assume_valid_ref(&schema.schema);
                 Some(SubgraphMetadata::new(
                     schema.clone(),
-                    valid_schema,
                     federation_spec_definition,
                 )?)
             } else {
