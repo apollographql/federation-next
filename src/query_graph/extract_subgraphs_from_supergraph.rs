@@ -2042,31 +2042,28 @@ static DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME: &str = "APOLLO_FEDERATION_DEBUG_SUBGRA
 
 fn maybe_dump_subgraph_schema(subgraph: FederationSubgraph, message: &mut String) {
     // NOTE: The std::fmt::write returns an error, but writing to a string will never return an
-    // error, so it is dropped when called.
-
-    match std::env::var(DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME)
-        .ok()
-        .and_then(|v| v.parse::<bool>().ok())
-    {
-        Some(true) => {}
-        _ => {
-            _ = write!(message, "Re-run with environment variable '{}' set to 'true' to extract the invalid subgraph",
-                           DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME);
-            return;
+    // error, so the result is dropped.
+    _ = match std::env::var(DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME).map(|v| v.parse::<bool>()) {
+        Ok(Ok(true)) => {
+            let time = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+            let filename = format!("extracted-subgraph-{}-{time}.graphql", subgraph.name,);
+            let contents = subgraph.schema.schema().to_string();
+            match std::fs::write(&filename, contents) {
+                Ok(_) => write!(
+                    message,
+                    "The (invalid) extracted subgraph has been written in: {filename}."
+                ),
+                Err(e) => write!(
+                    message,
+                    r#"Was not able to print generated subgraph for "{}" because: {e}"#,
+                    subgraph.name
+                ),
+            }
         }
-    }
-    let time = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
-    let filename = format!("extracted-subgraph-{}-{time}.graphql", subgraph.name,);
-    let contents = format!("{}", subgraph.schema.schema());
-    _ = match std::fs::write(&filename, contents) {
-        Ok(_) => write!(
+        _ => write!(
             message,
-            "The (invalid) extracted subgraph has been written in: {filename}."
-        ),
-        Err(e) => write!(
-            message,
-            r#"Was not able to print generated subgraph for "{}" because: {e}"#,
-            subgraph.name
+            "Re-run with environment variable '{}' set to 'true' to extract the invalid subgraph",
+            DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME
         ),
     };
 }
