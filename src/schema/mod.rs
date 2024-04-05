@@ -155,8 +155,22 @@ impl FederationSchema {
     }
 
     pub(crate) fn validate(self) -> Result<ValidFederationSchema, FederationError> {
-        let schema = self.schema.validate()?.into_inner();
-        ValidFederationSchema::assume_valid(FederationSchema { schema, ..self })
+        self.validate_or_return_self().map_err(|e| e.1)
+    }
+
+    /// Similar to `Self::validate` but returns `self` as part of the error should it be needed by
+    /// the caller
+    pub(crate) fn validate_or_return_self(
+        mut self,
+    ) -> Result<ValidFederationSchema, (Self, FederationError)> {
+        let schema = match self.schema.validate() {
+            Ok(schema) => schema.into_inner(),
+            Err(e) => {
+                self.schema = e.partial;
+                return Err((self, e.errors.into()));
+            }
+        };
+        Ok(ValidFederationSchema::assume_valid(FederationSchema { schema, ..self }))
     }
 
     pub(crate) fn assume_valid(self) -> Result<ValidFederationSchema, FederationError> {
