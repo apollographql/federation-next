@@ -24,12 +24,26 @@ pub(crate) mod position;
 pub(crate) mod referencer;
 pub(crate) mod subgraph_metadata;
 
+fn compute_subgraph_metadata(
+    schema: &Valid<FederationSchema>,
+) -> Result<Option<SubgraphMetadata>, FederationError> {
+    Ok(
+        if let Ok(federation_spec_definition) = get_federation_spec_definition_from_subgraph(schema)
+        {
+            Some(SubgraphMetadata::new(schema, federation_spec_definition)?)
+        } else {
+            None
+        },
+    )
+}
+
 /// A GraphQL schema with federation data.
 #[derive(Debug)]
 pub struct FederationSchema {
     schema: Schema,
-    metadata: Option<LinksMetadata>,
     referencers: Referencers,
+    links_metadata: Option<Box<LinksMetadata>>,
+    subgraph_metadata: Option<Box<SubgraphMetadata>>,
 }
 
 impl FederationSchema {
@@ -47,7 +61,12 @@ impl FederationSchema {
     }
 
     pub(crate) fn metadata(&self) -> Option<&LinksMetadata> {
-        self.metadata.as_ref()
+        self.links_metadata.as_deref()
+    }
+
+    /// Returns subgraph-specific metadata, or `None` for supergraph schemas.
+    pub(crate) fn subgraph_metadata(&self) -> Option<&SubgraphMetadata> {
+        self.subgraph_metadata.as_deref()
     }
 
     pub(crate) fn referencers(&self) -> &Referencers {
@@ -137,11 +156,7 @@ impl FederationSchema {
 
     pub(crate) fn validate(self) -> Result<ValidFederationSchema, FederationError> {
         let schema = self.schema.validate()?.into_inner();
-        ValidFederationSchema::assume_valid(FederationSchema {
-            schema,
-            metadata: self.metadata,
-            referencers: self.referencers,
-        })
+        ValidFederationSchema::assume_valid(FederationSchema { schema, ..self })
     }
 
     pub(crate) fn assume_valid(self) -> Result<ValidFederationSchema, FederationError> {
@@ -185,56 +200,33 @@ impl FederationSchema {
 #[derive(Debug, Clone)]
 pub struct ValidFederationSchema {
     schema: Arc<Valid<FederationSchema>>,
-    subgraph_metadata: Option<SubgraphMetadata>,
 }
 
 impl ValidFederationSchema {
     pub fn new(schema: Valid<Schema>) -> Result<ValidFederationSchema, FederationError> {
-        let schema = Arc::new(Valid::assume_valid(FederationSchema::new(
-            schema.into_inner(),
-        )?));
-        let subgraph_metadata = Self::compute_subgraph_metadata(&schema)?;
-        Ok(ValidFederationSchema {
-            schema,
-            subgraph_metadata,
-        })
-    }
+        let schema = Valid::assume_valid(FederationSchema::new(schema.into_inner())?);
 
-    fn compute_subgraph_metadata(
-        schema: &Arc<Valid<FederationSchema>>,
-    ) -> Result<Option<SubgraphMetadata>, FederationError> {
-        Ok(
-            if let Ok(federation_spec_definition) =
-                get_federation_spec_definition_from_subgraph(schema)
-            {
-                Some(SubgraphMetadata::new(
-                    schema.clone(),
-                    federation_spec_definition,
-                )?)
-            } else {
-                None
-            },
-        )
+        let subgraph_metadata = compute_subgraph_metadata(&schema)?.map(Box::new);
+
+        // Temporarily remove the `Valid` wrapper so we can mutate the FederationSchema again
+        let mut federation_schema = schema.into_inner();
+        federation_schema.subgraph_metadata = subgraph_metadata;
+
+        Ok(ValidFederationSchema {
+            schema: Arc::new(Valid::assume_valid(federation_schema)),
+        })
     }
 
     pub(crate) fn assume_valid(
         schema: FederationSchema,
     ) -> Result<ValidFederationSchema, FederationError> {
         let schema = Arc::new(Valid::assume_valid(schema));
-        let subgraph_metadata = Self::compute_subgraph_metadata(&schema)?;
-        Ok(ValidFederationSchema {
-            schema,
-            subgraph_metadata,
-        })
+        Ok(ValidFederationSchema { schema })
     }
 
     /// Access the GraphQL schema.
     pub fn schema(&self) -> &Valid<Schema> {
         Valid::assume_valid_ref(&self.schema.schema)
-    }
-
-    pub(crate) fn subgraph_metadata(&self) -> Option<&SubgraphMetadata> {
-        self.subgraph_metadata.as_ref()
     }
 }
 

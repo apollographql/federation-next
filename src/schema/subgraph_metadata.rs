@@ -11,11 +11,9 @@ use crate::schema::position::{
     ObjectOrInterfaceFieldDefinitionPosition, ObjectOrInterfaceTypeDefinitionPosition,
 };
 use crate::schema::FederationSchema;
-use apollo_compiler::schema::DirectiveDefinition;
 use apollo_compiler::validation::Valid;
-use apollo_compiler::{Node, Schema};
+use apollo_compiler::Schema;
 use indexmap::IndexSet;
-use std::sync::Arc;
 
 fn unwrap_schema(fed_schema: &Valid<FederationSchema>) -> &Valid<Schema> {
     // Okay to assume valid because `fed_schema` is known to be valid.
@@ -26,7 +24,6 @@ fn unwrap_schema(fed_schema: &Valid<FederationSchema>) -> &Valid<Schema> {
 // apparent that this was just subgraph schema metadata, so we've renamed it accordingly.
 #[derive(Debug, Clone)]
 pub(crate) struct SubgraphMetadata {
-    schema: Arc<Valid<FederationSchema>>,
     federation_spec_definition: &'static FederationSpecDefinition,
     is_fed2: bool,
     external_metadata: ExternalMetadata,
@@ -34,17 +31,15 @@ pub(crate) struct SubgraphMetadata {
 
 impl SubgraphMetadata {
     pub(super) fn new(
-        schema: Arc<Valid<FederationSchema>>,
+        schema: &Valid<FederationSchema>,
         federation_spec_definition: &'static FederationSpecDefinition,
     ) -> Result<Self, FederationError> {
-        // let federation_spec_definition = get_federation_spec_definition_from_subgraph(&schema)?;
         let is_fed2 = federation_spec_definition
             .version()
             .satisfies(&Version { major: 2, minor: 0 });
         let external_metadata =
-            ExternalMetadata::new(schema.clone(), federation_spec_definition, is_fed2)?;
+            ExternalMetadata::new(&schema, federation_spec_definition, is_fed2)?;
         Ok(Self {
-            schema,
             federation_spec_definition,
             is_fed2,
             external_metadata,
@@ -78,21 +73,21 @@ pub(crate) struct ExternalMetadata {
 
 impl ExternalMetadata {
     fn new(
-        schema: Arc<Valid<FederationSchema>>,
+        schema: &Valid<FederationSchema>,
         federation_spec_definition: &'static FederationSpecDefinition,
         is_fed2: bool,
     ) -> Result<Self, FederationError> {
-        let external_fields = Self::collect_external_fields(federation_spec_definition, &schema)?;
+        let external_fields = Self::collect_external_fields(federation_spec_definition, schema)?;
         let fake_external_fields =
-            Self::collect_fake_externals(federation_spec_definition, &schema)?;
-        let provided_fields = Self::collect_provided_fields(federation_spec_definition, &schema)?;
+            Self::collect_fake_externals(federation_spec_definition, schema)?;
+        let provided_fields = Self::collect_provided_fields(federation_spec_definition, schema)?;
         // We do not collect @external on types for Fed 1 schemas since those will be discarded by
         // the schema upgrader. The schema upgrader, through calls to `is_external()`, relies on the
         // populated `fields_on_external_types` set to inform when @shareable should be
         // automatically added. In the Fed 1 case, if the set is populated then @shareable won't be
         // added in places where it should be.
         let fields_on_external_types = if is_fed2 {
-            Self::collect_fields_on_external_types(federation_spec_definition, &schema)?
+            Self::collect_fields_on_external_types(federation_spec_definition, schema)?
         } else {
             Default::default()
         };
