@@ -19,14 +19,15 @@ use crate::schema::position::{
     SchemaRootDefinitionKind,
 };
 use crate::schema::ValidFederationSchema;
-use crate::subgraph::spec::ENTITIES_QUERY;
-use apollo_compiler::ast::OperationType;
+use crate::subgraph::spec::{ANY_SCALAR_NAME, ENTITIES_QUERY};
+use apollo_compiler::ast::{NamedType, OperationType, Type};
 use apollo_compiler::executable::{self, VariableDefinition};
-use apollo_compiler::schema::{self, ExtendedType, Name};
+use apollo_compiler::schema::{self, Name};
 use apollo_compiler::{Node, NodeStr};
 use indexmap::{IndexMap, IndexSet};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::EdgeRef;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::operation::normalized_selection_map::NormalizedSelectionMap;
@@ -667,7 +668,7 @@ impl FetchDependencyGraphNode {
         variable_definitions: &[Node<VariableDefinition>],
         handled_conditions: &Conditions,
         fragments: &Option<&mut RebasedFragments>,
-    ) -> Result<(Arc<NormalizedSelectionSet>, Vec<Arc<FetchDataRewrite>>), FederationError> {
+    ) -> Result<(NormalizedSelectionSet, Vec<Arc<FetchDataRewrite>>), FederationError> {
         // Finalizing the selection involves the following:
         // 1. removing any @include/@skip that are not necessary
         //    because they are already handled earlier in the query plan
@@ -696,21 +697,19 @@ impl FetchDependencyGraphNode {
             selection_with_typenames.add_aliases_for_non_merging_fields()?;
 
         updated_selection.validate(variable_definitions)?;
-        Ok((Arc::new(updated_selection), output_rewrites))
+        Ok((updated_selection, output_rewrites))
     }
 }
 
 fn operation_for_entities_fetch(
     subgraph_schema: &ValidFederationSchema,
-    selection_set: Arc<NormalizedSelectionSet>,
+    selection_set: NormalizedSelectionSet,
     all_variable_definitions: &[Node<VariableDefinition>],
     operation_name: &Option<NodeStr>,
 ) -> Result<NormalizedOperation, FederationError> {
-    let used_variables = selection_set.used_variables()?;
-
     let mut variable_definitions: Vec<Node<VariableDefinition>> =
         Vec::with_capacity(all_variable_definitions.len() + 1);
-    variable_definitions.push(representations_variable_definition(subgraph_schema));
+    variable_definitions.push(representations_variable_definition(subgraph_schema)?);
     let used_variables = selection_set
         .used_variables()?
         .into_iter()
@@ -718,7 +717,8 @@ fn operation_for_entities_fetch(
     variable_definitions.extend(
         all_variable_definitions
             .iter()
-            .filter(|definition| used_variables.contains(&definition.name)),
+            .filter(|definition| used_variables.contains(&definition.name))
+            .cloned(),
     );
 
     let query_type_name = subgraph_schema.schema().root_operation(OperationType::Query).ok_or_else(||
@@ -760,13 +760,12 @@ fn operation_for_entities_fetch(
             directives: Default::default(),
             sibling_typename: None,
         })),
-        Some(*selection_set),
+        Some(selection_set),
     );
 
     let type_position: CompositeTypeDefinitionPosition = subgraph_schema
         .get_type(query_type_name.clone())?
         .try_into()?;
-    let mut normalized_selections = vec![entities_call];
 
     let mut map = NormalizedSelectionMap::new();
     map.insert(entities_call);
@@ -780,7 +779,7 @@ fn operation_for_entities_fetch(
     Ok(NormalizedOperation {
         schema: subgraph_schema.clone(),
         root_kind: SchemaRootDefinitionKind::Query,
-        name: operation_name.clone().map(Into::into),
+        name: operation_name.clone().map(|n| n.try_into()).transpose()?,
         variables: Arc::new(variable_definitions),
         directives: Default::default(),
         selection_set,
@@ -789,17 +788,56 @@ fn operation_for_entities_fetch(
 }
 
 fn operation_for_query_fetch(
-    _subgraph_schema: &ValidFederationSchema,
-    _root_kind: SchemaRootDefinitionKind,
-    _selection: Arc<NormalizedSelectionSet>,
-    _variable_definitions: &[Node<VariableDefinition>],
-    _operation_name: &Option<NodeStr>,
+    subgraph_schema: &ValidFederationSchema,
+    root_kind: SchemaRootDefinitionKind,
+    selection_set: NormalizedSelectionSet,
+    variable_definitions: &[Node<VariableDefinition>],
+    operation_name: &Option<NodeStr>,
 ) -> Result<NormalizedOperation, FederationError> {
-    todo!() // TODO: port from `operationForQueryFetch` in `buildPlan.ts`
+    let used_variables = selection_set
+        .used_variables()?
+        .into_iter()
+        .collect::<HashSet<Name>>();
+    let variable_definitions = variable_definitions
+        .iter()
+        .filter(|definition| used_variables.contains(&definition.name))
+        .cloned()
+        .collect();
+
+    Ok(NormalizedOperation {
+        schema: subgraph_schema.clone(),
+        root_kind,
+        name: operation_name.clone().map(|n| n.try_into()).transpose()?,
+        variables: Arc::new(variable_definitions),
+        directives: Default::default(),
+        selection_set,
+        fragments: Default::default(),
+    })
 }
 
-fn representations_variable_definition(schema: &ValidFederationSchema) -> Node<VariableDefinition> {
-    todo!()
+fn representations_variable_definition(
+    schema: &ValidFederationSchema,
+) -> Result<Node<VariableDefinition>, FederationError> {
+    let metadata = schema
+        .metadata()
+        .ok_or_else(|| FederationError::internal("Expected schema to be a federation subgraph"))?;
+
+    let any_name = schema.federation_type_name_in_schema(&ANY_SCALAR_NAME)?;
+
+    let ty = Type::non_null(Type::list(Type::non_null(Type::Named(
+        NamedType::new(any_name)
+            .map_err(|_| FederationError::internal("invalid name".to_string()))?,
+    ))))
+    .into();
+    Ok(VariableDefinition {
+        name: NodeStr::new("representations")
+            .try_into()
+            .map_err(|_| FederationError::internal("invalid name".to_string()))?,
+        ty,
+        default_value: None,
+        directives: Default::default(),
+    }
+    .into())
 }
 
 impl NormalizedSelectionSet {
