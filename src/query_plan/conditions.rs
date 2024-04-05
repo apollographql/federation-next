@@ -1,10 +1,16 @@
 use crate::error::FederationError;
+use crate::query_graph::graph_path::selection_of_element;
+use crate::query_graph::graph_path::OpPathElement;
+use apollo_compiler::ast::Directive;
 use apollo_compiler::executable::DirectiveList;
 use apollo_compiler::executable::Name;
 use apollo_compiler::executable::Value;
 use indexmap::map::Entry;
 use indexmap::IndexMap;
 use std::sync::Arc;
+
+use super::operation::normalized_selection_map::NormalizedSelectionMap;
+use super::operation::NormalizedSelectionSet;
 
 /// This struct is meant for tracking whether a selection set in a `FetchDependencyGraphNode` needs
 /// to be queried, based on the `@skip`/`@include` applications on the selections within.
@@ -111,5 +117,138 @@ impl Conditions {
                 Conditions::Variables(self_vars)
             }
         }
+    }
+}
+
+fn is_constant_condition(condition: &Conditions) -> bool {
+    match condition {
+        Conditions::Variables(_) => false,
+        Conditions::Boolean(_) => true,
+    }
+}
+
+pub(crate) fn remove_conditions_from_selection_set(
+    selection_set: &NormalizedSelectionSet,
+    conditions: &Conditions,
+) -> NormalizedSelectionSet {
+    match conditions {
+        Conditions::Boolean(_) => {
+            // If the conditions are the constant false, this means we know the selection will not be included
+            // in the plan in practice, and it doesn't matter too much what we return here. So we just
+            // the input unchanged as a shortcut.
+            // If the conditions are the constant true, then it means we have no conditions to remove and we can
+            // keep the selection "as is".
+            selection_set.clone()
+        }
+        Conditions::Variables(variable_conditions) => {
+            let selection_map = selection_set
+                .selections
+                .iter()
+                .map(|selection| {
+                    if let Ok(element) = selection.1.element() {
+                        // We remove any of the conditions on the element and recurse.
+                        let updated_element =
+                            remove_conditions_of_element(element.clone(), variable_conditions);
+                        if let Ok(Some(selection_set)) = selection.1.selection_set() {
+                            let updated_selection_set =
+                                remove_conditions_from_selection_set(selection_set, conditions);
+                            if updated_element == element {
+                                if *selection_set == updated_selection_set {
+                                    (selection.0.clone(), selection.1.clone())
+                                } else {
+                                    (
+                                        selection.0.clone(),
+                                        selection.1.with_updated_selection_set(Some(
+                                            updated_selection_set,
+                                        )),
+                                    )
+                                }
+                            } else {
+                                (
+                                    selection.0.clone(),
+                                    selection_of_element(
+                                        updated_element,
+                                        Some(updated_selection_set),
+                                    ),
+                                )
+                            }
+                        } else if updated_element == element {
+                            (selection.0.clone(), selection.1.clone())
+                        } else {
+                            (
+                                selection.0.clone(),
+                                selection_of_element(updated_element, None),
+                            )
+                        }
+                    }
+                    //FIXME: what is the expected behaviour here if element() returns an error?
+                    else {
+                        todo!()
+                    }
+                })
+                .collect();
+
+            NormalizedSelectionSet {
+                schema: selection_set.schema.clone(),
+                type_position: selection_set.type_position.clone(),
+                selections: Arc::new(NormalizedSelectionMap(selection_map)),
+            }
+        }
+    }
+}
+
+fn remove_conditions_of_element(
+    element: OpPathElement,
+    conditions: &VariableConditions,
+) -> OpPathElement {
+    let updated_directives: DirectiveList = DirectiveList(
+        element
+            .directives()
+            .iter()
+            .filter(|d| {
+                !matches_condition_for_kind(d, conditions, ConditionKind::Include)
+                    && matches_condition_for_kind(d, conditions, ConditionKind::Skip)
+            })
+            .cloned()
+            .collect(),
+    );
+
+    if updated_directives.0.len() == element.directives().len() {
+        element
+    } else {
+        element.with_updated_directives(updated_directives)
+    }
+}
+
+#[derive(PartialEq)]
+enum ConditionKind {
+    Include,
+    Skip,
+}
+
+fn matches_condition_for_kind(
+    directive: &Directive,
+    conditions: &VariableConditions,
+    kind: ConditionKind,
+) -> bool {
+    let kind_str = match kind {
+        ConditionKind::Include => "include",
+        ConditionKind::Skip => "skip",
+    };
+
+    if directive.name != kind_str {
+        return false;
+    }
+
+    let value = directive.argument_by_name("if");
+
+    match value {
+        None => false,
+        Some(v) => match v.as_variable() {
+            Some(var) => conditions.0.iter().any(|cond| {
+                cond.0.as_str() == var.as_str() && cond.1 == &(kind == ConditionKind::Skip)
+            }),
+            None => true,
+        },
     }
 }

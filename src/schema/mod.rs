@@ -9,13 +9,14 @@ use crate::schema::position::{
 };
 use apollo_compiler::schema::{ExtendedType, Name};
 use apollo_compiler::validation::Valid;
-use apollo_compiler::Schema;
+use apollo_compiler::{NodeStr, Schema};
 use indexmap::IndexSet;
 use referencer::Referencers;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
 
+pub(crate) mod definitions;
 pub(crate) mod position;
 pub(crate) mod referencer;
 
@@ -177,6 +178,25 @@ impl ValidFederationSchema {
 
     pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
+    }
+
+    pub(crate) fn federation_type_name_in_schema(
+        &self,
+        name: &str,
+    ) -> Result<Name, FederationError> {
+        // Currently, the types used to define the federation operations, that is _Any, _Entity and _Service,
+        // are not considered part of the federation spec, and are instead hardcoded to the names above.
+        // The reason being that there is no way to maintain backward compatbility with fed2 if we were to add
+        // those to the federation spec without requiring users to add those types to their @link `import`,
+        // and that wouldn't be a good user experience (because most users don't really know what those types
+        // are/do). And so we special case it.
+        if name.starts_with("_") {
+            return NodeStr::new(name)
+                .try_into()
+                .map_err(|_| FederationError::internal("invalid name".to_string()));
+        }
+
+        todo!()
     }
 }
 

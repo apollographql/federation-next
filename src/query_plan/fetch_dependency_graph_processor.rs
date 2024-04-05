@@ -55,7 +55,7 @@ pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
 
 #[derive(Default)]
 pub(crate) struct RebasedFragments {
-    query_fragments: NamedFragments,
+    pub(crate) query_fragments: NamedFragments,
     by_subgraph: HashMap<NodeStr, Option<NamedFragments>>,
 }
 
@@ -440,8 +440,8 @@ impl RebasedFragments {
     }
 
     fn rebase_on(
-        query_fragments: &NamedFragments,
-        subgraph_schema: &ValidFederationSchema,
+        _query_fragments: &NamedFragments,
+        _subgraph_schema: &ValidFederationSchema,
     ) -> Option<NamedFragments> {
         todo!() // TODO: port JS `NamedFragments.rebaseOn` from `operations.ts`
     }
