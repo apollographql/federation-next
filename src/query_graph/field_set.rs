@@ -74,3 +74,68 @@ pub(super) fn parse_field_set_without_normalization(
     )?;
     Ok(field_set.into_inner().selection_set)
 }
+
+// unit test
+#[cfg(test)]
+mod tests {
+    use crate::{
+        error::FederationError, query_graph::build_federated_query_graph, subgraph::Subgraph,
+        Supergraph,
+    };
+    use apollo_compiler::schema::Name;
+
+    #[test]
+    fn test_aliases_in_field_set() -> Result<(), FederationError> {
+        let sdl = r#"
+        type Query {
+            a: Int! @requires(fields: "r1: r")
+            r: Int! @external
+          }
+        "#;
+
+        let subgraph = Subgraph::parse_and_expand("S1", "http://S1", sdl).unwrap();
+        let supergraph = Supergraph::compose([&subgraph].to_vec()).unwrap();
+        let err = super::parse_field_set(
+            &supergraph.schema,
+            Name::new("Query").unwrap(),
+            "r1: r".into(),
+        )
+        .map(|_| "Unexpected success") // ignore the Ok value
+        .expect_err("Expected alias error");
+        assert_eq!(
+            err.to_string(),
+            r#"Cannot use alias "r1" in "r1: r": aliases are not currently supported in the used directive"#
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_aliases_in_field_set_via_build_federated_query_graph() -> Result<(), FederationError> {
+        // NB: This tests multiple alias errors in the same field set.
+        let sdl = r#"
+        type Query {
+            a: Int! @requires(fields: "r1: r s q1: q")
+            r: Int! @external
+            s: String! @external
+            q: String! @external
+          }
+        "#;
+
+        let subgraph = Subgraph::parse_and_expand("S1", "http://S1", sdl).unwrap();
+        let supergraph = Supergraph::compose([&subgraph].to_vec()).unwrap();
+        let api_schema = supergraph.to_api_schema(Default::default())?;
+        // Testing via `build_federated_query_graph` function, which validates the @requires directive.
+        let err = build_federated_query_graph(supergraph.schema, api_schema, None, None)
+            .map(|_| "Unexpected success") // ignore the Ok value
+            .expect_err("Expected alias error");
+        assert_eq!(
+            err.to_string(),
+            r#"The following errors occurred:
+
+  - Cannot use alias "r1" in "r1: r s q1: q": aliases are not currently supported in the used directive
+
+  - Cannot use alias "q1" in "r1: r s q1: q": aliases are not currently supported in the used directive"#
+        );
+        Ok(())
+    }
+}
