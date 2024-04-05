@@ -1,6 +1,6 @@
-use crate::error::FederationError;
+use crate::error::{FederationError, SingleFederationError};
 use crate::query_graph::graph_path::{
-    OpGraphPathContext, OpGraphPathTrigger, OpPath, OpPathElement,
+    selection_of_element, OpGraphPathContext, OpGraphPathTrigger, OpPath, OpPathElement,
 };
 use crate::query_graph::path_tree::{OpPathTree, PathTreeChild};
 use crate::query_graph::{QueryGraph, QueryGraphEdgeTransition};
@@ -15,11 +15,14 @@ use crate::query_plan::operation::{
 use crate::query_plan::FetchDataPathElement;
 use crate::query_plan::{FetchDataRewrite, QueryPlanCost};
 use crate::schema::position::{
-    CompositeTypeDefinitionPosition, ObjectTypeDefinitionPosition, SchemaRootDefinitionKind,
+    CompositeTypeDefinitionPosition, FieldDefinitionPosition, ObjectTypeDefinitionPosition,
+    SchemaRootDefinitionKind,
 };
 use crate::schema::ValidFederationSchema;
+use crate::subgraph::spec::ENTITIES_QUERY;
+use apollo_compiler::ast::OperationType;
 use apollo_compiler::executable::{self, VariableDefinition};
-use apollo_compiler::schema::{self, Name};
+use apollo_compiler::schema::{self, ExtendedType, Name};
 use apollo_compiler::{Node, NodeStr};
 use indexmap::{IndexMap, IndexSet};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex, StableDiGraph};
@@ -622,7 +625,7 @@ impl FetchDependencyGraphNode {
                 selection,
                 variable_definitions,
                 &operation_name,
-            )
+            )?
         } else {
             operation_for_query_fetch(
                 subgraph_schema,
@@ -630,7 +633,7 @@ impl FetchDependencyGraphNode {
                 selection,
                 variable_definitions,
                 &operation_name,
-            )
+            )?
         };
         let fragments = fragments
             .and_then(|rebased| rebased.for_subgraph(self.subgraph_name.clone(), subgraph_schema));
@@ -698,12 +701,91 @@ impl FetchDependencyGraphNode {
 }
 
 fn operation_for_entities_fetch(
-    _subgraph_schema: &ValidFederationSchema,
-    _selection: Arc<NormalizedSelectionSet>,
-    _variable_definitions: &[Node<VariableDefinition>],
-    _operation_name: &Option<NodeStr>,
-) -> NormalizedOperation {
-    todo!() // TODO: port from `operationForEntitiesFetch` in `buildPlan.ts`
+    subgraph_schema: &ValidFederationSchema,
+    selection_set: Arc<NormalizedSelectionSet>,
+    all_variable_definitions: &[Node<VariableDefinition>],
+    operation_name: &Option<NodeStr>,
+) -> Result<NormalizedOperation, FederationError> {
+    let used_variables = selection_set.used_variables()?;
+
+    let mut variable_definitions: Vec<Node<VariableDefinition>> =
+        Vec::with_capacity(all_variable_definitions.len() + 1);
+    variable_definitions.push(representations_variable_definition(subgraph_schema));
+    let used_variables = selection_set
+        .used_variables()?
+        .into_iter()
+        .collect::<HashSet<Name>>();
+    variable_definitions.extend(
+        all_variable_definitions
+            .iter()
+            .filter(|definition| used_variables.contains(&definition.name)),
+    );
+
+    let query_type_name = subgraph_schema.schema().root_operation(OperationType::Query).ok_or_else(||
+    FederationError::SingleFederationError(SingleFederationError::InvalidGraphQL {
+        message: "Subgraphs should always have a query root (they should at least provides _entities)".to_string()
+    }))?;
+
+    let query_type = match subgraph_schema.get_type(query_type_name.clone())? {
+        crate::schema::position::TypeDefinitionPosition::Object(o) => o,
+        _ => {
+            return Err(FederationError::SingleFederationError(
+                SingleFederationError::InvalidGraphQL {
+                    message: "the root query type must be an object".to_string(),
+                },
+            ))
+        }
+    };
+
+    if !query_type
+        .get(&subgraph_schema.schema())?
+        .fields
+        .contains_key(&ENTITIES_QUERY)
+    {
+        return Err(FederationError::SingleFederationError(
+            SingleFederationError::InvalidGraphQL {
+                message: "Subgraphs should always have the _entities field".to_string(),
+            },
+        ));
+    }
+
+    let entities = FieldDefinitionPosition::Object(query_type.field(ENTITIES_QUERY.clone()));
+
+    let entities_call = selection_of_element(
+        OpPathElement::Field(NormalizedField::new(NormalizedFieldData {
+            schema: subgraph_schema.clone(),
+            field_position: entities,
+            alias: None,
+            arguments: Default::default(),
+            directives: Default::default(),
+            sibling_typename: None,
+        })),
+        Some(*selection_set),
+    );
+
+    let type_position: CompositeTypeDefinitionPosition = subgraph_schema
+        .get_type(query_type_name.clone())?
+        .try_into()?;
+    let mut normalized_selections = vec![entities_call];
+
+    let mut map = NormalizedSelectionMap::new();
+    map.insert(entities_call);
+
+    let selection_set = NormalizedSelectionSet {
+        schema: subgraph_schema.clone(),
+        type_position,
+        selections: Arc::new(map),
+    };
+
+    Ok(NormalizedOperation {
+        schema: subgraph_schema.clone(),
+        root_kind: SchemaRootDefinitionKind::Query,
+        name: operation_name.clone().map(Into::into),
+        variables: Arc::new(variable_definitions),
+        directives: Default::default(),
+        selection_set,
+        fragments: Default::default(),
+    })
 }
 
 fn operation_for_query_fetch(
@@ -712,8 +794,12 @@ fn operation_for_query_fetch(
     _selection: Arc<NormalizedSelectionSet>,
     _variable_definitions: &[Node<VariableDefinition>],
     _operation_name: &Option<NodeStr>,
-) -> NormalizedOperation {
+) -> Result<NormalizedOperation, FederationError> {
     todo!() // TODO: port from `operationForQueryFetch` in `buildPlan.ts`
+}
+
+fn representations_variable_definition(schema: &ValidFederationSchema) -> Node<VariableDefinition> {
+    todo!()
 }
 
 impl NormalizedSelectionSet {
