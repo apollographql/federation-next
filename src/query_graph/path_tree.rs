@@ -115,20 +115,17 @@ impl OpPathTree {
     fn fmt_internal(
         &self,
         f: &mut Formatter<'_>,
-        indent: &String,
+        indent: &str,
         include_conditions: bool,
     ) -> std::fmt::Result {
         if self.is_leaf() {
-            return writeln!(f, "{}", self.vertex());
+            return write!(f, "{}", self.vertex());
         }
-        writeln!(f, "{}:", self.vertex())?;
-        let child_indent = indent.to_owned() + "  ";
+        write!(f, "{}:", self.vertex())?;
+        let child_indent = format!("{indent}  ");
         for child in self.childs.iter() {
-            let index = match child.edge {
-                Some(index) => index,
-                None => EdgeIndex::end(),
-            };
-            write!(f, "{indent} -> [{}] ", index.index())?;
+            let index = child.edge.unwrap_or_else(EdgeIndex::end);
+            write!(f, "\n{indent} -> [{}] ", index.index())?;
             if include_conditions {
                 if let Some(ref child_cond) = child.conditions {
                     write!(f, "!! {{\n{indent} ")?;
@@ -158,8 +155,8 @@ where
     TEdge: Copy + Hash + Eq + Into<Option<EdgeIndex>>,
 {
     /// Returns the `QueryGraphNode` represented by `self.node`.
-    /// - Note: This is named after the JS implementation's `vertex` field.
-    ///         But, it may make sense to rename it once porting is over.
+    /// PORT_NOTE: This is named after the JS implementation's `vertex` field.
+    ///            But, it may make sense to rename it once porting is over.
     pub(crate) fn vertex(&self) -> &QueryGraphNode {
         self.graph.node_weight(self.node).unwrap()
     }
@@ -513,8 +510,7 @@ mod tests {
         let expected = r#"Query(Test)*:
  -> [3] t = T(Test):
    -> [1] id = ID(Test)
-   -> [0] otherId = ID(Test)
-"#;
+   -> [0] otherId = ID(Test)"#;
         assert_eq!(computed, expected);
     }
 }
