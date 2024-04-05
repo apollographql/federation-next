@@ -818,7 +818,7 @@ fn operation_for_query_fetch(
 fn representations_variable_definition(
     schema: &ValidFederationSchema,
 ) -> Result<Node<VariableDefinition>, FederationError> {
-    let metadata = schema
+    let _metadata = schema
         .metadata()
         .ok_or_else(|| FederationError::internal("Expected schema to be a federation subgraph"))?;
 
