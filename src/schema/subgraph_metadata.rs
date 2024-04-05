@@ -37,8 +37,7 @@ impl SubgraphMetadata {
         let is_fed2 = federation_spec_definition
             .version()
             .satisfies(&Version { major: 2, minor: 0 });
-        let external_metadata =
-            ExternalMetadata::new(&schema, federation_spec_definition, is_fed2)?;
+        let external_metadata = ExternalMetadata::new(schema, federation_spec_definition, is_fed2)?;
         Ok(Self {
             federation_spec_definition,
             is_fed2,
@@ -105,7 +104,7 @@ impl ExternalMetadata {
         schema: &Valid<FederationSchema>,
     ) -> Result<IndexSet<FieldDefinitionPosition>, FederationError> {
         let external_directive_definition = federation_spec_definition
-            .external_directive_definition(&schema)?
+            .external_directive_definition(schema)?
             .clone();
 
         let external_directive_referencers = schema
@@ -137,9 +136,9 @@ impl ExternalMetadata {
     ) -> Result<IndexSet<FieldDefinitionPosition>, FederationError> {
         let mut fake_external_fields = IndexSet::new();
         let extends_directive_definition =
-            federation_spec_definition.extends_directive_definition(&schema)?;
+            federation_spec_definition.extends_directive_definition(schema)?;
         let key_directive_definition =
-            federation_spec_definition.key_directive_definition(&schema)?;
+            federation_spec_definition.key_directive_definition(schema)?;
         let key_directive_referencers = schema
             .referencers
             .get_directive(&key_directive_definition.name)?;
@@ -186,7 +185,7 @@ impl ExternalMetadata {
     ) -> Result<IndexSet<FieldDefinitionPosition>, FederationError> {
         let mut provided_fields = IndexSet::new();
         let provides_directive_definition =
-            federation_spec_definition.provides_directive_definition(&schema)?;
+            federation_spec_definition.provides_directive_definition(schema)?;
         let provides_directive_referencers = schema
             .referencers
             .get_directive(&provides_directive_definition.name)?;
@@ -214,7 +213,7 @@ impl ExternalMetadata {
                         field_type_position.type_name().clone(),
                         provides_directive_arguments.fields,
                     )?,
-                    &schema,
+                    schema,
                 )?);
             }
         }
@@ -226,7 +225,7 @@ impl ExternalMetadata {
         schema: &Valid<FederationSchema>,
     ) -> Result<IndexSet<FieldDefinitionPosition>, FederationError> {
         let external_directive_definition = federation_spec_definition
-            .external_directive_definition(&schema)?
+            .external_directive_definition(schema)?
             .clone();
 
         let external_directive_referencers = schema
