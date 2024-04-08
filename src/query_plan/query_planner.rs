@@ -165,9 +165,6 @@ pub struct QueryPlanner {
     // PORT_NOTE: Named `inconsistentAbstractTypesRuntimes` in the JS codebase, which was slightly
     // confusing.
     abstract_types_with_inconsistent_runtime_types: IndexSet<AbstractTypeDefinitionPosition>,
-    // TODO: Port _lastGeneratedPlanStatistics from the JS codebase in a way that keeps QueryPlanner
-    // immutable.
-    // last_generated_plan_statistics: QueryPlanningStatistics,
 }
 
 impl QueryPlanner {
@@ -457,6 +454,11 @@ impl QueryPlanner {
             None => None,
         };
 
+        // TODO(@goto-bus-stop): This should include `statistics`, see FED-68.
+        // Punting on it because it likely requires a refactor to the `QueryPlanningParameters` structure,
+        // whether we can do that will be more clear when more of the basic query planning paths
+        // are done, and then we can decide if we refactor or if we work around the current
+        // structure
         Ok(QueryPlan { node: root_node })
     }
 }
