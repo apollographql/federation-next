@@ -135,8 +135,9 @@ impl<'a> QueryPlanningTraversal<'a> {
             starting_id_generation: 0,
             cost_processor,
             is_top_level,
-            // TODO(@goto-bus-stop): Use `self.resolve_condition_plan()` once it exists
+            // TODO: Use `self.resolve_condition_plan()` once it exists. See FED-46.
             condition_resolver: CachingConditionResolver,
+            // TODO: In JS this calls `createInitialOptions()`. Do we still need that? See FED-147.
             open_branches: Default::default(),
             closed_branches: Default::default(),
             best_plan: None,
