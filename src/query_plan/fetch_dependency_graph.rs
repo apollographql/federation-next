@@ -595,7 +595,7 @@ impl FetchDependencyGraph {
     ) -> Result<(TProcessed, Vec<TDeferred>), FederationError> {
         self.reduce_and_optimize();
 
-        todo!("FED-62") // I think this is FED-62?
+        todo!("FED-146")
     }
 }
 
