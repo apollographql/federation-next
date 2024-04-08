@@ -37,7 +37,7 @@ impl SubgraphMetadata {
         let is_fed2 = federation_spec_definition
             .version()
             .satisfies(&Version { major: 2, minor: 0 });
-        let external_metadata = ExternalMetadata::new(schema, federation_spec_definition, is_fed2)?;
+        let external_metadata = ExternalMetadata::new(schema, federation_spec_definition)?;
         Ok(Self {
             federation_spec_definition,
             is_fed2,
@@ -64,9 +64,15 @@ impl SubgraphMetadata {
 // more accurate.
 #[derive(Debug, Clone)]
 pub(crate) struct ExternalMetadata {
+    /// All fields with an `@external` directive.
     external_fields: IndexSet<FieldDefinitionPosition>,
+    /// Fields with an `@external` directive that can't actually be external due to also being
+    /// referenced in a `@key` directive.
     fake_external_fields: IndexSet<FieldDefinitionPosition>,
+    /// Fields that are only sometimes external, and sometimes reachable due to being included
+    /// in a `@provides` directive.
     provided_fields: IndexSet<FieldDefinitionPosition>,
+    /// Fields that are external because their parent type has an `@external` directive.
     fields_on_external_types: IndexSet<FieldDefinitionPosition>,
 }
 
@@ -74,7 +80,6 @@ impl ExternalMetadata {
     fn new(
         schema: &Valid<FederationSchema>,
         federation_spec_definition: &'static FederationSpecDefinition,
-        is_fed2: bool,
     ) -> Result<Self, FederationError> {
         let external_fields = Self::collect_external_fields(federation_spec_definition, schema)?;
         let fake_external_fields =
@@ -85,6 +90,9 @@ impl ExternalMetadata {
         // populated `fields_on_external_types` set to inform when @shareable should be
         // automatically added. In the Fed 1 case, if the set is populated then @shareable won't be
         // added in places where it should be.
+        let is_fed2 = federation_spec_definition
+            .version()
+            .satisfies(&Version { major: 2, minor: 0 });
         let fields_on_external_types = if is_fed2 {
             Self::collect_fields_on_external_types(federation_spec_definition, schema)?
         } else {
