@@ -10,6 +10,7 @@ use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphPro
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToCostProcessor;
 use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToQueryPlanProcessor;
 use crate::query_plan::operation::normalize_operation;
+use crate::query_plan::operation::NormalizedDefer;
 use crate::query_plan::operation::NormalizedSelectionSet;
 use crate::query_plan::query_planning_traversal::BestQueryPlanInfo;
 use crate::query_plan::query_planning_traversal::QueryPlanningParameters;
@@ -346,24 +347,29 @@ impl QueryPlanner {
             &self.interface_types_with_interface_objects,
         )?;
 
-        let mut assigned_defer_labels = None;
-        let mut has_defers = false;
-        let mut defer_conditions = None;
-        let normalized_operation = if self.config.incremental_delivery.enable_defer {
-            let defer = normalized_operation.with_normalized_defer();
-            if defer.has_defers && is_subscription {
-                return Err(SingleFederationError::DeferredSubscriptionUnsupported.into());
-            }
-            assigned_defer_labels = Some(defer.assigned_defer_labels);
-            has_defers = defer.has_defers;
-            defer_conditions = Some(defer.defer_conditions);
-            defer.operation
-        } else {
-            // If defer is not enabled, we remove all @defer from the query. This feels cleaner do this once here than
-            // having to guard all the code dealing with defer later, and is probably less error prone too (less likely
-            // to end up passing through a @defer to a subgraph by mistake).
-            normalized_operation.without_defer()
-        };
+        let (normalized_operation, assigned_defer_labels, defer_conditions, has_defers) =
+            if self.config.incremental_delivery.enable_defer {
+                let NormalizedDefer {
+                    operation,
+                    assigned_defer_labels,
+                    defer_conditions,
+                    has_defers,
+                } = normalized_operation.with_normalized_defer();
+                if has_defers && is_subscription {
+                    return Err(SingleFederationError::DeferredSubscriptionUnsupported.into());
+                }
+                (
+                    operation,
+                    Some(assigned_defer_labels),
+                    Some(defer_conditions),
+                    has_defers,
+                )
+            } else {
+                // If defer is not enabled, we remove all @defer from the query. This feels cleaner do this once here than
+                // having to guard all the code dealing with defer later, and is probably less error prone too (less likely
+                // to end up passing through a @defer to a subgraph by mistake).
+                (normalized_operation.without_defer(), None, None, false)
+            };
 
         if normalized_operation.selection_set.selections.is_empty() {
             return Ok(QueryPlan::default());
