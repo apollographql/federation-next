@@ -504,7 +504,7 @@ fn compute_plan_internal(
     let root_kind = parameters.operation.root_kind;
 
     let (main, deferred, primary_selection) = if root_kind == SchemaRootDefinitionKind::Mutation {
-        let dependency_graphs = compute_root_serial_dependency_graph(&parameters, has_defers)?;
+        let dependency_graphs = compute_root_serial_dependency_graph(parameters, has_defers)?;
         let mut main = None;
         let mut deferred = vec![];
         let mut primary_selection = None::<NormalizedSelectionSet>;
@@ -526,7 +526,7 @@ fn compute_plan_internal(
         }
         (main, deferred, primary_selection)
     } else {
-        let mut dependency_graph = compute_root_parallel_dependency_graph(&parameters, has_defers)?;
+        let mut dependency_graph = compute_root_parallel_dependency_graph(parameters, has_defers)?;
 
         let (main, deferred) = dependency_graph.process(&mut parameters.processor, root_kind)?;
         // XXX(@goto-bus-stop) Maybe `.defer_tracking` should be on the return value of `process()`..?
