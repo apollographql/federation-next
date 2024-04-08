@@ -500,7 +500,8 @@ impl<'a> QueryPlanningTraversal<'a> {
             .unwrap_or(0);
         // debug!("Query has {plan_count} possible plans");
 
-        let max_evaluated_plans = self.parameters.config.debug.max_evaluated_plans as usize;
+        let max_evaluated_plans =
+            u32::from(self.parameters.config.debug.max_evaluated_plans) as usize;
         loop {
             // Note that if `self.closed_branches[0]` is our only branch, it's fine,
             // we'll continue to remove options from it (but that is beyond unlikely).

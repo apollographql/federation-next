@@ -35,6 +35,7 @@ use apollo_compiler::ExecutableDocument;
 use apollo_compiler::NodeStr;
 use indexmap::IndexMap;
 use indexmap::IndexSet;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -119,7 +120,7 @@ pub struct QueryPlannerDebugConfig {
     /// setting this value too low can negatively affect query runtime (due to the use of
     /// sub-optimal query plans).
     // TODO: should there additionally be a max_evaluated_cost?
-    pub max_evaluated_plans: u32,
+    pub max_evaluated_plans: NonZeroU32,
 
     /// Before creating query plans, for each path of fields in the query we compute all the
     /// possible options to traverse that path via the subgraphs. Multiple options can arise because
@@ -140,7 +141,7 @@ impl Default for QueryPlannerDebugConfig {
     fn default() -> Self {
         Self {
             bypass_planner_for_single_subgraph: false,
-            max_evaluated_plans: 10_000,
+            max_evaluated_plans: NonZeroU32::new(10_000).unwrap(),
             paths_limit: None,
         }
     }
@@ -150,6 +151,15 @@ impl Default for QueryPlannerDebugConfig {
 #[derive(Debug, Default, Clone)]
 pub(crate) struct QueryPlanningStatistics {
     pub(crate) evaluated_plan_count: usize,
+}
+
+impl QueryPlannerConfig {
+    /// Panics if options are used together in unsupported ways.
+    fn assert_valid(&self) {
+        if self.incremental_delivery.enable_defer {
+            assert!(!self.debug.bypass_planner_for_single_subgraph, "Cannot use the `debug.bypass_planner_for_single_subgraph` query planner option when @defer support is enabled");
+        }
+    }
 }
 
 pub struct QueryPlanner {
@@ -173,6 +183,8 @@ impl QueryPlanner {
         supergraph: &Supergraph,
         config: QueryPlannerConfig,
     ) -> Result<Self, FederationError> {
+        config.assert_valid();
+
         let supergraph_schema = supergraph.schema.clone();
         let api_schema = supergraph.to_api_schema(ApiSchemaOptions {
             include_defer: config.incremental_delivery.enable_defer,
