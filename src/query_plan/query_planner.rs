@@ -146,7 +146,7 @@ impl Default for QueryPlannerDebugConfig {
 }
 
 // PORT_NOTE: renamed from PlanningStatistics in the JS codebase.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub(crate) struct QueryPlanningStatistics {
     pub(crate) evaluated_plan_count: usize,
 }
@@ -323,7 +323,7 @@ impl QueryPlanner {
                     output_rewrites: Default::default(),
                 };
 
-                return Ok(QueryPlan::new(node));
+                return Ok(QueryPlan::new(node, statistics));
             }
         }
 
@@ -389,7 +389,7 @@ impl QueryPlanner {
             operation_name.clone(),
             assigned_defer_labels,
         );
-        let parameters = QueryPlanningParameters {
+        let mut parameters = QueryPlanningParameters {
             supergraph_schema: self.supergraph_schema.clone(),
             federated_query_graph: self.federated_query_graph.clone(),
             operation: Arc::new(normalized_operation),
@@ -408,9 +408,9 @@ impl QueryPlanner {
 
         let root_node = match defer_conditions {
             Some(defer_conditions) if !defer_conditions.is_empty() => {
-                compute_plan_for_defer_conditionals(parameters, defer_conditions)?
+                compute_plan_for_defer_conditionals(&mut parameters, defer_conditions)?
             }
-            _ => compute_plan_internal(parameters, has_defers)?,
+            _ => compute_plan_internal(&mut parameters, has_defers)?,
         };
 
         let root_node = match root_node {
@@ -454,12 +454,10 @@ impl QueryPlanner {
             None => None,
         };
 
-        // TODO(@goto-bus-stop): This should include `statistics`, see FED-68.
-        // Punting on it because it likely requires a refactor to the `QueryPlanningParameters` structure,
-        // whether we can do that will be more clear when more of the basic query planning paths
-        // are done, and then we can decide if we refactor or if we work around the current
-        // structure
-        Ok(QueryPlan { node: root_node })
+        Ok(QueryPlan {
+            node: root_node,
+            statistics: parameters.statistics,
+        })
     }
 }
 
@@ -500,7 +498,7 @@ fn compute_root_parallel_best_plan(
 }
 
 fn compute_plan_internal(
-    mut parameters: QueryPlanningParameters,
+    parameters: &mut QueryPlanningParameters,
     has_defers: bool,
 ) -> Result<Option<PlanNode>, FederationError> {
     let root_kind = parameters.operation.root_kind;
@@ -554,7 +552,7 @@ fn compute_plan_internal(
 }
 
 fn compute_plan_for_defer_conditionals(
-    _parameters: QueryPlanningParameters,
+    _parameters: &mut QueryPlanningParameters,
     _defer_conditions: IndexMap<String, IndexSet<String>>,
 ) -> Result<Option<PlanNode>, FederationError> {
     todo!("FED-95")

@@ -1,3 +1,4 @@
+use crate::query_plan::query_planner::QueryPlanningStatistics;
 use apollo_compiler::executable::{
     Field, InlineFragment, Name, OperationType, Selection, SelectionSet,
 };
@@ -17,6 +18,7 @@ pub type QueryPlanCost = i64;
 #[derive(Debug, Default)]
 pub struct QueryPlan {
     pub node: Option<TopLevelPlanNode>,
+    statistics: QueryPlanningStatistics,
 }
 
 #[derive(Debug, derive_more::From)]
@@ -236,9 +238,10 @@ pub enum QueryPathElement {
 }
 
 impl QueryPlan {
-    fn new(node: impl Into<TopLevelPlanNode>) -> Self {
+    fn new(node: impl Into<TopLevelPlanNode>, statistics: QueryPlanningStatistics) -> Self {
         Self {
             node: Some(node.into()),
+            statistics,
         }
     }
 }
