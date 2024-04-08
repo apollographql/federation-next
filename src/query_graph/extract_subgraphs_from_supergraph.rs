@@ -34,7 +34,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::Write;
 use std::ops::Deref;
-use std::sync::Arc;
 use time::OffsetDateTime;
 
 /// Assumes the given schema has been validated.
@@ -113,7 +112,7 @@ pub(crate) fn extract_subgraphs_from_supergraph(
                 }
             }
         } else {
-            ValidFederationSchema::assume_valid(subgraph.schema)?
+            subgraph.schema.assume_valid()?
         };
         valid_subgraphs.add(ValidFederationSubgraph {
             name: subgraph.name,

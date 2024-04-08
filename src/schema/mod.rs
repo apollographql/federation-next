@@ -43,6 +43,8 @@ pub struct FederationSchema {
     schema: Schema,
     referencers: Referencers,
     links_metadata: Option<Box<LinksMetadata>>,
+    /// This is only populated for valid subgraphs, and can only be accessed if you have a
+    /// `ValidFederationSchema`.
     subgraph_metadata: Option<Box<SubgraphMetadata>>,
 }
 
@@ -62,11 +64,6 @@ impl FederationSchema {
 
     pub(crate) fn metadata(&self) -> Option<&LinksMetadata> {
         self.links_metadata.as_deref()
-    }
-
-    /// Returns subgraph-specific metadata, or `None` for supergraph schemas.
-    pub(crate) fn subgraph_metadata(&self) -> Option<&SubgraphMetadata> {
-        self.subgraph_metadata.as_deref()
     }
 
     pub(crate) fn referencers(&self) -> &Referencers {
@@ -170,11 +167,11 @@ impl FederationSchema {
                 return Err((self, e.errors.into()));
             }
         };
-        Ok(ValidFederationSchema::assume_valid(FederationSchema { schema, ..self }))
+        ValidFederationSchema::new_assume_valid(FederationSchema { schema, ..self })
     }
 
     pub(crate) fn assume_valid(self) -> Result<ValidFederationSchema, FederationError> {
-        ValidFederationSchema::assume_valid(self)
+        ValidFederationSchema::new_assume_valid(self).map_err(|(_schema, error)| error)
     }
 
     pub(crate) fn get_directive_definition(
@@ -218,22 +215,20 @@ pub struct ValidFederationSchema {
 
 impl ValidFederationSchema {
     pub fn new(schema: Valid<Schema>) -> Result<ValidFederationSchema, FederationError> {
-        let schema = Valid::assume_valid(FederationSchema::new(schema.into_inner())?);
+        let schema = FederationSchema::new(schema.into_inner())?;
 
-        let subgraph_metadata = compute_subgraph_metadata(&schema)?.map(Box::new);
-
-        // Temporarily remove the `Valid` wrapper so we can mutate the FederationSchema again
-        let mut federation_schema = schema.into_inner();
-        federation_schema.subgraph_metadata = subgraph_metadata;
-
-        Ok(ValidFederationSchema {
-            schema: Arc::new(Valid::assume_valid(federation_schema)),
-        })
+        Self::new_assume_valid(schema).map_err(|(_schema, error)| error)
     }
 
-    pub(crate) fn assume_valid(
-        schema: FederationSchema,
-    ) -> Result<ValidFederationSchema, FederationError> {
+    fn new_assume_valid(
+        mut schema: FederationSchema,
+    ) -> Result<ValidFederationSchema, (FederationSchema, FederationError)> {
+        let subgraph_metadata = match compute_subgraph_metadata(Valid::assume_valid_ref(&schema)) {
+            Ok(metadata) => metadata.map(Box::new),
+            Err(err) => return Err((schema, err)),
+        };
+        schema.subgraph_metadata = subgraph_metadata;
+
         let schema = Arc::new(Valid::assume_valid(schema));
         Ok(ValidFederationSchema { schema })
     }
@@ -241,6 +236,13 @@ impl ValidFederationSchema {
     /// Access the GraphQL schema.
     pub fn schema(&self) -> &Valid<Schema> {
         Valid::assume_valid_ref(&self.schema.schema)
+    }
+
+    /// Returns subgraph-specific metadata.
+    ///
+    /// Returns `None` for supergraph schemas.
+    pub(crate) fn subgraph_metadata(&self) -> Option<&SubgraphMetadata> {
+        self.schema.subgraph_metadata.as_deref()
     }
 }
 
