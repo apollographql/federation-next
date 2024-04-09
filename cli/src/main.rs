@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use apollo_compiler::ExecutableDocument;
@@ -72,7 +72,7 @@ fn main() -> ExitCode {
         Command::Extract {
             supergraph_schema,
             destination_dir,
-        } => cmd_extract(&supergraph_schema, destination_dir),
+        } => cmd_extract(&supergraph_schema, destination_dir.as_ref()),
     };
     match result {
         Err(error) => {
@@ -84,7 +84,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn read_input(input_path: &PathBuf) -> String {
+fn read_input(input_path: &Path) -> String {
     if input_path == std::path::Path::new("-") {
         io::read_to_string(io::stdin()).unwrap()
     } else {
@@ -118,7 +118,7 @@ fn compose_files(file_paths: &[PathBuf]) -> Result<apollo_federation::Supergraph
 }
 
 fn load_supergraph_file(
-    file_path: &PathBuf,
+    file_path: &Path,
 ) -> Result<apollo_federation::Supergraph, FederationError> {
     let doc_str = read_input(file_path);
     apollo_federation::Supergraph::new(&doc_str)
@@ -160,7 +160,7 @@ fn dot_federated_graph(file_paths: &[PathBuf]) -> Result<(), FederationError> {
     Ok(())
 }
 
-fn plan(query_path: &PathBuf, schema_paths: &[PathBuf]) -> Result<(), FederationError> {
+fn plan(query_path: &Path, schema_paths: &[PathBuf]) -> Result<(), FederationError> {
     let query = read_input(query_path);
     let supergraph = load_supergraph(schema_paths)?;
     let query_doc =
@@ -184,10 +184,10 @@ fn cmd_compose(file_paths: &[PathBuf]) -> Result<(), FederationError> {
     Ok(())
 }
 
-fn cmd_extract(file_path: &PathBuf, dest: Option<PathBuf>) -> Result<(), FederationError> {
+fn cmd_extract(file_path: &Path, dest: Option<&PathBuf>) -> Result<(), FederationError> {
     let supergraph = load_supergraph_file(file_path)?;
     let subgraphs = supergraph.extract_subgraphs()?;
-    if let Some(ref dest) = dest {
+    if let Some(dest) = dest {
         fs::create_dir_all(dest).map_err(|_| SingleFederationError::Internal {
             message: "Error: directory creation failed".into(),
         })?;
