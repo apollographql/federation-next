@@ -567,7 +567,7 @@ impl NormalizedSelection {
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-        error_handling: &RebaseErrorHandlingOption
+        error_handling: RebaseErrorHandlingOption
     ) -> Result<Option<NormalizedSelection>, FederationError> {
         match self {
             NormalizedSelection::Field(field) => {
@@ -861,7 +861,7 @@ impl NormalizedFragmentSpreadSelection {
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-        error_handling: &RebaseErrorHandlingOption,
+        error_handling: RebaseErrorHandlingOption,
     ) -> Result<Option<NormalizedSelection>, FederationError> {
         // We preserve the parent type here, to make sure we don't lose context, but we actually don't
         // want to expand the spread as that would compromise the code that optimize subgraph fetches to re-use named
@@ -1656,7 +1656,7 @@ impl NormalizedSelectionSet {
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-        error_handling: &RebaseErrorHandlingOption,
+        error_handling: RebaseErrorHandlingOption,
     ) -> Result<NormalizedSelectionSet, FederationError> {
         let mut rebased_selections = NormalizedSelectionMap::new();
         let rebased_results: Result<Vec<Option<NormalizedSelection>>, FederationError> = self
@@ -1855,7 +1855,7 @@ impl NormalizedFieldSelection {
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-        error_handling: &RebaseErrorHandlingOption,
+        error_handling: RebaseErrorHandlingOption,
     ) -> Result<Option<NormalizedSelection>, FederationError> {
         if &self.field.data().schema == schema
             && &self.field.data().field_position.parent() == parent_type
@@ -1982,7 +1982,7 @@ impl NormalizedField {
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
         schema: &ValidFederationSchema,
-        error_handling: &RebaseErrorHandlingOption,
+        error_handling: RebaseErrorHandlingOption,
     ) -> Result<Option<NormalizedField>, FederationError> {
         let field_parent = self.data().field_position.parent();
         if self.data().schema == *schema && field_parent == *parent_type {
@@ -2197,7 +2197,7 @@ impl NormalizedInlineFragmentSelection {
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-        error_handling: &RebaseErrorHandlingOption,
+        error_handling: RebaseErrorHandlingOption,
     ) -> Result<Option<NormalizedSelection>, FederationError> {
         if &self.inline_fragment.data().schema == schema
             && self.inline_fragment.data().parent_type_position == *parent_type
@@ -2299,7 +2299,7 @@ impl NormalizedInlineFragment {
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
         schema: &ValidFederationSchema,
-        error_handling: &RebaseErrorHandlingOption,
+        error_handling: RebaseErrorHandlingOption,
     ) -> Result<Option<NormalizedInlineFragment>, FederationError> {
         if &self.data().parent_type_position == parent_type {
             return Ok(Some(self.clone()));
@@ -2580,7 +2580,7 @@ impl NamedFragments {
                     &rebased_type,
                     &rebased_fragments,
                     schema,
-                    &RebaseErrorHandlingOption::IgnoreError,
+                    RebaseErrorHandlingOption::IgnoreError,
                 ) {
                     // Rebasing can leave some inefficiencies in some case (particularly when a spread has to be "expanded", see `FragmentSpreadSelection.rebaseOn`),
                     // so we do a top-level normalization to keep things clean.
