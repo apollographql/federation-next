@@ -562,6 +562,26 @@ impl NormalizedSelection {
         }
     }
 
+    pub(crate) fn rebase_on(
+        &self,
+        parent_type: &CompositeTypeDefinitionPosition,
+        named_fragments: &NamedFragments,
+        schema: &ValidFederationSchema,
+        error_handling: &RebaseErrorHandlingOption
+    ) -> Result<Option<NormalizedSelection>, FederationError> {
+        match self {
+            NormalizedSelection::Field(field) => {
+                field.rebase_on(parent_type, named_fragments, schema, error_handling)
+            }
+            NormalizedSelection::FragmentSpread(spread) => {
+                spread.rebase_on(parent_type, named_fragments, schema, error_handling)
+            }
+            NormalizedSelection::InlineFragment(inline) => {
+                inline.rebase_on(parent_type, named_fragments, schema, error_handling)
+            }
+        }
+    }
+
     pub(crate) fn normalize(
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
@@ -644,11 +664,11 @@ impl NormalizedFragment {
 pub(crate) mod normalized_field_selection {
     use crate::error::FederationError;
     use crate::query_plan::operation::{
-        directives_with_sorted_arguments, is_interface_object, HasNormalizedSelectionKey,
-        NormalizedSelectionKey, NormalizedSelectionSet, RebaseErrorHandlingOption, TYPENAME_FIELD,
+        directives_with_sorted_arguments, HasNormalizedSelectionKey,
+        NormalizedSelectionKey, NormalizedSelectionSet,
     };
     use crate::schema::position::{
-        CompositeTypeDefinitionPosition, FieldDefinitionPosition, TypeDefinitionPosition,
+        FieldDefinitionPosition, TypeDefinitionPosition,
     };
     use crate::schema::ValidFederationSchema;
     use apollo_compiler::ast::{Argument, DirectiveList, Name};
@@ -702,78 +722,6 @@ pub(crate) mod normalized_field_selection {
 
         pub(crate) fn sibling_typename_mut(&mut self) -> &mut Option<Name> {
             &mut self.data.sibling_typename
-        }
-
-        pub(crate) fn rebase_on(
-            &self,
-            parent_type: &CompositeTypeDefinitionPosition,
-            schema: &ValidFederationSchema,
-            error_handling: &RebaseErrorHandlingOption,
-        ) -> Result<Option<NormalizedField>, FederationError> {
-            let field_parent = self.data().field_position.parent();
-            if self.data.schema == *schema && field_parent == *parent_type {
-                // pointing to the same parent -> return self
-                return Ok(Some(self.clone()));
-            }
-
-            if self.data().name() == &TYPENAME_FIELD {
-                // TODO interface object info should be precomputed in QP constructor
-                return if schema
-                    .possible_runtime_types(parent_type.clone())?
-                    .iter()
-                    .any(|t| is_interface_object(t, schema))
-                {
-                    if let RebaseErrorHandlingOption::ThrowError = error_handling {
-                        Err(FederationError::internal(
-                            format!("Cannot add selection of field \"{}\" to selection set of parent type \"{}\" that is potentially an interface object type at runtime",
-                                    self.data().field_position,
-                                    parent_type
-                            )))
-                    } else {
-                        Ok(None)
-                    }
-                } else {
-                    let mut updated_field_data = self.data().clone();
-                    updated_field_data.schema = schema.clone();
-                    updated_field_data.field_position = parent_type.introspection_typename_field();
-                    Ok(Some(NormalizedField::new(updated_field_data)))
-                };
-            }
-
-            let field_from_parent = parent_type.field(self.data().name().clone())?;
-            return if field_from_parent.get(schema.schema()).is_ok()
-                && self.can_rebase_on(parent_type)
-            {
-                let mut updated_field_data = self.data().clone();
-                updated_field_data.schema = schema.clone();
-                updated_field_data.field_position = field_from_parent;
-                Ok(Some(NormalizedField::new(updated_field_data)))
-            } else if let RebaseErrorHandlingOption::IgnoreError = error_handling {
-                Ok(None)
-            } else {
-                Err(FederationError::internal(format!(
-                    "Cannot add selection of field \"{}\" to selection set of parent type \"{}\"",
-                    self.data().field_position,
-                    parent_type
-                )))
-            };
-        }
-
-        /// Verifies whether given field can be rebase on following parent type.
-        ///
-        /// There are 2 valid cases we want to allow:
-        /// 1. either `parent_type` and `field_parent_type` are the same underlying type (same name) but from different underlying schema. Typically,
-        ///  happens when we're building subgraph queries but using selections from the original query which is against the supergraph API schema.
-        /// 2. or they are not the same underlying type, but the field parent type is from an interface (or an interface object, which is the same
-        ///  here), in which case we may be rebasing an interface field on one of the implementation type, which is ok. Note that we don't verify
-        ///  that `parent_type` is indeed an implementation of `field_parent_type` because it's possible that this implementation relationship exists
-        ///  in the supergraph, but not in any of the subgraph schema involved here. So we just let it be. Not that `rebase_on` will complain anyway
-        ///  if the field name simply does not exists in `parent_type`.
-        fn can_rebase_on(&self, parent_type: &CompositeTypeDefinitionPosition) -> bool {
-            let field_parent_type = self.data().field_position.parent();
-            return field_parent_type.type_name() == parent_type.type_name()
-                || field_parent_type.is_interface_type()
-                || field_parent_type.is_union_type();
         }
     }
 
@@ -1043,9 +991,9 @@ pub(crate) mod normalized_inline_fragment_selection {
     use crate::error::FederationError;
     use crate::link::graphql_definition::{defer_directive_arguments, DeferDirectiveArguments};
     use crate::query_plan::operation::{
-        directives_with_sorted_arguments, is_deferred_selection, print_possible_runtimes,
-        runtime_types_intersect, HasNormalizedSelectionKey, NormalizedSelectionKey,
-        NormalizedSelectionSet, RebaseErrorHandlingOption, SelectionId,
+        directives_with_sorted_arguments, is_deferred_selection,
+        HasNormalizedSelectionKey, NormalizedSelectionKey,
+        NormalizedSelectionSet, SelectionId,
     };
     use crate::schema::position::CompositeTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
@@ -1099,85 +1047,6 @@ pub(crate) mod normalized_inline_fragment_selection {
             let mut data = self.data().clone();
             data.type_condition_position = new;
             Self::new(data)
-        }
-        pub(crate) fn rebase_on(
-            &self,
-            parent_type: &CompositeTypeDefinitionPosition,
-            schema: &ValidFederationSchema,
-            error_handling: &RebaseErrorHandlingOption,
-        ) -> Result<Option<NormalizedInlineFragment>, FederationError> {
-            if &self.data.parent_type_position == parent_type {
-                return Ok(Some(self.clone()));
-            }
-
-            let type_condition = self.data.type_condition_position.clone();
-            // This usually imply that the fragment is not from the same subgraph than the selection. So we need
-            // to update the source type of the fragment, but also "rebase" the condition to the selection set
-            // schema.
-            let (can_rebase, rebased_condition) = self.can_rebase_on(parent_type, schema);
-            if !can_rebase {
-                if let RebaseErrorHandlingOption::ThrowError = error_handling {
-                    let printable_type_condition = self
-                        .data
-                        .type_condition_position
-                        .clone()
-                        .map_or_else(|| "".to_string(), |t| t.to_string());
-                    let printable_runtimes = type_condition.map_or_else(
-                        || "undefined".to_string(),
-                        |t| print_possible_runtimes(&t, schema),
-                    );
-                    let printable_parent_runtimes = print_possible_runtimes(parent_type, schema);
-                    Err(FederationError::internal(
-                        format!("Cannot add fragment of condition \"{}\" (runtimes: [{}]) to parent type \"{}\" (runtimes: [{})",
-                                printable_type_condition,
-                                printable_runtimes,
-                                parent_type,
-                                printable_parent_runtimes,
-                        ),
-                    ))
-                } else {
-                    Ok(None)
-                }
-            } else {
-                let mut rebased_fragment_data = self.data.clone();
-                rebased_fragment_data.type_condition_position = rebased_condition;
-                Ok(Some(NormalizedInlineFragment::new(rebased_fragment_data)))
-            }
-        }
-
-        pub(crate) fn can_rebase_on(
-            &self,
-            parent_type: &CompositeTypeDefinitionPosition,
-            parent_schema: &ValidFederationSchema,
-        ) -> (bool, Option<CompositeTypeDefinitionPosition>) {
-            if self.data.type_condition_position.is_none() {
-                // can_rebase = true, condition = undefined
-                return (true, None);
-            }
-
-            if let Some(Ok(rebased_condition)) = self
-                .data
-                .type_condition_position
-                .clone()
-                .and_then(|condition_position| {
-                    parent_schema.try_get_type(condition_position.type_name().clone())
-                })
-                .map(|rebased_condition_position| {
-                    CompositeTypeDefinitionPosition::try_from(rebased_condition_position)
-                })
-            {
-                // chained if let chains are not yet supported
-                // see https://github.com/rust-lang/rust/issues/53667
-                if runtime_types_intersect(parent_type, &rebased_condition, parent_schema) {
-                    // can_rebase = true, condition = rebased_condition
-                    (true, Some(rebased_condition))
-                } else {
-                    (false, None)
-                }
-            } else {
-                // can_rebase = false, condition = undefined
-                (false, None)
-            }
         }
     }
 
@@ -1793,17 +1662,7 @@ impl NormalizedSelectionSet {
         let rebased_results: Result<Vec<Option<NormalizedSelection>>, FederationError> = self
             .selections
             .iter()
-            .map(|(_, selection)| match selection {
-                NormalizedSelection::Field(field) => {
-                    field.rebase_on(parent_type, named_fragments, schema, error_handling)
-                }
-                NormalizedSelection::FragmentSpread(spread) => {
-                    spread.rebase_on(parent_type, named_fragments, schema, error_handling)
-                }
-                NormalizedSelection::InlineFragment(inline) => {
-                    inline.rebase_on(parent_type, named_fragments, schema, error_handling)
-                }
-            })
+            .map(|(_, selection)| selection.rebase_on(parent_type, named_fragments, schema, error_handling))
             .collect();
         rebased_results?.iter().flatten().for_each(|rebased| {
             rebased_selections.insert(rebased.clone());
@@ -2118,6 +1977,80 @@ impl<'a> NormalizedFieldSelectionValue<'a> {
     }
 }
 
+impl NormalizedField {
+    pub(crate) fn rebase_on(
+        &self,
+        parent_type: &CompositeTypeDefinitionPosition,
+        schema: &ValidFederationSchema,
+        error_handling: &RebaseErrorHandlingOption,
+    ) -> Result<Option<NormalizedField>, FederationError> {
+        let field_parent = self.data().field_position.parent();
+        if self.data().schema == *schema && field_parent == *parent_type {
+            // pointing to the same parent -> return self
+            return Ok(Some(self.clone()));
+        }
+
+        if self.data().name() == &TYPENAME_FIELD {
+            // TODO interface object info should be precomputed in QP constructor
+            return if schema
+                .possible_runtime_types(parent_type.clone())?
+                .iter()
+                .any(|t| is_interface_object(t, schema))
+            {
+                if let RebaseErrorHandlingOption::ThrowError = error_handling {
+                    Err(FederationError::internal(
+                        format!("Cannot add selection of field \"{}\" to selection set of parent type \"{}\" that is potentially an interface object type at runtime",
+                                self.data().field_position,
+                                parent_type
+                        )))
+                } else {
+                    Ok(None)
+                }
+            } else {
+                let mut updated_field_data = self.data().clone();
+                updated_field_data.schema = schema.clone();
+                updated_field_data.field_position = parent_type.introspection_typename_field();
+                Ok(Some(NormalizedField::new(updated_field_data)))
+            };
+        }
+
+        let field_from_parent = parent_type.field(self.data().name().clone())?;
+        return if field_from_parent.get(schema.schema()).is_ok()
+            && self.can_rebase_on(parent_type)
+        {
+            let mut updated_field_data = self.data().clone();
+            updated_field_data.schema = schema.clone();
+            updated_field_data.field_position = field_from_parent;
+            Ok(Some(NormalizedField::new(updated_field_data)))
+        } else if let RebaseErrorHandlingOption::IgnoreError = error_handling {
+            Ok(None)
+        } else {
+            Err(FederationError::internal(format!(
+                "Cannot add selection of field \"{}\" to selection set of parent type \"{}\"",
+                self.data().field_position,
+                parent_type
+            )))
+        };
+    }
+
+    /// Verifies whether given field can be rebase on following parent type.
+    ///
+    /// There are 2 valid cases we want to allow:
+    /// 1. either `parent_type` and `field_parent_type` are the same underlying type (same name) but from different underlying schema. Typically,
+    ///  happens when we're building subgraph queries but using selections from the original query which is against the supergraph API schema.
+    /// 2. or they are not the same underlying type, but the field parent type is from an interface (or an interface object, which is the same
+    ///  here), in which case we may be rebasing an interface field on one of the implementation type, which is ok. Note that we don't verify
+    ///  that `parent_type` is indeed an implementation of `field_parent_type` because it's possible that this implementation relationship exists
+    ///  in the supergraph, but not in any of the subgraph schema involved here. So we just let it be. Not that `rebase_on` will complain anyway
+    ///  if the field name simply does not exists in `parent_type`.
+    fn can_rebase_on(&self, parent_type: &CompositeTypeDefinitionPosition) -> bool {
+        let field_parent_type = self.data().field_position.parent();
+        return field_parent_type.type_name() == parent_type.type_name()
+            || field_parent_type.is_interface_type()
+            || field_parent_type.is_union_type();
+    }
+}
+
 impl NormalizedFragmentSpreadSelection {
     /// Copies fragment spread selection and assigns it a new unique selection ID.
     pub(crate) fn with_unique_id(&self) -> Self {
@@ -2358,6 +2291,88 @@ impl<'a> NormalizedInlineFragmentSelectionValue<'a> {
                 .merge_into(selection_sets.into_iter())?;
         }
         Ok(())
+    }
+}
+
+impl NormalizedInlineFragment {
+    pub(crate) fn rebase_on(
+        &self,
+        parent_type: &CompositeTypeDefinitionPosition,
+        schema: &ValidFederationSchema,
+        error_handling: &RebaseErrorHandlingOption,
+    ) -> Result<Option<NormalizedInlineFragment>, FederationError> {
+        if &self.data().parent_type_position == parent_type {
+            return Ok(Some(self.clone()));
+        }
+
+        let type_condition = self.data().type_condition_position.clone();
+        // This usually imply that the fragment is not from the same subgraph than the selection. So we need
+        // to update the source type of the fragment, but also "rebase" the condition to the selection set
+        // schema.
+        let (can_rebase, rebased_condition) = self.can_rebase_on(parent_type, schema);
+        if !can_rebase {
+            if let RebaseErrorHandlingOption::ThrowError = error_handling {
+                let printable_type_condition = self
+                    .data()
+                    .type_condition_position
+                    .clone()
+                    .map_or_else(|| "".to_string(), |t| t.to_string());
+                let printable_runtimes = type_condition.map_or_else(
+                    || "undefined".to_string(),
+                    |t| print_possible_runtimes(&t, schema),
+                );
+                let printable_parent_runtimes = print_possible_runtimes(parent_type, schema);
+                Err(FederationError::internal(
+                    format!("Cannot add fragment of condition \"{}\" (runtimes: [{}]) to parent type \"{}\" (runtimes: [{})",
+                            printable_type_condition,
+                            printable_runtimes,
+                            parent_type,
+                            printable_parent_runtimes,
+                    ),
+                ))
+            } else {
+                Ok(None)
+            }
+        } else {
+            let mut rebased_fragment_data = self.data().clone();
+            rebased_fragment_data.type_condition_position = rebased_condition;
+            Ok(Some(NormalizedInlineFragment::new(rebased_fragment_data)))
+        }
+    }
+
+    pub(crate) fn can_rebase_on(
+        &self,
+        parent_type: &CompositeTypeDefinitionPosition,
+        parent_schema: &ValidFederationSchema,
+    ) -> (bool, Option<CompositeTypeDefinitionPosition>) {
+        if self.data().type_condition_position.is_none() {
+            // can_rebase = true, condition = undefined
+            return (true, None);
+        }
+
+        if let Some(Ok(rebased_condition)) = self
+            .data()
+            .type_condition_position
+            .clone()
+            .and_then(|condition_position| {
+                parent_schema.try_get_type(condition_position.type_name().clone())
+            })
+            .map(|rebased_condition_position| {
+                CompositeTypeDefinitionPosition::try_from(rebased_condition_position)
+            })
+        {
+            // chained if let chains are not yet supported
+            // see https://github.com/rust-lang/rust/issues/53667
+            if runtime_types_intersect(parent_type, &rebased_condition, parent_schema) {
+                // can_rebase = true, condition = rebased_condition
+                (true, Some(rebased_condition))
+            } else {
+                (false, None)
+            }
+        } else {
+            // can_rebase = false, condition = undefined
+            (false, None)
+        }
     }
 }
 
