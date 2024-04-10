@@ -428,6 +428,14 @@ impl From<DiagnosticList> for MultipleFederationErrors {
     }
 }
 
+impl FromIterator<SingleFederationError> for MultipleFederationErrors {
+    fn from_iter<T: IntoIterator<Item = SingleFederationError>>(iter: T) -> Self {
+        Self {
+            errors: iter.into_iter().collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, thiserror::Error)]
 pub struct AggregateFederationError {
     pub code: String,
@@ -488,32 +496,16 @@ impl FederationError {
     }
 }
 
-// Converts a SingleFederationError slice into `Result<(), FederationError>`.
-// The return value can be either Ok, Err with a SingleFederationError or MultipleFederationErrors,
-// depending on the number of errors in the input.
-fn convert_single_errors_to_result(
-    errors: &[SingleFederationError],
-) -> Result<(), FederationError> {
-    match errors.len().cmp(&1) {
-        Ordering::Less => Ok(()),
-        Ordering::Equal => Err(errors[0].clone().into()),
-        Ordering::Greater => Err(MultipleFederationErrors {
-            errors: errors.to_vec(),
-        }
-        .into()),
-    }
-}
-
-impl FromIterator<SingleFederationError> for Result<(), FederationError> {
-    fn from_iter<T: IntoIterator<Item = SingleFederationError>>(iter: T) -> Self {
-        let errors: Vec<_> = iter.into_iter().collect();
-        convert_single_errors_to_result(&errors)
-    }
-}
-
 impl MultipleFederationErrors {
-    pub fn to_result(&self) -> Result<(), FederationError> {
-        convert_single_errors_to_result(&self.errors)
+    /// Converts into `Result<(), FederationError>`.
+    /// - The return value can be either Ok, Err with a SingleFederationError or MultipleFederationErrors,
+    ///   depending on the number of errors in the input.
+    pub fn into_result(self) -> Result<(), FederationError> {
+        match self.errors.len().cmp(&1) {
+            Ordering::Less => Ok(()),
+            Ordering::Equal => Err(self.errors[0].clone().into()),
+            Ordering::Greater => Err(self.into()),
+        }
     }
 }
 
