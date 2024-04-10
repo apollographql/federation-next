@@ -488,10 +488,10 @@ impl FederationError {
     }
 }
 
-// Converts a SingleFederationError array into `Result<(), FederationError>`.
+// Converts a SingleFederationError slice into `Result<(), FederationError>`.
 // The return value can be either Ok, Err with a SingleFederationError or MultipleFederationErrors,
 // depending on the number of errors in the input.
-pub(crate) fn check_federation_errors(
+fn convert_single_errors_to_result(
     errors: &[SingleFederationError],
 ) -> Result<(), FederationError> {
     match errors.len().cmp(&1) {
@@ -501,6 +501,19 @@ pub(crate) fn check_federation_errors(
             errors: errors.to_vec(),
         }
         .into()),
+    }
+}
+
+impl FromIterator<SingleFederationError> for Result<(), FederationError> {
+    fn from_iter<T: IntoIterator<Item = SingleFederationError>>(iter: T) -> Self {
+        let errors: Vec<_> = iter.into_iter().collect();
+        convert_single_errors_to_result(&errors)
+    }
+}
+
+impl MultipleFederationErrors {
+    pub fn to_result(&self) -> Result<(), FederationError> {
+        convert_single_errors_to_result(&self.errors)
     }
 }
 

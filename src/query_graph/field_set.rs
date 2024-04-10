@@ -1,4 +1,4 @@
-use crate::error::{check_federation_errors, FederationError, SingleFederationError};
+use crate::error::{FederationError, SingleFederationError};
 use crate::query_plan::operation::{FragmentSpreadNormalizationOption, NormalizedSelectionSet};
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::executable::{FieldSet, SelectionSet};
@@ -14,7 +14,7 @@ fn check_absence_of_aliases(
     field_set: &Valid<FieldSet>,
     code_str: &NodeStr,
 ) -> Result<(), FederationError> {
-    let alias_errors: Vec<_> = field_set.selection_set.fields().filter_map(|field| {
+    field_set.selection_set.fields().filter_map(|field| {
         field.alias.as_ref().map(|alias|
             SingleFederationError::UnsupportedFeature {
                 // PORT_NOTE: The JS version also quotes the directive name in the error message.
@@ -23,8 +23,7 @@ fn check_absence_of_aliases(
                     r#"Cannot use alias "{}" in "{}": aliases are not currently supported in the used directive"#,
                     alias, code_str)
             })
-    }).collect();
-    check_federation_errors(&alias_errors)
+    }).collect()
 }
 
 // TODO: In the JS codebase, this has some error-rewriting to help give the user better hints around
