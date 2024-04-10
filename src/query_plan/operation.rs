@@ -636,12 +636,8 @@ impl NormalizedFragment {
     }
 
     // PORT NOTE: in JS code this is stored on the fragment
-    fn collect_used_fragment_names(&self, aggregator: &mut Arc<HashMap<Name, i32>>) {
-        self.fragment_usages().iter().for_each(|(name, count)| {
-            // let current = aggregator.get_mut(name);
-            let current_count = Arc::make_mut(aggregator).entry(name.clone()).or_default();
-            *current_count += count;
-        });
+    fn collect_used_fragment_names(&self, aggregator: &mut HashMap<Name, i32>) {
+        self.selection_set.collect_used_fragment_names(aggregator)
     }
 }
 
