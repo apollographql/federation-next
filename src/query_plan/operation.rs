@@ -2006,57 +2006,57 @@ impl NormalizedFieldSelection {
         {
             return Ok(Some(NormalizedSelection::Field(Arc::new(self.clone()))));
         }
+        
+        let Some(rebased) = self.field.rebase_on(parent_type, schema, error_handling)? else {
+            return Ok(None);
+        };
+        
+        let Some(selection_set) = &self.selection_set else {
+            return Ok(Some(NormalizedSelection::Field(Arc::new(
+                NormalizedFieldSelection {
+                    field: rebased,
+                    selection_set: None,
+                },
+            ))));
+        };
 
-        if let Some(rebased) = self.field.rebase_on(parent_type, schema, error_handling)? {
-            if let Some(selection_set) = &self.selection_set {
-                let rebased_type_name = rebased
-                    .data()
-                    .field_position
-                    .get(schema.schema())?
-                    .ty
-                    .inner_named_type();
-                let rebased_base_type: CompositeTypeDefinitionPosition =
-                    schema.get_type(rebased_type_name.clone())?.try_into()?;
+        let rebased_type_name = rebased
+            .data()
+            .field_position
+            .get(schema.schema())?
+            .ty
+            .inner_named_type();
+        let rebased_base_type: CompositeTypeDefinitionPosition =
+            schema.get_type(rebased_type_name.clone())?.try_into()?;
 
-                let selection_set_type = &selection_set.type_position;
-                if self.field.data().schema == rebased.data().schema
-                    && &rebased_base_type == selection_set_type
-                {
-                    return Ok(Some(NormalizedSelection::Field(Arc::new(
-                        NormalizedFieldSelection {
-                            field: rebased.clone(),
-                            selection_set: self.selection_set.clone(),
-                        },
-                    ))));
-                }
+        let selection_set_type = &selection_set.type_position;
+        if self.field.data().schema == rebased.data().schema
+            && &rebased_base_type == selection_set_type
+        {
+            return Ok(Some(NormalizedSelection::Field(Arc::new(
+                NormalizedFieldSelection {
+                    field: rebased.clone(),
+                    selection_set: self.selection_set.clone(),
+                },
+            ))));
+        }
 
-                let rebased_selection_set = selection_set.rebase_on(
-                    &rebased_base_type,
-                    named_fragments,
-                    schema,
-                    error_handling,
-                )?;
-                if rebased_selection_set.selections.is_empty() {
-                    // empty selection set!
-                    Ok(None)
-                } else {
-                    Ok(Some(NormalizedSelection::Field(Arc::new(
-                        NormalizedFieldSelection {
-                            field: rebased.clone(),
-                            selection_set: Some(rebased_selection_set),
-                        },
-                    ))))
-                }
-            } else {
-                Ok(Some(NormalizedSelection::Field(Arc::new(
-                    NormalizedFieldSelection {
-                        field: rebased,
-                        selection_set: self.selection_set.clone(),
-                    },
-                ))))
-            }
-        } else {
+        let rebased_selection_set = selection_set.rebase_on(
+            &rebased_base_type,
+            named_fragments,
+            schema,
+            error_handling,
+        )?;
+        if rebased_selection_set.selections.is_empty() {
+            // empty selection set!
             Ok(None)
+        } else {
+            Ok(Some(NormalizedSelection::Field(Arc::new(
+                NormalizedFieldSelection {
+                    field: rebased.clone(),
+                    selection_set: Some(rebased_selection_set),
+                },
+            ))))
         }
     }
 }
