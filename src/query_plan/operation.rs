@@ -716,6 +716,7 @@ pub(crate) mod normalized_field_selection {
         ) -> Result<Option<NormalizedField>, FederationError> {
             let field_parent = self.data().field_position.parent();
             if self.data.schema == *schema && field_parent == *parent_type {
+                // pointing to the same parent -> return self
                 return Ok(Some(self.clone()));
             }
 
@@ -919,7 +920,7 @@ impl NormalizedFragmentSpreadSelection {
         error_handling: &RebaseErrorHandlingOption,
     ) -> Result<Option<NormalizedSelection>, FederationError> {
         // We preserve the parent type here, to make sure we don't lose context, but we actually don't
-        // want to expand the spread  as that would compromise the code that optimize subgraph fetches to re-use named
+        // want to expand the spread as that would compromise the code that optimize subgraph fetches to re-use named
         // fragments.
         //
         // This is a little bit iffy, because the fragment may not apply at this parent type, but we
@@ -947,8 +948,8 @@ impl NormalizedFragmentSpreadSelection {
         let Some(named_fragment) = new_fragments.get(&self.spread.data.fragment_name) else {
             // If we're rebasing on another schema (think a subgraph), then named fragments will have been rebased on that, and some
             // of them may not contain anything that is on that subgraph, in which case they will not have been included at all.
-            // If so, then as long as we're not ask to error if we cannot rebase, then we're happy to skip that spread (since again,
-            // it expands to nothing that apply on the schema).
+            // If so, then as long as we're not asked to error if we cannot rebase, then we're happy to skip that spread (since again,
+            // it expands to nothing that applies on the schema).
             return if let RebaseErrorHandlingOption::ThrowError = error_handling {
                 Err(FederationError::internal(format!(
                     "Cannot rebase {} fragment if it isn't part of the provided fragments",
@@ -962,7 +963,7 @@ impl NormalizedFragmentSpreadSelection {
         // Lastly, if we rebase on a different schema, it's possible the fragment type does not intersect the
         // parent type. For instance, the parent type could be some object type T while the fragment is an
         // interface I, and T may implement I in the supergraph, but not in a particular subgraph (of course,
-        // if I don't exist at all in the subgraph, then we'll have exited above, but I may exist in the
+        // if I doesn't exist at all in the subgraph, then we'll have exited above, but I may exist in the
         // subgraph, just not be implemented by T for some reason). In that case, we can't reuse the fragment
         // as its spread is essentially invalid in that position, so we have to replace it by the expansion
         // of that fragment, which we rebase on the parentType (which in turn, will remove anythings within
@@ -977,17 +978,17 @@ impl NormalizedFragmentSpreadSelection {
             // Note that we've used the rebased `named_fragment` to check the type intersection because we needed to
             // compare runtime types "for the schema we're rebasing into". But now that we're deciding to not reuse
             // this rebased fragment, what we rebase is the selection set of the non-rebased fragment. And that's
-            // important because the very logic we're hitting here may need to happen inside the rebase do the
+            // important because the very logic we're hitting here may need to happen inside the rebase on the
             // fragment selection, but that logic would not be triggered if we used the rebased `named_fragment` since
-            // `rebase_on_same_Schema` would then be 'true'.
+            // `rebase_on_same_schema` would then be 'true'.
             let expanded_selection_set = self.selection_set.rebase_on(
                 parent_type,
                 named_fragments,
                 schema,
                 error_handling,
             )?;
-            // In theory, we could return the selection set directly, but making `SelectionSet.rebase_on` sometimes
-            // return a `SelectionSet` complicate things quite a bit. So instead, we encapsulate the selection set
+            // In theory, we could return the selection set directly, but making `NormalizedSelectionSet.rebase_on` sometimes
+            // return a `NormalizedSelectionSet` complicate things quite a bit. So instead, we encapsulate the selection set
             // in an "empty" inline fragment. This make for non-really-optimal selection sets in the (relatively
             // rare) case where this is triggered, but in practice this "inefficiency" is removed by future calls
             // to `normalize`.
@@ -2004,14 +2005,17 @@ impl NormalizedFieldSelection {
         if &self.field.data().schema == schema
             && &self.field.data().field_position.parent() == parent_type
         {
+            // we are rebasing field on the same parent within the same schema - we can just return self
             return Ok(Some(NormalizedSelection::Field(Arc::new(self.clone()))));
         }
-        
+
         let Some(rebased) = self.field.rebase_on(parent_type, schema, error_handling)? else {
+            // rebasing failed but we are ignoring errors
             return Ok(None);
         };
-        
+
         let Some(selection_set) = &self.selection_set else {
+            // leaf field
             return Ok(Some(NormalizedSelection::Field(Arc::new(
                 NormalizedFieldSelection {
                     field: rebased,
@@ -2033,6 +2037,7 @@ impl NormalizedFieldSelection {
         if self.field.data().schema == rebased.data().schema
             && &rebased_base_type == selection_set_type
         {
+            // we are rebasing within the same schema and the same base type
             return Ok(Some(NormalizedSelection::Field(Arc::new(
                 NormalizedFieldSelection {
                     field: rebased.clone(),
@@ -2048,7 +2053,7 @@ impl NormalizedFieldSelection {
             error_handling,
         )?;
         if rebased_selection_set.selections.is_empty() {
-            // empty selection set!
+            // empty selection set
             Ok(None)
         } else {
             Ok(Some(NormalizedSelection::Field(Arc::new(
@@ -2268,47 +2273,50 @@ impl NormalizedInlineFragmentSelection {
         if &self.inline_fragment.data().schema == schema
             && self.inline_fragment.data().parent_type_position == *parent_type
         {
+            // we are rebasing inline fragment on the same parent within the same schema - we can just return self
             return Ok(Some(NormalizedSelection::InlineFragment(Arc::new(
                 self.clone(),
             ))));
         }
-        return if let Some(rebased_fragment) =
-            self.inline_fragment
-                .rebase_on(parent_type, schema, error_handling)?
-        {
-            let rebased_casted_type = rebased_fragment
-                .data()
-                .type_condition_position
-                .clone()
-                .unwrap_or(rebased_fragment.data().parent_type_position.clone());
-            if &rebased_casted_type == parent_type {
+
+        let Some(rebased_fragment) = self.inline_fragment.rebase_on(parent_type, schema, error_handling)? else {
+            // rebasing failed but we are ignoring errors
+            return Ok(None);
+        };
+
+
+        let rebased_casted_type = rebased_fragment
+            .data()
+            .type_condition_position
+            .clone()
+            .unwrap_or(rebased_fragment.data().parent_type_position.clone());
+        if &self.inline_fragment.data().schema == schema && rebased_casted_type == *parent_type {
+            // we are within the same schema - selection set does not have to be rebased
+            Ok(Some(NormalizedSelection::InlineFragment(Arc::new(
+                NormalizedInlineFragmentSelection {
+                    inline_fragment: rebased_fragment,
+                    selection_set: self.selection_set.clone(),
+                },
+            ))))
+        } else {
+            let rebased_selection_set = self.selection_set.rebase_on(
+                &rebased_casted_type,
+                named_fragments,
+                schema,
+                error_handling,
+            )?;
+            if rebased_selection_set.selections.is_empty() {
+                // empty selection set
+                Ok(None)
+            } else {
                 Ok(Some(NormalizedSelection::InlineFragment(Arc::new(
                     NormalizedInlineFragmentSelection {
                         inline_fragment: rebased_fragment,
-                        selection_set: self.selection_set.clone(),
+                        selection_set: rebased_selection_set,
                     },
                 ))))
-            } else {
-                let rebased_selection_set = self.selection_set.rebase_on(
-                    &rebased_casted_type,
-                    named_fragments,
-                    schema,
-                    error_handling,
-                )?;
-                if rebased_selection_set.selections.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(NormalizedSelection::InlineFragment(Arc::new(
-                        NormalizedInlineFragmentSelection {
-                            inline_fragment: rebased_fragment,
-                            selection_set: rebased_selection_set,
-                        },
-                    ))))
-                }
             }
-        } else {
-            Ok(None)
-        };
+        }
     }
 
     pub(crate) fn casted_type(&self) -> &CompositeTypeDefinitionPosition {
