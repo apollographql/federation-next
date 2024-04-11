@@ -130,7 +130,7 @@ fn is_constant_condition(condition: &Conditions) -> bool {
 pub(crate) fn remove_conditions_from_selection_set(
     selection_set: &NormalizedSelectionSet,
     conditions: &Conditions,
-) -> NormalizedSelectionSet {
+) -> Result<NormalizedSelectionSet, FederationError> {
     match conditions {
         Conditions::Boolean(_) => {
             // If the conditions are the constant false, this means we know the selection will not be included
@@ -138,61 +138,56 @@ pub(crate) fn remove_conditions_from_selection_set(
             // the input unchanged as a shortcut.
             // If the conditions are the constant true, then it means we have no conditions to remove and we can
             // keep the selection "as is".
-            selection_set.clone()
+            Ok(selection_set.clone())
         }
         Conditions::Variables(variable_conditions) => {
-            let selection_map = selection_set
-                .selections
-                .iter()
-                .map(|selection| {
-                    if let Ok(element) = selection.1.element() {
-                        // We remove any of the conditions on the element and recurse.
-                        let updated_element =
-                            remove_conditions_of_element(element.clone(), variable_conditions);
-                        if let Ok(Some(selection_set)) = selection.1.selection_set() {
-                            let updated_selection_set =
-                                remove_conditions_from_selection_set(selection_set, conditions);
-                            if updated_element == element {
-                                if *selection_set == updated_selection_set {
-                                    (selection.0.clone(), selection.1.clone())
-                                } else {
-                                    (
-                                        selection.0.clone(),
-                                        selection.1.with_updated_selection_set(Some(
-                                            updated_selection_set,
-                                        )),
-                                    )
-                                }
+            let mut selection_map = IndexMap::new();
+
+            for selection in selection_set.selections.iter() {
+                let (key, selection) = if let Ok(element) = selection.1.element() {
+                    // We remove any of the conditions on the element and recurse.
+                    let updated_element =
+                        remove_conditions_of_element(element.clone(), variable_conditions);
+                    if let Ok(Some(selection_set)) = selection.1.selection_set() {
+                        let updated_selection_set =
+                            remove_conditions_from_selection_set(selection_set, conditions)?;
+                        if updated_element == element {
+                            if *selection_set == updated_selection_set {
+                                (selection.0.clone(), selection.1.clone())
                             } else {
                                 (
                                     selection.0.clone(),
-                                    selection_of_element(
-                                        updated_element,
-                                        Some(updated_selection_set),
-                                    ),
+                                    selection
+                                        .1
+                                        .with_updated_selection_set(Some(updated_selection_set)),
                                 )
                             }
-                        } else if updated_element == element {
-                            (selection.0.clone(), selection.1.clone())
                         } else {
                             (
                                 selection.0.clone(),
-                                selection_of_element(updated_element, None),
+                                selection_of_element(updated_element, Some(updated_selection_set))?,
                             )
                         }
+                    } else if updated_element == element {
+                        (selection.0.clone(), selection.1.clone())
+                    } else {
+                        (
+                            selection.0.clone(),
+                            selection_of_element(updated_element, None)?,
+                        )
                     }
+                } else {
                     //FIXME: what is the expected behaviour here if element() returns an error?
-                    else {
-                        todo!()
-                    }
-                })
-                .collect();
+                    todo!()
+                };
+                selection_map.insert(key, selection);
+            }
 
-            NormalizedSelectionSet {
+            Ok(NormalizedSelectionSet {
                 schema: selection_set.schema.clone(),
                 type_position: selection_set.type_position.clone(),
                 selections: Arc::new(NormalizedSelectionMap(selection_map)),
-            }
+            })
         }
     }
 }

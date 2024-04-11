@@ -641,12 +641,9 @@ impl FetchDependencyGraphNode {
         operation.optimize(fragments, Default::default());
         let operation_document = operation.try_into()?;
 
-        let has_defers = None; // TODO: JS doesn’t have this?
-
         let node = super::PlanNode::Fetch(Arc::new(super::FetchNode {
             subgraph_name: self.subgraph_name.clone(),
             id: self.id,
-            has_defers,
             variable_usages,
             requires: input_nodes.map(|sel| executable::SelectionSet::from(sel).selections),
             operation_document,
@@ -689,7 +686,7 @@ impl FetchDependencyGraphNode {
         let selection_without_conditions = remove_conditions_from_selection_set(
             &self.selection_set.selection_set,
             handled_conditions,
-        );
+        )?;
         let selection_with_typenames =
             selection_without_conditions.add_typename_field_for_abstract_types(None, fragments)?;
 
@@ -761,7 +758,7 @@ fn operation_for_entities_fetch(
             sibling_typename: None,
         })),
         Some(selection_set),
-    );
+    )?;
 
     let type_position: CompositeTypeDefinitionPosition = subgraph_schema
         .get_type(query_type_name.clone())?
@@ -924,7 +921,7 @@ impl FetchInputs {
             .map(|selection_set| {
                 remove_conditions_from_selection_set(selection_set, handled_conditions)
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, FederationError>>()?;
         // Making sure we're not generating something invalid.
         let _: Result<(), FederationError> = selection_sets
             .iter()
