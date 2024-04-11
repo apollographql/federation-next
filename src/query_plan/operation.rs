@@ -2016,7 +2016,7 @@ impl NormalizedField {
 
         let field_from_parent = parent_type.field(self.data().name().clone())?;
         return if field_from_parent.get(schema.schema()).is_ok()
-            && self.can_rebase_on(parent_type)
+            && self.can_rebase_on(parent_type, schema)
         {
             let mut updated_field_data = self.data().clone();
             updated_field_data.schema = schema.clone();
@@ -2042,12 +2042,23 @@ impl NormalizedField {
     ///  here), in which case we may be rebasing an interface field on one of the implementation type, which is ok. Note that we don't verify
     ///  that `parent_type` is indeed an implementation of `field_parent_type` because it's possible that this implementation relationship exists
     ///  in the supergraph, but not in any of the subgraph schema involved here. So we just let it be. Not that `rebase_on` will complain anyway
-    ///  if the field name simply does not exists in `parent_type`.
-    fn can_rebase_on(&self, parent_type: &CompositeTypeDefinitionPosition) -> bool {
+    ///  if the field name simply does not exist in `parent_type`.
+    fn can_rebase_on(&self, parent_type: &CompositeTypeDefinitionPosition, schema: &ValidFederationSchema) -> bool {
         let field_parent_type = self.data().field_position.parent();
-        return field_parent_type.type_name() == parent_type.type_name()
-            || field_parent_type.is_interface_type()
-            || field_parent_type.is_union_type();
+        // case 1
+        if field_parent_type.type_name() == parent_type.type_name() {
+            return true;
+        }
+        // case 2
+        let is_interface_object_type= match TryInto::<ObjectTypeDefinitionPosition>::try_into(field_parent_type.clone()) {
+            Ok(ref o) => {
+                  is_interface_object(o, schema)
+              },
+            Err(_) => {
+                false
+            }
+        };
+        field_parent_type.is_interface_type() || is_interface_object_type
     }
 }
 

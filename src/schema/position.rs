@@ -376,6 +376,21 @@ impl TryFrom<QueryGraphNodeType> for ObjectTypeDefinitionPosition {
     }
 }
 
+impl TryFrom<CompositeTypeDefinitionPosition> for ObjectTypeDefinitionPosition {
+    type Error = FederationError;
+
+    fn try_from(value: CompositeTypeDefinitionPosition) -> Result<Self, Self::Error> {
+        match value {
+            CompositeTypeDefinitionPosition::Object(value) => {
+                Ok(value)
+            }
+            _ => Err(FederationError::internal(format!(
+                "Type `{value}` was unexpectedly not an object type"
+            ))),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
 pub(crate) enum AbstractTypeDefinitionPosition {
     Interface(InterfaceTypeDefinitionPosition),
