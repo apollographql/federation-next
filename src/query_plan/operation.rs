@@ -2695,7 +2695,7 @@ impl TryFrom<&NormalizedSelection> for Selection {
             }
             NormalizedSelection::FragmentSpread(normalized_fragment_spread_selection) => {
                 Selection::FragmentSpread(Node::new(
-                    normalized_fragment_spread_selection.deref().try_into()?,
+                    normalized_fragment_spread_selection.deref().into(),
                 ))
             }
             NormalizedSelection::InlineFragment(normalized_inline_fragment_selection) => {
@@ -2788,19 +2788,17 @@ impl TryFrom<&NormalizedInlineFragmentSelection> for InlineFragment {
     }
 }
 
-impl TryFrom<&NormalizedFragmentSpreadSelection> for FragmentSpread {
-    type Error = FederationError;
-
-    fn try_from(val: &NormalizedFragmentSpreadSelection) -> Result<Self, Self::Error> {
+impl From<&NormalizedFragmentSpreadSelection> for FragmentSpread {
+    fn from(val: &NormalizedFragmentSpreadSelection) -> Self {
         let normalized_fragment_spread = &val.spread;
-        Ok(Self {
+        Self {
             fragment_name: normalized_fragment_spread.data().fragment_name.to_owned(),
             directives: normalized_fragment_spread
                 .data()
                 .directives
                 .deref()
                 .to_owned(),
-        })
+        }
     }
 }
 
