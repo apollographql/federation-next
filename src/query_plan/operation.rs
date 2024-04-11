@@ -2407,6 +2407,10 @@ pub(crate) enum RebaseErrorHandlingOption {
     ThrowError,
 }
 
+/// This uses internal copy-on-write optimization to make `Clone` cheap.
+/// However a cloned `NamedFragments` still behaves like a deep copy:
+/// unlike in JS where we can have multiple references to a mutable map,
+/// here modifying a cloned map will leave the original unchanged.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct NamedFragments {
     fragments: Arc<IndexMap<Name, Node<NormalizedFragment>>>,
@@ -2619,6 +2623,7 @@ impl NamedFragments {
 
 pub(crate) struct RebasedFragments {
     original_fragments: NamedFragments,
+    /// Map key: subgraph name
     rebased_fragments: Arc<HashMap<String, Option<NamedFragments>>>,
 }
 
