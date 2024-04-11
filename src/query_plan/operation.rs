@@ -2580,7 +2580,7 @@ impl NamedFragments {
         true
     }
 
-    pub(crate) fn rebase_on(&mut self, schema: &ValidFederationSchema) -> Option<NamedFragments> {
+    pub(crate) fn rebase_on(&self, schema: &ValidFederationSchema) -> Option<NamedFragments> {
         let mut rebased_fragments = NamedFragments::default();
         self.fragments.iter().for_each(|(_, fragment)| {
             if let Ok(rebased_type) = schema
@@ -4076,7 +4076,7 @@ type U {
             );
 
             if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-                let mut normalized_operation = normalize_operation(
+                let normalized_operation = normalize_operation(
                     operation,
                     &executable_document.fragments,
                     &schema,
@@ -4161,7 +4161,7 @@ type U {
             assert_eq!(2, executable_document.fragments.len());
 
             if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-                let mut normalized_operation = normalize_operation(
+                let normalized_operation = normalize_operation(
                     operation,
                     &executable_document.fragments,
                     &schema,
@@ -4242,7 +4242,7 @@ type T2 implements I {
             );
 
             if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-                let mut normalized_operation = normalize_operation(
+                let normalized_operation = normalize_operation(
                     operation,
                     &executable_document.fragments,
                     &schema,
@@ -4323,7 +4323,7 @@ type T implements I {
                 interface_objects.insert(InterfaceTypeDefinitionPosition {
                     type_name: name!("I"),
                 });
-                let mut normalized_operation = normalize_operation(
+                let normalized_operation = normalize_operation(
                     operation,
                     &executable_document.fragments,
                     &schema,
@@ -4416,7 +4416,7 @@ type T {
             );
 
             if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-                let mut normalized_operation = normalize_operation(
+                let normalized_operation = normalize_operation(
                     operation,
                     &executable_document.fragments,
                     &schema,
@@ -4494,7 +4494,7 @@ type U {
             );
 
             if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-                let mut normalized_operation = normalize_operation(
+                let normalized_operation = normalize_operation(
                     operation,
                     &executable_document.fragments,
                     &schema,
@@ -4568,7 +4568,7 @@ type T implements I {
             );
 
             if let Some(operation) = executable_document.named_operations.get_mut("TestQuery") {
-                let mut normalized_operation = normalize_operation(
+                let normalized_operation = normalize_operation(
                     operation,
                     &executable_document.fragments,
                     &schema,
