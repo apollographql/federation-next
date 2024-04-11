@@ -2965,9 +2965,7 @@ fn is_interface_object(obj: &ObjectTypeDefinitionPosition, schema: &ValidFederat
         .and_then(|spec| spec.interface_object_directive(schema))
     {
         obj.try_get(schema.schema()).is_some_and(|o| {
-            o.directives
-                .iter()
-                .any(|d| d.name == intf_obj_directive.name)
+            o.directives.has(&intf_obj_directive.name)
         })
     } else {
         false
