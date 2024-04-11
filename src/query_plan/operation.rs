@@ -2493,7 +2493,7 @@ impl NamedFragments {
         }
 
         let mut fragments_map: HashMap<Name, FragmentDependencies> = HashMap::new();
-        fragments.iter().for_each(|(_, fragment)| {
+        for fragment in fragments.values() {
             let mut fragment_usages: HashMap<Name, i32> = HashMap::new();
             NamedFragments::collect_fragment_usages(&fragment.selection_set, &mut fragment_usages);
             let usages: Vec<Name> = fragment_usages.keys().cloned().collect::<Vec<Name>>();
@@ -2504,7 +2504,7 @@ impl NamedFragments {
                     depends_on: usages,
                 },
             );
-        });
+        };
 
         let mut removed_fragments: HashSet<Name> = HashSet::new();
         let mut mapped_fragments = NamedFragments::default();
