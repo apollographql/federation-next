@@ -14,14 +14,13 @@ use apollo_compiler::schema::{
     ObjectType, ScalarType, SchemaDefinition, UnionType,
 };
 use apollo_compiler::{ast, name, Node, Schema};
-use indexmap::{Equivalent, IndexSet};
+use indexmap::IndexSet;
 use lazy_static::lazy_static;
-use std::fmt::{Display, Formatter};
-use std::hash::Hash;
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use strum::IntoEnumIterator;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
+#[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
 pub(crate) enum TypeDefinitionPosition {
     Scalar(ScalarTypeDefinitionPosition),
     Object(ObjectTypeDefinitionPosition),
@@ -29,6 +28,19 @@ pub(crate) enum TypeDefinitionPosition {
     Union(UnionTypeDefinitionPosition),
     Enum(EnumTypeDefinitionPosition),
     InputObject(InputObjectTypeDefinitionPosition),
+}
+
+impl Debug for TypeDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Scalar(p) => write!(f, "Scalar({p})"),
+            Self::Object(p) => write!(f, "Object({p})"),
+            Self::Interface(p) => write!(f, "Interface({p})"),
+            Self::Union(p) => write!(f, "Union({p})"),
+            Self::Enum(p) => write!(f, "Enum({p})"),
+            Self::InputObject(p) => write!(f, "InputObject({p})"),
+        }
+    }
 }
 
 impl TypeDefinitionPosition {
@@ -80,13 +92,25 @@ impl TypeDefinitionPosition {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
+#[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
 pub(crate) enum OutputTypeDefinitionPosition {
     Scalar(ScalarTypeDefinitionPosition),
     Object(ObjectTypeDefinitionPosition),
     Interface(InterfaceTypeDefinitionPosition),
     Union(UnionTypeDefinitionPosition),
     Enum(EnumTypeDefinitionPosition),
+}
+
+impl Debug for OutputTypeDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Scalar(p) => write!(f, "Scalar({p})"),
+            Self::Object(p) => write!(f, "Object({p})"),
+            Self::Interface(p) => write!(f, "Interface({p})"),
+            Self::Union(p) => write!(f, "Union({p})"),
+            Self::Enum(p) => write!(f, "Enum({p})"),
+        }
+    }
 }
 
 impl OutputTypeDefinitionPosition {
@@ -138,11 +162,21 @@ impl From<AbstractTypeDefinitionPosition> for OutputTypeDefinitionPosition {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
+#[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
 pub(crate) enum CompositeTypeDefinitionPosition {
     Object(ObjectTypeDefinitionPosition),
     Interface(InterfaceTypeDefinitionPosition),
     Union(UnionTypeDefinitionPosition),
+}
+
+impl Debug for CompositeTypeDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Object(p) => write!(f, "Object({p})"),
+            Self::Interface(p) => write!(f, "Interface({p})"),
+            Self::Union(p) => write!(f, "Union({p})"),
+        }
+    }
 }
 
 impl CompositeTypeDefinitionPosition {
@@ -209,7 +243,7 @@ impl TryFrom<TypeDefinitionPosition> for CompositeTypeDefinitionPosition {
                 Ok(CompositeTypeDefinitionPosition::Union(value))
             }
             _ => Err(SingleFederationError::Internal {
-                message: format!("Type \"{}\" was unexpectedly not a composite type", value,),
+                message: format!(r#"Type "{value}" was unexpectedly not a composite type"#),
             }
             .into()),
         }
@@ -294,10 +328,19 @@ impl TryFrom<QueryGraphNodeType> for ObjectTypeDefinitionPosition {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
+#[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
 pub(crate) enum AbstractTypeDefinitionPosition {
     Interface(InterfaceTypeDefinitionPosition),
     Union(UnionTypeDefinitionPosition),
+}
+
+impl Debug for AbstractTypeDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Interface(p) => write!(f, "Interface({p})"),
+            Self::Union(p) => write!(f, "Union({p})"),
+        }
+    }
 }
 
 impl AbstractTypeDefinitionPosition {
@@ -347,10 +390,19 @@ impl TryFrom<OutputTypeDefinitionPosition> for AbstractTypeDefinitionPosition {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
+#[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
 pub(crate) enum ObjectOrInterfaceTypeDefinitionPosition {
     Object(ObjectTypeDefinitionPosition),
     Interface(InterfaceTypeDefinitionPosition),
+}
+
+impl Debug for ObjectOrInterfaceTypeDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Object(p) => write!(f, "Object({p})"),
+            Self::Interface(p) => write!(f, "Interface({p})"),
+        }
+    }
 }
 
 impl ObjectOrInterfaceTypeDefinitionPosition {
@@ -417,11 +469,21 @@ impl TryFrom<OutputTypeDefinitionPosition> for ObjectOrInterfaceTypeDefinitionPo
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
+#[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
 pub(crate) enum FieldDefinitionPosition {
     Object(ObjectFieldDefinitionPosition),
     Interface(InterfaceFieldDefinitionPosition),
     Union(UnionTypenameFieldDefinitionPosition),
+}
+
+impl Debug for FieldDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Object(p) => write!(f, "Object({p})"),
+            Self::Interface(p) => write!(f, "Interface({p})"),
+            Self::Union(p) => write!(f, "Union({p})"),
+        }
+    }
 }
 
 impl FieldDefinitionPosition {
@@ -474,10 +536,19 @@ impl From<ObjectOrInterfaceFieldDefinitionPosition> for FieldDefinitionPosition 
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
+#[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Display)]
 pub(crate) enum ObjectOrInterfaceFieldDefinitionPosition {
     Object(ObjectFieldDefinitionPosition),
     Interface(InterfaceFieldDefinitionPosition),
+}
+
+impl Debug for ObjectOrInterfaceFieldDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Object(p) => write!(f, "Object({p})"),
+            Self::Interface(p) => write!(f, "Interface({p})"),
+        }
+    }
 }
 
 impl ObjectOrInterfaceFieldDefinitionPosition {
@@ -588,17 +659,17 @@ impl SchemaDefinitionPosition {
         Ok(())
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
+    pub(crate) fn remove_directive_name(
         &self,
         schema: &mut FederationSchema,
-        name: &Q,
+        name: &str,
     ) -> Result<(), FederationError> {
         let is_link = Self::is_link(schema, name)?;
         self.remove_directive_name_references(&mut schema.referencers, name);
         self.make_mut(&mut schema.schema)
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
         if is_link {
             schema.metadata = links_metadata(&schema.schema)?;
         }
@@ -677,21 +748,14 @@ impl SchemaDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
         directive_referencers.schema = None;
     }
 
-    fn is_link<Q: Hash + Equivalent<Name>>(
-        schema: &FederationSchema,
-        name: &Q,
-    ) -> Result<bool, FederationError> {
+    fn is_link(schema: &FederationSchema, name: &str) -> Result<bool, FederationError> {
         Ok(match &schema.metadata {
             Some(metadata) => {
                 let link_spec_definition = metadata.link_spec_definition()?;
@@ -700,7 +764,7 @@ impl SchemaDefinitionPosition {
                     .ok_or_else(|| SingleFederationError::Internal {
                         message: "Unexpectedly could not find core/link spec usage".to_owned(),
                     })?;
-                name.equivalent(&link_name_in_schema)
+                link_name_in_schema == name
             }
             None => false,
         })
@@ -1161,11 +1225,7 @@ impl ScalarTypeDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(type_) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -1173,7 +1233,7 @@ impl ScalarTypeDefinitionPosition {
         type_
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -1231,11 +1291,7 @@ impl ScalarTypeDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -1249,12 +1305,16 @@ impl Display for ScalarTypeDefinitionPosition {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ObjectTypeDefinitionPosition {
     pub(crate) type_name: Name,
 }
 
 impl ObjectTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn field(&self, field_name: Name) -> ObjectFieldDefinitionPosition {
         ObjectFieldDefinitionPosition {
             type_name: self.type_name.clone(),
@@ -1493,11 +1553,7 @@ impl ObjectTypeDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(type_) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -1505,7 +1561,7 @@ impl ObjectTypeDefinitionPosition {
         type_
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -1537,11 +1593,7 @@ impl ObjectTypeDefinitionPosition {
         self.insert_implements_interface_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_implements_interface<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_implements_interface(&self, schema: &mut FederationSchema, name: &str) {
         let Some(type_) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -1549,7 +1601,7 @@ impl ObjectTypeDefinitionPosition {
         type_
             .make_mut()
             .implements_interfaces
-            .retain(|other_type| !name.equivalent(other_type.deref()));
+            .retain(|other_type| other_type != name);
     }
 
     fn insert_references(
@@ -1659,11 +1711,7 @@ impl ObjectTypeDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -1688,11 +1736,7 @@ impl ObjectTypeDefinitionPosition {
         Ok(())
     }
 
-    fn remove_implements_interface_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_implements_interface_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(interface_type_referencers) = referencers.interface_types.get_mut(name) else {
             return;
         };
@@ -1743,7 +1787,13 @@ impl Display for ObjectTypeDefinitionPosition {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+impl Debug for ObjectTypeDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Object({self})")
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ObjectFieldDefinitionPosition {
     pub(crate) type_name: Name,
     pub(crate) field_name: Name,
@@ -1916,11 +1966,7 @@ impl ObjectFieldDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(field) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -1928,7 +1974,7 @@ impl ObjectFieldDefinitionPosition {
         field
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -2024,11 +2070,7 @@ impl ObjectFieldDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -2190,7 +2232,13 @@ impl Display for ObjectFieldDefinitionPosition {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+impl Debug for ObjectFieldDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ObjectField({self})")
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ObjectFieldArgumentDefinitionPosition {
     pub(crate) type_name: Name,
     pub(crate) field_name: Name,
@@ -2340,11 +2388,7 @@ impl ObjectFieldArgumentDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(argument) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -2352,7 +2396,7 @@ impl ObjectFieldArgumentDefinitionPosition {
         argument
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -2431,11 +2475,7 @@ impl ObjectFieldArgumentDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -2570,6 +2610,12 @@ impl Display for ObjectFieldArgumentDefinitionPosition {
             "{}.{}({}:)",
             self.type_name, self.field_name, self.argument_name
         )
+    }
+}
+
+impl Debug for ObjectFieldArgumentDefinitionPosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ObjectFieldArgument({self})")
     }
 }
 
@@ -2809,11 +2855,7 @@ impl InterfaceTypeDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(type_) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -2821,7 +2863,7 @@ impl InterfaceTypeDefinitionPosition {
         type_
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -2853,11 +2895,7 @@ impl InterfaceTypeDefinitionPosition {
         self.insert_implements_interface_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_implements_interface<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_implements_interface(&self, schema: &mut FederationSchema, name: &str) {
         let Some(type_) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -2865,7 +2903,7 @@ impl InterfaceTypeDefinitionPosition {
         type_
             .make_mut()
             .implements_interfaces
-            .retain(|other_type| !name.equivalent(other_type.deref()));
+            .retain(|other_type| other_type != name);
     }
 
     fn insert_references(
@@ -2945,11 +2983,7 @@ impl InterfaceTypeDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -2976,11 +3010,7 @@ impl InterfaceTypeDefinitionPosition {
         Ok(())
     }
 
-    fn remove_implements_interface_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_implements_interface_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(interface_type_referencers) = referencers.interface_types.get_mut(name) else {
             return;
         };
@@ -3168,11 +3198,7 @@ impl InterfaceFieldDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(field) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -3180,7 +3206,7 @@ impl InterfaceFieldDefinitionPosition {
         field
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -3276,11 +3302,7 @@ impl InterfaceFieldDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -3599,11 +3621,7 @@ impl InterfaceFieldArgumentDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(argument) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -3611,7 +3629,7 @@ impl InterfaceFieldArgumentDefinitionPosition {
         argument
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -3696,11 +3714,7 @@ impl InterfaceFieldArgumentDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -4049,11 +4063,7 @@ impl UnionTypeDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(type_) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -4061,7 +4071,7 @@ impl UnionTypeDefinitionPosition {
         type_
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -4093,11 +4103,7 @@ impl UnionTypeDefinitionPosition {
         self.insert_member_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_member<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_member(&self, schema: &mut FederationSchema, name: &str) {
         let Some(type_) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -4105,13 +4111,13 @@ impl UnionTypeDefinitionPosition {
         type_
             .make_mut()
             .members
-            .retain(|other_type| !name.equivalent(other_type.deref()));
+            .retain(|other_type| other_type != name);
     }
 
-    pub(crate) fn remove_member_recursive<Q: Hash + Equivalent<Name>>(
+    pub(crate) fn remove_member_recursive(
         &self,
         schema: &mut FederationSchema,
-        name: &Q,
+        name: &str,
     ) -> Result<(), FederationError> {
         self.remove_member(schema, name);
         let Some(type_) = self.try_get(&schema.schema) else {
@@ -4172,11 +4178,7 @@ impl UnionTypeDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -4200,11 +4202,7 @@ impl UnionTypeDefinitionPosition {
         Ok(())
     }
 
-    fn remove_member_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_member_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(object_type_referencers) = referencers.object_types.get_mut(name) else {
             return;
         };
@@ -4537,11 +4535,7 @@ impl EnumTypeDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(type_) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -4549,7 +4543,7 @@ impl EnumTypeDefinitionPosition {
         type_
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -4620,11 +4614,7 @@ impl EnumTypeDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -4785,11 +4775,7 @@ impl EnumValueDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(value) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -4797,7 +4783,7 @@ impl EnumValueDefinitionPosition {
         value
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -4872,11 +4858,7 @@ impl EnumValueDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -5122,11 +5104,7 @@ impl InputObjectTypeDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(type_) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -5134,7 +5112,7 @@ impl InputObjectTypeDefinitionPosition {
         type_
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -5209,11 +5187,7 @@ impl InputObjectTypeDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -5378,11 +5352,7 @@ impl InputObjectFieldDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(field) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -5390,7 +5360,7 @@ impl InputObjectFieldDefinitionPosition {
         field
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -5469,11 +5439,7 @@ impl InputObjectFieldDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };
@@ -5989,11 +5955,7 @@ impl DirectiveArgumentDefinitionPosition {
         self.insert_directive_name_references(&mut schema.referencers, &name)
     }
 
-    pub(crate) fn remove_directive_name<Q: Hash + Equivalent<Name>>(
-        &self,
-        schema: &mut FederationSchema,
-        name: &Q,
-    ) {
+    pub(crate) fn remove_directive_name(&self, schema: &mut FederationSchema, name: &str) {
         let Some(argument) = self.try_make_mut(&mut schema.schema) else {
             return;
         };
@@ -6001,7 +5963,7 @@ impl DirectiveArgumentDefinitionPosition {
         argument
             .make_mut()
             .directives
-            .retain(|other_directive| !name.equivalent(&other_directive.name));
+            .retain(|other_directive| other_directive.name != name);
     }
 
     pub(crate) fn remove_directive(
@@ -6080,11 +6042,7 @@ impl DirectiveArgumentDefinitionPosition {
         Ok(())
     }
 
-    fn remove_directive_name_references<Q: Hash + Equivalent<Name>>(
-        &self,
-        referencers: &mut Referencers,
-        name: &Q,
-    ) {
+    fn remove_directive_name_references(&self, referencers: &mut Referencers, name: &str) {
         let Some(directive_referencers) = referencers.directives.get_mut(name) else {
             return;
         };

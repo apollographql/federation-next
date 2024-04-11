@@ -3,9 +3,8 @@ use crate::link::federation_spec_definition::{
     get_federation_spec_definition_from_subgraph, FederationSpecDefinition, FEDERATION_VERSIONS,
 };
 use crate::link::join_spec_definition::{
-    FieldDirectiveArguments, JoinSpecDefinition, TypeDirectiveArguments, JOIN_VERSIONS,
+    FieldDirectiveArguments, JoinSpecDefinition, TypeDirectiveArguments,
 };
-use crate::link::link_spec_definition::LinkSpecDefinition;
 use crate::link::spec::{Identity, Version};
 use crate::link::spec_definition::SpecDefinition;
 use crate::query_graph::field_set::parse_field_set_without_normalization;
@@ -24,26 +23,31 @@ use apollo_compiler::executable::{Field, Selection, SelectionSet};
 use apollo_compiler::schema::{
     Component, ComponentName, ComponentOrigin, DirectiveDefinition, DirectiveList,
     DirectiveLocation, EnumType, EnumValueDefinition, ExtendedType, ExtensionId, InputObjectType,
-    InputValueDefinition, InterfaceType, Name, NamedType, ObjectType, ScalarType, Type, UnionType,
+    InputValueDefinition, InterfaceType, Name, NamedType, ObjectType, ScalarType, SchemaBuilder,
+    Type, UnionType,
 };
 use apollo_compiler::validation::Valid;
-use apollo_compiler::{name, Node, NodeStr, Schema};
+use apollo_compiler::{name, Node, NodeStr};
 use indexmap::{IndexMap, IndexSet};
 use lazy_static::lazy_static;
 use std::collections::BTreeMap;
+use std::fmt;
+use std::fmt::Write;
 use std::ops::Deref;
 use std::sync::Arc;
+use time::OffsetDateTime;
 
 /// Assumes the given schema has been validated.
 ///
 /// TODO: A lot of common data gets passed around in the functions called by this one, considering
 /// making an e.g. ExtractSubgraphs struct to contain the data.
-pub(super) fn extract_subgraphs_from_supergraph(
+pub(crate) fn extract_subgraphs_from_supergraph(
     supergraph_schema: &FederationSchema,
     validate_extracted_subgraphs: Option<bool>,
 ) -> Result<ValidFederationSubgraphs, FederationError> {
     let validate_extracted_subgraphs = validate_extracted_subgraphs.unwrap_or(true);
-    let (link_spec_definition, join_spec_definition) = validate_supergraph(supergraph_schema)?;
+    let (link_spec_definition, join_spec_definition) =
+        crate::validate_supergraph_for_query_planning(supergraph_schema)?;
     let is_fed_1 = *join_spec_definition.version() == Version { major: 0, minor: 1 };
     let (mut subgraphs, federation_spec_definitions, graph_enum_value_name_to_subgraph_name) =
         collect_empty_subgraphs(supergraph_schema, join_spec_definition)?;
@@ -87,24 +91,23 @@ pub(super) fn extract_subgraphs_from_supergraph(
     }
 
     let mut valid_subgraphs = ValidFederationSubgraphs::new();
-    for (_, subgraph) in subgraphs {
+    for (_, mut subgraph) in subgraphs {
         let valid_subgraph_schema = if validate_extracted_subgraphs {
-            match subgraph.schema.validate() {
+            match subgraph.schema.validate_or_return_self() {
                 Ok(schema) => schema,
-                Err(error) => {
-                    // TODO: Implement maybeDumpSubgraphSchema() for better error messaging
+                Err((schema, error)) => {
+                    subgraph.schema = schema;
                     if is_fed_1 {
                         // See message above about Fed 1 supergraphs
                         todo!()
                     } else {
-                        return Err(
-                            SingleFederationError::InvalidFederationSupergraph {
-                                message: format!(
-                                    "Unexpected error extracting {} from the supergraph: this is either a bug, or the supergraph has been corrupted.\n\nDetails:\n{}",
+                        let mut message = format!(
+                                    "Unexpected error extracting {} from the supergraph: this is either a bug, or the supergraph has been corrupted.\n\nDetails:\n{error}",
                                     subgraph.name,
-                                    error,
-                                ),
-                            }.into()
+                                    );
+                        maybe_dump_subgraph_schema(subgraph, &mut message);
+                        return Err(
+                            SingleFederationError::InvalidFederationSupergraph { message }.into(),
                         );
                     }
                 }
@@ -120,36 +123,6 @@ pub(super) fn extract_subgraphs_from_supergraph(
     }
 
     Ok(valid_subgraphs)
-}
-
-type ValidateSupergraphOk = (&'static LinkSpecDefinition, &'static JoinSpecDefinition);
-
-fn validate_supergraph(
-    supergraph_schema: &FederationSchema,
-) -> Result<ValidateSupergraphOk, FederationError> {
-    let Some(metadata) = supergraph_schema.metadata() else {
-        return Err(SingleFederationError::InvalidFederationSupergraph {
-            message: "Invalid supergraph: must be a core schema".to_owned(),
-        }
-        .into());
-    };
-    let link_spec_definition = metadata.link_spec_definition()?;
-    let Some(join_link) = metadata.for_identity(&Identity::join_identity()) else {
-        return Err(SingleFederationError::InvalidFederationSupergraph {
-            message: "Invalid supergraph: must use the join spec".to_owned(),
-        }
-        .into());
-    };
-    let Some(join_spec_definition) = JOIN_VERSIONS.find(&join_link.url.version) else {
-        return Err(SingleFederationError::InvalidFederationSupergraph {
-            message: format!(
-                "Invalid supergraph: uses unsupported join spec version {} (supported versions: {})",
-                JOIN_VERSIONS.versions().map(|v| v.to_string()).collect::<Vec<_>>().join(", "),
-                join_link.url.version,
-            ),
-        }.into());
-    };
-    Ok((link_spec_definition, join_spec_definition))
 }
 
 type CollectEmptySubgraphsOk = (
@@ -211,7 +184,8 @@ fn collect_empty_subgraphs(
 
 /// TODO: Use the JS/programmatic approach instead of hard-coding definitions.
 pub(crate) fn new_empty_fed_2_subgraph_schema() -> Result<FederationSchema, FederationError> {
-    FederationSchema::new(Schema::parse(
+    let builder = SchemaBuilder::new().adopt_orphan_extensions();
+    let builder = builder.parse(
         r#"
     extend schema
         @link(url: "https://specs.apollo.dev/link/v1.0")
@@ -264,7 +238,8 @@ pub(crate) fn new_empty_fed_2_subgraph_schema() -> Result<FederationSchema, Fede
     scalar federation__Scope
     "#,
         "subgraph.graphql",
-    )?)
+    );
+    FederationSchema::new(builder.build()?)
 }
 
 struct TypeInfo {
@@ -1473,14 +1448,24 @@ impl IntoIterator for FederationSubgraphs {
     }
 }
 
-pub(crate) struct ValidFederationSubgraph {
-    pub(crate) name: String,
-    pub(crate) url: String,
-    pub(crate) schema: ValidFederationSchema,
+// TODO(@goto-bus-stop): consider an appropriate name for this in the public API
+// TODO(@goto-bus-stop): should this exist separately from the `crate::subgraph::Subgraph` type?
+#[derive(Debug)]
+pub struct ValidFederationSubgraph {
+    pub name: String,
+    pub url: String,
+    pub schema: ValidFederationSchema,
 }
 
-pub(crate) struct ValidFederationSubgraphs {
+pub struct ValidFederationSubgraphs {
     subgraphs: BTreeMap<String, ValidFederationSubgraph>,
+}
+
+impl fmt::Debug for ValidFederationSubgraphs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ValidFederationSubgraphs ")?;
+        f.debug_map().entries(self.subgraphs.iter()).finish()
+    }
 }
 
 impl ValidFederationSubgraphs {
@@ -1501,7 +1486,7 @@ impl ValidFederationSubgraphs {
         Ok(())
     }
 
-    pub(crate) fn get(&self, name: &str) -> Option<&ValidFederationSubgraph> {
+    pub fn get(&self, name: &str) -> Option<&ValidFederationSubgraph> {
         self.subgraphs.get(name)
     }
 }
@@ -2051,4 +2036,34 @@ fn is_external_or_has_external_implementations(
         }
     }
     Ok(false)
+}
+
+static DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME: &str = "APOLLO_FEDERATION_DEBUG_SUBGRAPHS";
+
+fn maybe_dump_subgraph_schema(subgraph: FederationSubgraph, message: &mut String) {
+    // NOTE: The std::fmt::write returns an error, but writing to a string will never return an
+    // error, so the result is dropped.
+    _ = match std::env::var(DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME).map(|v| v.parse::<bool>()) {
+        Ok(Ok(true)) => {
+            let time = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+            let filename = format!("extracted-subgraph-{}-{time}.graphql", subgraph.name,);
+            let contents = subgraph.schema.schema().to_string();
+            match std::fs::write(&filename, contents) {
+                Ok(_) => write!(
+                    message,
+                    "The (invalid) extracted subgraph has been written in: {filename}."
+                ),
+                Err(e) => write!(
+                    message,
+                    r#"Was not able to print generated subgraph for "{}" because: {e}"#,
+                    subgraph.name
+                ),
+            }
+        }
+        _ => write!(
+            message,
+            "Re-run with environment variable '{}' set to 'true' to extract the invalid subgraph",
+            DEBUG_SUBGRAPHS_ENV_VARIABLE_NAME
+        ),
+    };
 }

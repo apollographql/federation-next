@@ -6,6 +6,7 @@ use apollo_compiler::{ExecutableDocument, NodeStr};
 use std::sync::Arc;
 
 pub(crate) mod conditions;
+mod display;
 pub(crate) mod fetch_dependency_graph;
 pub(crate) mod fetch_dependency_graph_processor;
 pub mod generate;
@@ -15,10 +16,12 @@ pub(crate) mod query_planning_traversal;
 
 pub type QueryPlanCost = i64;
 
+#[derive(Debug, Default)]
 pub struct QueryPlan {
-    node: Option<TopLevelPlanNode>,
+    pub node: Option<TopLevelPlanNode>,
 }
 
+#[derive(Debug, derive_more::From)]
 pub enum TopLevelPlanNode {
     Subscription(SubscriptionNode),
     Fetch(FetchNode),
@@ -29,12 +32,13 @@ pub enum TopLevelPlanNode {
     Condition(ConditionNode),
 }
 
+#[derive(Debug)]
 pub struct SubscriptionNode {
-    primary: FetchNode,
-    rest: Option<PlanNode>,
+    pub primary: FetchNode,
+    pub rest: Option<PlanNode>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum PlanNode {
     Fetch(Arc<FetchNode>),
     Sequence(Arc<SequenceNode>),
@@ -44,50 +48,50 @@ pub enum PlanNode {
     Condition(Arc<ConditionNode>),
 }
 
+#[derive(Debug)]
 pub struct FetchNode {
-    subgraph_name: NodeStr,
+    pub subgraph_name: NodeStr,
     /// Optional identifier for the fetch for defer support. All fetches of a given plan will be
     /// guaranteed to have a unique `id`.
-    id: Option<u64>,
-    /// If query planner `@defer` support is enabled _and_ the subgraph named `subgraph_name`
-    /// supports `@defer`, then this boolean says whether `operation` contains some `@defer`. `None`
-    /// otherwise.
-    has_defers: Option<bool>,
-    variable_usages: Vec<Name>,
+    pub id: Option<u64>,
+    pub variable_usages: Vec<Name>,
     /// `Selection`s in apollo-rs _can_ have a `FragmentSpread`, but this `Selection` is
     /// specifically typing the `requires` key in a built query plan, where there can't be
     /// `FragmentSpread`.
     // PORT_NOTE: This was its own type in the JS codebase, but it's likely simpler to just have the
     // constraint be implicit for router instead of creating a new type.
-    requires: Option<Vec<Selection>>,
+    pub requires: Option<Vec<Selection>>,
     // PORT_NOTE: We don't serialize the "operation" string in this struct, as these query plan
     // nodes are meant for direct consumption by router (without any serdes), so we leave the
     // question of whether it needs to be serialized to router.
-    operation_document: Valid<ExecutableDocument>,
-    operation_name: Option<NodeStr>,
-    operation_kind: OperationType,
+    pub operation_document: Valid<ExecutableDocument>,
+    pub operation_name: Option<NodeStr>,
+    pub operation_kind: OperationType,
     /// Optionally describe a number of "rewrites" that query plan executors should apply to the
     /// data that is sent as the input of this fetch. Note that such rewrites should only impact the
     /// inputs of the fetch they are applied to (meaning that, as those inputs are collected from
     /// the current in-memory result, the rewrite should _not_ impact said in-memory results, only
     /// what is sent in the fetch).
-    input_rewrites: Arc<Vec<Arc<FetchDataRewrite>>>,
+    pub input_rewrites: Arc<Vec<Arc<FetchDataRewrite>>>,
     /// Similar to `input_rewrites`, but for optional "rewrites" to apply to the data that is
     /// received from a fetch (and before it is applied to the current in-memory results).
-    output_rewrites: Vec<Arc<FetchDataRewrite>>,
+    pub output_rewrites: Vec<Arc<FetchDataRewrite>>,
 }
 
+#[derive(Debug)]
 pub struct SequenceNode {
-    nodes: Vec<PlanNode>,
+    pub nodes: Vec<PlanNode>,
 }
 
+#[derive(Debug)]
 pub struct ParallelNode {
-    nodes: Vec<PlanNode>,
+    pub nodes: Vec<PlanNode>,
 }
 
+#[derive(Debug)]
 pub struct FlattenNode {
-    path: Vec<FetchDataPathElement>,
-    node: PlanNode,
+    pub path: Vec<FetchDataPathElement>,
+    pub node: PlanNode,
 }
 
 /// A `DeferNode` corresponds to one or more `@defer` applications at the same level of "nestedness"
@@ -106,17 +110,19 @@ pub struct FlattenNode {
 /// we implement more advanced server-side heuristics to decide if deferring is judicious or not.
 /// This allows the executor of the plan to consistently send a defer-abiding multipart response to
 /// the client.
+#[derive(Debug)]
 pub struct DeferNode {
     /// The "primary" part of a defer, that is the non-deferred part (though could be deferred
     /// itself for a nested defer).
-    primary: PrimaryDeferBlock,
+    pub primary: PrimaryDeferBlock,
     /// The "deferred" parts of the defer (note that it's a vector). Each of those deferred elements
     /// will correspond to a different chunk of the response to the client (after the initial
     /// on-deferred one that is).
-    deferred: Vec<DeferredDeferBlock>,
+    pub deferred: Vec<DeferredDeferBlock>,
 }
 
 /// The primary block of a `DeferNode`.
+#[derive(Debug)]
 pub struct PrimaryDeferBlock {
     /// The part of the original query that "selects" the data to send in that primary response
     /// once the plan in `node` completes). Note that if the parent `DeferNode` is nested, then it
@@ -124,44 +130,47 @@ pub struct PrimaryDeferBlock {
     /// sub-selection will start at that parent `DeferredNode.query_path`. Note that this can be
     /// `None` in the rare case that everything in the original query is deferred (which is not very
     /// useful  in practice, but not disallowed by the @defer spec at the moment).
-    sub_selection: Option<SelectionSet>,
+    pub sub_selection: Option<SelectionSet>,
     /// The plan to get all the data for the primary block. Same notes as for subselection: usually
     /// defined, but can be undefined in some corner cases where nothing is to be done in the
     /// primary block.
-    node: Option<PlanNode>,
+    pub node: Option<PlanNode>,
 }
 
 /// A deferred block of a `DeferNode`.
+#[derive(Debug)]
 pub struct DeferredDeferBlock {
     /// References one or more fetch node(s) (by `id`) within `DeferNode.primary.node`. The plan of
     /// this deferred part should not be started until all such fetches return.
-    depends: Vec<DeferredDependency>,
+    pub depends: Vec<DeferredDependency>,
     /// The optional defer label.
-    label: Option<NodeStr>,
+    pub label: Option<NodeStr>,
     /// Path, in the query, to the `@defer` application this corresponds to. The `sub_selection`
     /// starts at this `query_path`.
-    query_path: Vec<QueryPathElement>,
+    pub query_path: Vec<QueryPathElement>,
     /// The part of the original query that "selects" the data to send in the deferred response
     /// (once the plan in `node` completes). Will be set _unless_ `node` is a `DeferNode` itself.
-    sub_selection: Option<SelectionSet>,
+    pub sub_selection: Option<SelectionSet>,
     /// The plan to get all the data for this deferred block. Usually set, but can be `None` for a
     /// `@defer` application where everything has been fetched in the "primary block" (i.e. when
     /// this deferred block only exists to expose what should be send to the upstream client in a
     /// deferred response), but without declaring additional fetches. This happens for @defer
     /// applications that cannot be handled through the query planner and where the defer cannot be
     /// passed through to the subgraph).
-    node: Option<PlanNode>,
+    pub node: Option<PlanNode>,
 }
 
+#[derive(Debug)]
 pub struct DeferredDependency {
     /// A `FetchNode` ID.
-    id: NodeStr,
+    pub id: NodeStr,
 }
 
+#[derive(Debug)]
 pub struct ConditionNode {
-    condition_variable: Name,
-    if_clause: Option<PlanNode>,
-    else_clause: Option<PlanNode>,
+    pub condition_variable: Name,
+    pub if_clause: Option<PlanNode>,
+    pub else_clause: Option<PlanNode>,
 }
 
 /// The type of rewrites currently supported on the input/output data of fetches.
@@ -178,19 +187,19 @@ pub enum FetchDataRewrite {
 #[derive(Debug, Clone)]
 pub struct FetchDataValueSetter {
     /// Path to the value that is set by this "rewrite".
-    path: Vec<FetchDataPathElement>,
+    pub path: Vec<FetchDataPathElement>,
     /// The value to set at `path`. Note that the query planner currently only uses string values,
     /// but that may change in the future.
-    set_value_to: serde_json::Value,
+    pub set_value_to: serde_json_bytes::Value,
 }
 
 /// A rewrite that renames the key at the provided path of the data it is applied to.
 #[derive(Debug, Clone)]
 pub struct FetchDataKeyRenamer {
     /// Path to the key that is renamed by this "rewrite".
-    path: Vec<FetchDataPathElement>,
+    pub path: Vec<FetchDataPathElement>,
     /// The key to rename to at `path`.
-    rename_key_to: NodeStr,
+    pub rename_key_to: NodeStr,
 }
 
 /// Vectors of this element match path(s) to a value in fetch data. Each element is (1) a key in
@@ -221,4 +230,12 @@ pub enum FetchDataPathElement {
 pub enum QueryPathElement {
     Field(Field),
     InlineFragment(InlineFragment),
+}
+
+impl QueryPlan {
+    fn new(node: impl Into<TopLevelPlanNode>) -> Self {
+        Self {
+            node: Some(node.into()),
+        }
+    }
 }

@@ -6,6 +6,12 @@ use apollo_federation::error::FederationError;
 use apollo_federation::ApiSchemaOptions;
 use apollo_federation::Supergraph;
 
+// TODO(@goto-bus-stop): inaccessible is in theory a standalone spec,
+// but is only tested here as part of API schema, unlike in the JS implementation.
+// This means that all test inputs must be valid supergraphs.
+// Ideally we would pull out the inaccessible tests to only apply
+// `InaccessibleSpecDefinition::remove_inaccessible_elements` to a `FederationSchema`,
+// and remove the supergraph-specific `@link`s (`join`) below.
 const INACCESSIBLE_V02_HEADER: &str = r#"
     directive @link(url: String!, as: String, import: [link__Import], for: link__Purpose) repeatable on SCHEMA
 
@@ -20,6 +26,7 @@ const INACCESSIBLE_V02_HEADER: &str = r#"
 
     schema
       @link(url: "https://specs.apollo.dev/link/v1.0")
+      @link(url: "https://specs.apollo.dev/join/v0.2", for: EXECUTION)
       @link(url: "https://specs.apollo.dev/inaccessible/v0.2")
     {
       query: Query
@@ -29,7 +36,7 @@ const INACCESSIBLE_V02_HEADER: &str = r#"
 fn inaccessible_to_api_schema(input: &str) -> Result<Valid<Schema>, FederationError> {
     let sdl = format!("{INACCESSIBLE_V02_HEADER}{input}");
     let graph = Supergraph::new(&sdl)?;
-    graph.to_api_schema(Default::default())
+    Ok(graph.to_api_schema(Default::default())?.schema().clone())
 }
 
 #[test]
@@ -65,7 +72,7 @@ fn inaccessible_types_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Type `Query` is @inaccessible but is the query root type, which must be in the API schema.
@@ -193,7 +200,7 @@ fn inaccessible_interface_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Type `Interface` is @inaccessible but is referenced by `Referencer1.someField`, which is in the API schema.
@@ -310,7 +317,7 @@ fn inaccessible_union_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Type `Union` is @inaccessible but is referenced by `Referencer1.someField`, which is in the API schema.
@@ -413,7 +420,7 @@ fn inaccessible_input_object_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Type `InputObject` is @inaccessible but is referenced by `Referencer3.someField`, which is in the API schema.
@@ -588,7 +595,7 @@ fn inaccessible_enum_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Type `Enum` is @inaccessible but is referenced by `Referencer1.somefield`, which is in the API schema.
@@ -796,7 +803,7 @@ fn inaccessible_scalar_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Type `Scalar` is @inaccessible but is referenced by `Referencer1.somefield`, which is in the API schema.
@@ -1001,7 +1008,7 @@ fn inaccessible_object_field_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Type `Query` is in the API schema but all of its members are @inaccessible.
@@ -1124,7 +1131,7 @@ fn inaccessible_interface_field_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Field `Interface.privateField` is @inaccessible but implements the interface field `Referencer1.privateField`, which is in the API schema.
@@ -1211,7 +1218,7 @@ fn inaccessible_object_field_arguments_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Argument `Object.someField(privateArg:)` is @inaccessible but implements the interface argument `Referencer1.someField(privateArg:)` which is in the API schema.
@@ -1360,7 +1367,7 @@ fn inaccessible_interface_field_arguments_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Argument `Interface.someField(privateArg:)` is @inaccessible but implements the interface argument `Referencer1.someField(privateArg:)` which is in the API schema.
@@ -1538,7 +1545,7 @@ fn inaccessible_input_object_fields_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Input field `InputObject.privateField` is @inaccessible but is used in the default value of `Referencer1.someField(someArg:)`, which is in the API schema.
@@ -1747,7 +1754,7 @@ fn inaccessible_enum_values_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Referencer1.someField(someArg:)`, which is in the API schema.
@@ -1944,7 +1951,7 @@ fn inaccessible_complex_default_values() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Input field `NestedInputObject.privateField` is @inaccessible but is used in the default value of `Query.someField(arg1:)`, which is in the API schema.
@@ -1974,7 +1981,7 @@ fn inaccessible_enum_value_as_string() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Enum value `Enum.PRIVATE_VALUE` is @inaccessible but is used in the default value of `Query.someField(arg1:)`, which is in the API schema.
@@ -2001,7 +2008,7 @@ fn inaccessible_directive_arguments_with_accessible_references() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Argument `@directiveRequired(privateArg:)` is @inaccessible but is a required argument of its directive.
@@ -2056,7 +2063,7 @@ fn inaccessible_directive_on_schema_elements() {
     )
     .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Directive `@foo` cannot use @inaccessible because it may be applied to these type-system locations: OBJECT
@@ -2085,7 +2092,7 @@ fn inaccessible_on_builtins() {
     .expect_err("should return validation errors");
 
     // Note this is different from the JS implementation
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - built-in scalar definitions must be omitted
@@ -2094,6 +2101,8 @@ fn inaccessible_on_builtins() {
 
 #[test]
 fn inaccessible_on_imported_elements() {
+    // TODO(@goto-bus-stop): this `@link`s the join spec but doesn't use it, just because the
+    // testing code goes through the Supergraph API. See comment at top of file
     let graph = Supergraph::new(
         r#"
       directive @link(url: String!, as: String, import: [link__Import] @inaccessible, for: link__Purpose) repeatable on SCHEMA
@@ -2108,7 +2117,8 @@ fn inaccessible_on_imported_elements() {
       directive @inaccessible on FIELD_DEFINITION | OBJECT | INTERFACE | UNION | ARGUMENT_DEFINITION | SCALAR | ENUM | ENUM_VALUE | INPUT_OBJECT | INPUT_FIELD_DEFINITION
 
       schema
-        @link(url: "https://specs.apollo.dev/link/v0.3")
+        @link(url: "https://specs.apollo.dev/link/v1.0")
+        @link(url: "https://specs.apollo.dev/join/v0.2")
         @link(url: "https://specs.apollo.dev/inaccessible/v0.2")
         @link(url: "http://localhost/foo/v1.0")
       {
@@ -2185,7 +2195,7 @@ fn inaccessible_on_imported_elements() {
         .to_api_schema(Default::default())
         .expect_err("should return validation errors");
 
-    insta::assert_display_snapshot!(errors, @r###"
+    insta::assert_snapshot!(errors, @r###"
     The following errors occurred:
 
       - Core feature type `link__Purpose` cannot use @inaccessible.
@@ -2248,7 +2258,7 @@ fn propagates_default_input_values() {
     )
     .expect("should succeed");
 
-    insta::assert_display_snapshot!(api_schema, @r###"
+    insta::assert_snapshot!(api_schema, @r###"
     type Query {
       field(input: Input = {one: 0, nested: {one: 2, two: 2, default: "default"}, two: 2, three: 3, object: {value: 2}, nestedWithDefault: {one: 1, two: 2, default: "default"}}): Int
     }
@@ -2295,7 +2305,7 @@ fn matches_graphql_js_directive_applications() {
     )
     .expect("should succeed");
 
-    insta::assert_display_snapshot!(api_schema, @r###"
+    insta::assert_snapshot!(api_schema, @r###"
         type Query {
           a: Int @deprecated
           b: Int
@@ -2327,7 +2337,7 @@ fn matches_graphql_js_default_value_propagation() {
     )
     .expect("should succeed");
 
-    insta::assert_display_snapshot!(api_schema, @r###"
+    insta::assert_snapshot!(api_schema, @r###"
     type Query {
       defaultShouldBeRemoved(arg: OneRequiredOneDefault): Int
       defaultShouldHavePropagatedValues(arg: OneOptionalOneDefault = {defaulted: false}): Int
@@ -2375,7 +2385,7 @@ fn remove_referencing_directive_argument() {
     )
     .expect("should succeed");
 
-    insta::assert_display_snapshot!(api_schema, @r###"
+    insta::assert_snapshot!(api_schema, @r###"
     type Query {
       a: Int
     }
@@ -2398,7 +2408,7 @@ fn include_supergraph_directives() -> Result<(), FederationError> {
         include_stream: true,
     })?;
 
-    insta::assert_display_snapshot!(api_schema, @r###"
+    insta::assert_snapshot!(api_schema.schema(), @r###"
     directive @defer(label: String, if: Boolean! = true) on FRAGMENT_SPREAD | INLINE_FRAGMENT
 
     directive @stream(label: String, if: Boolean! = true, initialCount: Int = 0) on FIELD
@@ -2409,4 +2419,54 @@ fn include_supergraph_directives() -> Result<(), FederationError> {
     "###);
 
     Ok(())
+}
+
+#[test]
+fn supports_core_directive_supergraph() {
+    let sdl = r#"
+schema
+  @core(feature: "https://specs.apollo.dev/core/v0.2")
+  @core(feature: "https://specs.apollo.dev/join/v0.2")
+{
+  query: Query
+}
+
+directive @core(feature: String!, as: String) repeatable on SCHEMA
+
+directive @join__field(
+  graph: join__Graph
+  requires: join__FieldSet
+  provides: join__FieldSet
+) on FIELD_DEFINITION
+
+directive @join__type(
+  graph: join__Graph!
+  key: join__FieldSet
+) repeatable on OBJECT | INTERFACE
+
+directive @join__owner(graph: join__Graph!) on OBJECT | INTERFACE
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+scalar join__FieldSet
+
+enum join__Graph {
+  ACCOUNTS @join__graph(name: "accounts", url: "http://localhost:4001/graphql")
+}
+
+type Query {
+  me: String
+}
+    "#;
+
+    let graph = Supergraph::new(sdl).expect("should succeed");
+    let api_schema = graph
+        .to_api_schema(Default::default())
+        .expect("should succeed");
+
+    insta::assert_snapshot!(api_schema.schema(), @r###"
+    type Query {
+      me: String
+    }
+    "###);
 }
