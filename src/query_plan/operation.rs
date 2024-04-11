@@ -1664,9 +1664,9 @@ impl NormalizedSelectionSet {
             .iter()
             .map(|(_, selection)| selection.rebase_on(parent_type, named_fragments, schema, error_handling))
             .collect();
-        rebased_results?.iter().flatten().for_each(|rebased| {
+        for rebased in rebased_results?.iter().flatten() {
             rebased_selections.insert(rebased.clone());
-        });
+        }
         Ok(NormalizedSelectionSet {
             schema: self.schema.clone(),
             type_position: self.type_position.clone(),
