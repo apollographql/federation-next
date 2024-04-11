@@ -2425,10 +2425,10 @@ impl NamedFragments {
     ) -> NamedFragments {
         // JS PORT - In order to normalize Fragments we need to process them in dependency order.
         //
-        // In JS implementation map_in_dependency_order method was called when rebasing/filtering/expanding selection sets.
+        // In JS implementation mapInDependencyOrder method was called when rebasing/filtering/expanding selection sets.
         // Since resulting `IndexMap` of `NormalizedFragments` will be already sorted, we only need to map it once
         // when creating the `NamedFragments`.
-        NamedFragments::map_in_dependency_order(fragments, schema)
+        NamedFragments::initialize_in_dependency_order(fragments, schema)
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -2470,20 +2470,19 @@ impl NamedFragments {
      * Collect the usages of fragments that are used within the selection of other fragments.
      */
     pub(crate) fn collect_used_fragment_names(&self, aggregator: &mut HashMap<Name, i32>) {
-        self.fragments.iter().for_each(|(_, fragment)| {
-            fragment
-                .selection_set
-                .collect_used_fragment_names(aggregator)
-        });
+        for fragment in self.fragments.values() {
+            fragment.selection_set.collect_used_fragment_names(aggregator);
+        }
     }
 
-    /// JS PORT NOTE: In JS implementation this method was called when rebasing/filtering/expanding selection sets.
-    /// JS PORT NOTE: In JS implementation this method was potentially returning `undefined`, in order to simplify the code
+    /// JS PORT NOTE: In JS implementation this method was named mapInDependencyOrder and accepted a lambda to
+    /// apply transformation on the fragments. It was called when rebasing/filtering/expanding selection sets.
+    /// JS PORT NOTE: In JS implementation this method was potentially returning `undefined`. In order to simplify the code
     /// we will always return `NamedFragments` even if they are empty.
     ///
     /// We normalize passed in fragments in their dependency order, i.e. if a fragment A uses another fragment B, then we will
     /// normalize B _before_ attempting to normalize A. Normalized fragments have access to previously normalized fragments.
-    fn map_in_dependency_order(
+    fn initialize_in_dependency_order(
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
     ) -> NamedFragments {
