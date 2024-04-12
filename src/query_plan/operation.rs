@@ -2618,6 +2618,7 @@ impl NamedFragments {
 
 pub(crate) struct RebasedFragments {
     original_fragments: NamedFragments,
+    // JS PORT NOTE: In JS implementation values were optional
     /// Map key: subgraph name
     rebased_fragments: Arc<HashMap<String, NamedFragments>>,
 }
