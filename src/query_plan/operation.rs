@@ -2583,7 +2583,7 @@ impl NamedFragments {
         true
     }
 
-    pub(crate) fn rebase_on(&self, schema: &ValidFederationSchema) -> Option<NamedFragments> {
+    pub(crate) fn rebase_on(&self, schema: &ValidFederationSchema) -> NamedFragments {
         let mut rebased_fragments = NamedFragments::default();
         self.fragments.iter().for_each(|(_, fragment)| {
             if let Ok(rebased_type) = schema
@@ -2612,19 +2612,14 @@ impl NamedFragments {
                 }
             }
         });
-
-        if rebased_fragments.is_empty() {
-            None
-        } else {
-            Some(rebased_fragments)
-        }
+        rebased_fragments
     }
 }
 
 pub(crate) struct RebasedFragments {
     original_fragments: NamedFragments,
     /// Map key: subgraph name
-    rebased_fragments: Arc<HashMap<String, Option<NamedFragments>>>,
+    rebased_fragments: Arc<HashMap<String, NamedFragments>>,
 }
 
 impl RebasedFragments {
@@ -2638,7 +2633,7 @@ impl RebasedFragments {
     pub(crate) fn for_subgraph(
         &mut self,
         subgraph: &ValidFederationSubgraph,
-    ) -> Option<NamedFragments> {
+    ) -> NamedFragments {
         Arc::make_mut(&mut self.rebased_fragments)
             .entry(subgraph.name.clone())
             .or_insert_with(|| self.original_fragments.rebase_on(&subgraph.schema))
@@ -4104,8 +4099,9 @@ type U {
                 let subgraph = parse_schema(subgraph_schema);
                 let rebased_fragments = normalized_operation
                     .named_fragments
-                    .rebase_on(&subgraph)
-                    .unwrap();
+                    .rebase_on(&subgraph);
+                assert!(!rebased_fragments.is_empty());
+                assert!(rebased_fragments.contains(&name!("FragOnT")));
                 let rebased_fragment = rebased_fragments.fragments.get("FragOnT").unwrap();
 
                 insta::assert_snapshot!(rebased_fragment, @r###"
@@ -4184,9 +4180,10 @@ type T {
                 let subgraph = parse_schema(subgraph_schema);
                 let rebased_fragments = normalized_operation
                     .named_fragments
-                    .rebase_on(&subgraph)
-                    .unwrap();
-                assert!(rebased_fragments.fragments.get("FragOnU").is_none());
+                    .rebase_on(&subgraph);
+                assert!(!rebased_fragments.is_empty());
+                assert!(rebased_fragments.contains(&name!("FragOnT")));
+                assert!(!rebased_fragments.contains(&name!("FragOnU")));
                 let rebased_fragment = rebased_fragments.fragments.get("FragOnT").unwrap();
 
                 let expected = r#"fragment FragOnT on T {
@@ -4270,8 +4267,9 @@ type T2 implements I {
                 let subgraph = parse_schema(subgraph_schema);
                 let rebased_fragments = normalized_operation
                     .named_fragments
-                    .rebase_on(&subgraph)
-                    .unwrap();
+                    .rebase_on(&subgraph);
+                assert!(!rebased_fragments.is_empty());
+                assert!(rebased_fragments.contains(&name!("FragOnI")));
                 let rebased_fragment = rebased_fragments.fragments.get("FragOnI").unwrap();
 
                 let expected = r#"fragment FragOnI on I {
@@ -4359,8 +4357,9 @@ scalar federation__FieldSet
                 let subgraph = parse_schema(subgraph_schema);
                 let rebased_fragments = normalized_operation
                     .named_fragments
-                    .rebase_on(&subgraph)
-                    .unwrap();
+                    .rebase_on(&subgraph);
+                assert!(!rebased_fragments.is_empty());
+                assert!(rebased_fragments.contains(&name!("FragOnI")));
                 let rebased_fragment = rebased_fragments.fragments.get("FragOnI").unwrap();
 
                 let expected = r#"fragment FragOnI on I {
@@ -4440,10 +4439,10 @@ type T {
                 let subgraph = parse_schema(subgraph_schema);
                 let rebased_fragments = normalized_operation
                     .named_fragments
-                    .rebase_on(&subgraph)
-                    .unwrap();
+                    .rebase_on(&subgraph);
                 // F1 reduces to nothing, and F2 reduces to just __typename so we shouldn't keep them.
                 assert_eq!(1, rebased_fragments.size());
+                assert!(rebased_fragments.contains(&name!("F3")));
                 let rebased_fragment = rebased_fragments.fragments.get("F3").unwrap();
 
                 let expected = r#"fragment F3 on T {
@@ -4516,10 +4515,10 @@ type T {
                 let subgraph = parse_schema(subgraph_schema);
                 let rebased_fragments = normalized_operation
                     .named_fragments
-                    .rebase_on(&subgraph)
-                    .unwrap();
+                    .rebase_on(&subgraph);
                 // F1 reduces to nothing, and F2 reduces to just __typename so we shouldn't keep them.
                 assert_eq!(1, rebased_fragments.size());
+                assert!(rebased_fragments.contains(&name!("TheQuery")));
                 let rebased_fragment = rebased_fragments.fragments.get("TheQuery").unwrap();
 
                 let expected = r#"fragment TheQuery on Query {
@@ -4594,10 +4593,10 @@ type T {
                 let subgraph = parse_schema(subgraph_schema);
                 let rebased_fragments = normalized_operation
                     .named_fragments
-                    .rebase_on(&subgraph)
-                    .unwrap();
+                    .rebase_on(&subgraph);
                 // F1 reduces to nothing, and F2 reduces to just __typename so we shouldn't keep them.
                 assert_eq!(1, rebased_fragments.size());
+                assert!(rebased_fragments.contains(&name!("TQuery")));
                 let rebased_fragment = rebased_fragments.fragments.get("TQuery").unwrap();
 
                 let expected = r#"fragment TQuery on Query {
