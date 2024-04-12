@@ -6,6 +6,7 @@ use apollo_compiler::validation::Valid;
 use apollo_compiler::{ExecutableDocument, NodeStr};
 
 pub(crate) mod conditions;
+mod display;
 pub(crate) mod fetch_dependency_graph;
 pub(crate) mod fetch_dependency_graph_processor;
 pub mod generate;
