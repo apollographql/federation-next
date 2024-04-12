@@ -1,4 +1,5 @@
 use crate::error::FederationError;
+use crate::is_leaf_type;
 use crate::link::federation_spec_definition::get_federation_spec_definition_from_subgraph;
 use crate::link::graphql_definition::{
     BooleanOrVariable, DeferDirectiveArguments, OperationConditional, OperationConditionalKind,
@@ -24,13 +25,13 @@ use crate::schema::position::{
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::Value;
 use apollo_compiler::executable::DirectiveList;
-use apollo_compiler::schema::Name;
+use apollo_compiler::schema::{ExtendedType, Name};
 use apollo_compiler::NodeStr;
 use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::collections::{HashSet, BinaryHeap};
 use std::fmt::{Display, Formatter, Write};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -2059,12 +2060,92 @@ impl OpGraphPath {
     /// ends up "not panning out" (note that by the time this method is called, we're only looking
     /// at the options for type `I.s`; we do not know yet if `y` is queried next and so cannot tell
     /// if type explosion will be necessary or not).
+    // PORT_NOTE: In the JS code, this method was a free-standing function called "anImplementationIsEntityWithFieldShareable".
     fn has_an_entity_implementation_with_shareable_field(
         &self,
         _source: &NodeStr,
-        _interface_field_definition_position: InterfaceFieldDefinitionPosition,
+        itf: InterfaceFieldDefinitionPosition,
     ) -> Result<bool, FederationError> {
-        todo!()
+        if self.graph.schema()?.0.metadata().is_none() {
+            return Err(FederationError::internal(
+                "Interface should have come from a federation subgraph",
+            ));
+        };
+        let comp_type_pos = CompositeTypeDefinitionPosition::Interface(itf.parent());
+        let valid_schema = self.graph.schema()?;
+        let schema = valid_schema.schema();
+        let Some(field) = schema
+            .get_interface(&itf.type_name)
+            .and_then(|n| n.fields.get(&itf.field_name))
+        else {
+            // Should not happen
+            return Err(FederationError::internal(
+                "Unable to find interface field ({itf}) in schema: {schema}",
+            ));
+        };
+        for implem in valid_schema.possible_runtime_types(comp_type_pos)? {
+            let ty = valid_schema
+                .get_type(implem.type_name.clone())?
+                .get(schema)?;
+            if !ty.directives().iter().any(|d| d.name == "key") {
+                continue;
+            }
+            if !field.directives.iter().any(|d| d.name == "shareable") {
+                continue;
+            }
+            if is_leaf_type(schema, &field.name) {
+                continue;
+            }
+            match schema.get_object(&field.name) {
+                Some(ty) if ty.fields.values().all(|ty| is_leaf_type(schema, &ty.name)) => {
+                    for node in self.graph.nodes_for_type(&ty.name).cloned() {
+                        let node = &self.graph.graph()[node];
+                        let tail = &self.graph.graph()[self.tail];
+                        if node.source == tail.source {
+                            continue;
+                        }
+                        let node_ty = match &node.type_ {
+                            QueryGraphNodeType::SchemaType(ty) => ty,
+                            QueryGraphNodeType::FederatedRootType(_) => {
+                                return Err(FederationError::internal(format!(
+                                    "{implem} is an object in {} but a {} in {}",
+                                    tail.source, node.type_, node.source
+                                )))
+                            }
+                        };
+                        let node_ty_name = node_ty.type_name();
+                        let node_ty = valid_schema.get_type(node_ty_name.clone())?.get(schema)?;
+                        let is_shareable =
+                            node_ty.directives().iter().any(|d| d.name == "shareable");
+                        let fields = match node_ty {
+                            ExtendedType::Object(obj) => obj.fields.keys(),
+                            ExtendedType::Interface(int) => int.fields.keys(),
+                            _ => {
+                                return Err(FederationError::internal(format!(
+                                    "{implem} is an object in {} but a {} in {}",
+                                    tail.source, node.type_, node.source
+                                )))
+                            }
+                        };
+                        if !is_shareable || !fields.clone().any(|f| f == &itf.field_name) {
+                            continue;
+                        }
+                        if node_ty_name != &itf.type_name {
+                            // We have a genuine difference here, so we should explore type explosion.
+                            return Ok(true);
+                        }
+                        let names: HashSet<_> = fields.collect();
+                        if !ty.fields.iter().all(|f| names.contains(&f.0)) {
+                            // Same, we have a genuine difference.
+                            return Ok(true);
+                        }
+                    }
+                    return Ok(false);
+                }
+                _ => return Ok(true),
+            }
+        }
+        Ok(false)
     }
 
     /// For the first element of the pair, the data has the same meaning as in
