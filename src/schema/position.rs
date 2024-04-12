@@ -381,9 +381,7 @@ impl TryFrom<CompositeTypeDefinitionPosition> for ObjectTypeDefinitionPosition {
 
     fn try_from(value: CompositeTypeDefinitionPosition) -> Result<Self, Self::Error> {
         match value {
-            CompositeTypeDefinitionPosition::Object(value) => {
-                Ok(value)
-            }
+            CompositeTypeDefinitionPosition::Object(value) => Ok(value),
             _ => Err(FederationError::internal(format!(
                 "Type `{value}` was unexpectedly not an object type"
             ))),

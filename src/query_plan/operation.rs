@@ -567,7 +567,7 @@ impl NormalizedSelection {
         parent_type: &CompositeTypeDefinitionPosition,
         named_fragments: &NamedFragments,
         schema: &ValidFederationSchema,
-        error_handling: RebaseErrorHandlingOption
+        error_handling: RebaseErrorHandlingOption,
     ) -> Result<Option<NormalizedSelection>, FederationError> {
         match self {
             NormalizedSelection::Field(field) => {
@@ -664,12 +664,10 @@ impl NormalizedFragment {
 pub(crate) mod normalized_field_selection {
     use crate::error::FederationError;
     use crate::query_plan::operation::{
-        directives_with_sorted_arguments, HasNormalizedSelectionKey,
-        NormalizedSelectionKey, NormalizedSelectionSet,
+        directives_with_sorted_arguments, HasNormalizedSelectionKey, NormalizedSelectionKey,
+        NormalizedSelectionSet,
     };
-    use crate::schema::position::{
-        FieldDefinitionPosition, TypeDefinitionPosition,
-    };
+    use crate::schema::position::{FieldDefinitionPosition, TypeDefinitionPosition};
     use crate::schema::ValidFederationSchema;
     use apollo_compiler::ast::{Argument, DirectiveList, Name};
     use apollo_compiler::Node;
@@ -982,9 +980,8 @@ pub(crate) mod normalized_inline_fragment_selection {
     use crate::error::FederationError;
     use crate::link::graphql_definition::{defer_directive_arguments, DeferDirectiveArguments};
     use crate::query_plan::operation::{
-        directives_with_sorted_arguments, is_deferred_selection,
-        HasNormalizedSelectionKey, NormalizedSelectionKey,
-        NormalizedSelectionSet, SelectionId,
+        directives_with_sorted_arguments, is_deferred_selection, HasNormalizedSelectionKey,
+        NormalizedSelectionKey, NormalizedSelectionSet, SelectionId,
     };
     use crate::schema::position::CompositeTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
@@ -1652,7 +1649,9 @@ impl NormalizedSelectionSet {
         let rebased_results: Result<Vec<Option<NormalizedSelection>>, FederationError> = self
             .selections
             .iter()
-            .map(|(_, selection)| selection.rebase_on(parent_type, named_fragments, schema, error_handling))
+            .map(|(_, selection)| {
+                selection.rebase_on(parent_type, named_fragments, schema, error_handling)
+            })
             .collect();
         for rebased in rebased_results?.iter().flatten() {
             rebased_selections.insert(rebased.clone());
@@ -1891,12 +1890,8 @@ impl NormalizedFieldSelection {
             ))));
         }
 
-        let rebased_selection_set = selection_set.rebase_on(
-            &rebased_base_type,
-            named_fragments,
-            schema,
-            error_handling,
-        )?;
+        let rebased_selection_set =
+            selection_set.rebase_on(&rebased_base_type, named_fragments, schema, error_handling)?;
         if rebased_selection_set.selections.is_empty() {
             // empty selection set
             Ok(None)
@@ -2033,21 +2028,22 @@ impl NormalizedField {
     ///  that `parent_type` is indeed an implementation of `field_parent_type` because it's possible that this implementation relationship exists
     ///  in the supergraph, but not in any of the subgraph schema involved here. So we just let it be. Not that `rebase_on` will complain anyway
     ///  if the field name simply does not exist in `parent_type`.
-    fn can_rebase_on(&self, parent_type: &CompositeTypeDefinitionPosition, schema: &ValidFederationSchema) -> bool {
+    fn can_rebase_on(
+        &self,
+        parent_type: &CompositeTypeDefinitionPosition,
+        schema: &ValidFederationSchema,
+    ) -> bool {
         let field_parent_type = self.data().field_position.parent();
         // case 1
         if field_parent_type.type_name() == parent_type.type_name() {
             return true;
         }
         // case 2
-        let is_interface_object_type= match TryInto::<ObjectTypeDefinitionPosition>::try_into(field_parent_type.clone()) {
-            Ok(ref o) => {
-                  is_interface_object(o, schema)
-              },
-            Err(_) => {
-                false
-            }
-        };
+        let is_interface_object_type =
+            match TryInto::<ObjectTypeDefinitionPosition>::try_into(field_parent_type.clone()) {
+                Ok(ref o) => is_interface_object(o, schema),
+                Err(_) => false,
+            };
         field_parent_type.is_interface_type() || is_interface_object_type
     }
 }
@@ -2072,10 +2068,8 @@ impl NormalizedFragmentSpreadSelection {
         fragment_spread: &FragmentSpread,
         fragment: &Node<NormalizedFragment>,
     ) -> Result<NormalizedFragmentSpreadSelection, FederationError> {
-        let spread_data = NormalizedFragmentSpreadData::from_fragment(
-            fragment,
-            &fragment_spread.directives,
-        );
+        let spread_data =
+            NormalizedFragmentSpreadData::from_fragment(fragment, &fragment_spread.directives);
         Ok(NormalizedFragmentSpreadSelection {
             spread: NormalizedFragmentSpread::new(spread_data),
             selection_set: fragment.selection_set.clone(),
@@ -2207,11 +2201,13 @@ impl NormalizedInlineFragmentSelection {
             ))));
         }
 
-        let Some(rebased_fragment) = self.inline_fragment.rebase_on(parent_type, schema, error_handling)? else {
+        let Some(rebased_fragment) =
+            self.inline_fragment
+                .rebase_on(parent_type, schema, error_handling)?
+        else {
             // rebasing failed but we are ignoring errors
             return Ok(None);
         };
-
 
         let rebased_casted_type = rebased_fragment
             .data()
@@ -2463,7 +2459,9 @@ impl NamedFragments {
      */
     pub(crate) fn collect_used_fragment_names(&self, aggregator: &mut HashMap<Name, i32>) {
         for fragment in self.fragments.values() {
-            fragment.selection_set.collect_used_fragment_names(aggregator);
+            fragment
+                .selection_set
+                .collect_used_fragment_names(aggregator);
         }
     }
 
@@ -2495,7 +2493,7 @@ impl NamedFragments {
                     depends_on: usages,
                 },
             );
-        };
+        }
 
         let mut removed_fragments: HashSet<Name> = HashSet::new();
         let mut mapped_fragments = NamedFragments::default();
@@ -2619,10 +2617,7 @@ impl RebasedFragments {
         }
     }
 
-    pub(crate) fn for_subgraph(
-        &mut self,
-        subgraph: &ValidFederationSubgraph,
-    ) -> NamedFragments {
+    pub(crate) fn for_subgraph(&mut self, subgraph: &ValidFederationSubgraph) -> NamedFragments {
         Arc::make_mut(&mut self.rebased_fragments)
             .entry(subgraph.name.clone())
             .or_insert_with(|| self.original_fragments.rebase_on(&subgraph.schema))
@@ -2852,10 +2847,7 @@ impl Display for NormalizedInlineFragmentSelection {
 
 impl Display for NormalizedFragmentSpreadSelection {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let fragment_spread: FragmentSpread = match self.try_into() {
-            Ok(fragment_spread) => fragment_spread,
-            Err(_) => return Err(std::fmt::Error),
-        };
+        let fragment_spread: FragmentSpread = self.into();
         fragment_spread.serialize().no_indent().fmt(f)
     }
 }
@@ -2950,9 +2942,8 @@ fn is_interface_object(obj: &ObjectTypeDefinitionPosition, schema: &ValidFederat
     if let Ok(intf_obj_directive) = get_federation_spec_definition_from_subgraph(schema)
         .and_then(|spec| spec.interface_object_directive(schema))
     {
-        obj.try_get(schema.schema()).is_some_and(|o| {
-            o.directives.has(&intf_obj_directive.name)
-        })
+        obj.try_get(schema.schema())
+            .is_some_and(|o| o.directives.has(&intf_obj_directive.name))
     } else {
         false
     }
@@ -4086,9 +4077,7 @@ type U {
   v5: Int
 }"#;
                 let subgraph = parse_schema(subgraph_schema);
-                let rebased_fragments = normalized_operation
-                    .named_fragments
-                    .rebase_on(&subgraph);
+                let rebased_fragments = normalized_operation.named_fragments.rebase_on(&subgraph);
                 assert!(!rebased_fragments.is_empty());
                 assert!(rebased_fragments.contains(&name!("FragOnT")));
                 let rebased_fragment = rebased_fragments.fragments.get("FragOnT").unwrap();
@@ -4167,9 +4156,7 @@ type T {
   y: Int
 }"#;
                 let subgraph = parse_schema(subgraph_schema);
-                let rebased_fragments = normalized_operation
-                    .named_fragments
-                    .rebase_on(&subgraph);
+                let rebased_fragments = normalized_operation.named_fragments.rebase_on(&subgraph);
                 assert!(!rebased_fragments.is_empty());
                 assert!(rebased_fragments.contains(&name!("FragOnT")));
                 assert!(!rebased_fragments.contains(&name!("FragOnU")));
@@ -4254,9 +4241,7 @@ type T2 implements I {
 }
 "#;
                 let subgraph = parse_schema(subgraph_schema);
-                let rebased_fragments = normalized_operation
-                    .named_fragments
-                    .rebase_on(&subgraph);
+                let rebased_fragments = normalized_operation.named_fragments.rebase_on(&subgraph);
                 assert!(!rebased_fragments.is_empty());
                 assert!(rebased_fragments.contains(&name!("FragOnI")));
                 let rebased_fragment = rebased_fragments.fragments.get("FragOnI").unwrap();
@@ -4344,9 +4329,7 @@ scalar link__Import
 scalar federation__FieldSet
 "#;
                 let subgraph = parse_schema(subgraph_schema);
-                let rebased_fragments = normalized_operation
-                    .named_fragments
-                    .rebase_on(&subgraph);
+                let rebased_fragments = normalized_operation.named_fragments.rebase_on(&subgraph);
                 assert!(!rebased_fragments.is_empty());
                 assert!(rebased_fragments.contains(&name!("FragOnI")));
                 let rebased_fragment = rebased_fragments.fragments.get("FragOnI").unwrap();
@@ -4426,9 +4409,7 @@ type T {
 }
 "#;
                 let subgraph = parse_schema(subgraph_schema);
-                let rebased_fragments = normalized_operation
-                    .named_fragments
-                    .rebase_on(&subgraph);
+                let rebased_fragments = normalized_operation.named_fragments.rebase_on(&subgraph);
                 // F1 reduces to nothing, and F2 reduces to just __typename so we shouldn't keep them.
                 assert_eq!(1, rebased_fragments.size());
                 assert!(rebased_fragments.contains(&name!("F3")));
@@ -4502,9 +4483,7 @@ type T {
   x: Int
 }"#;
                 let subgraph = parse_schema(subgraph_schema);
-                let rebased_fragments = normalized_operation
-                    .named_fragments
-                    .rebase_on(&subgraph);
+                let rebased_fragments = normalized_operation.named_fragments.rebase_on(&subgraph);
                 // F1 reduces to nothing, and F2 reduces to just __typename so we shouldn't keep them.
                 assert_eq!(1, rebased_fragments.size());
                 assert!(rebased_fragments.contains(&name!("TheQuery")));
@@ -4580,9 +4559,7 @@ type T {
 "#;
 
                 let subgraph = parse_schema(subgraph_schema);
-                let rebased_fragments = normalized_operation
-                    .named_fragments
-                    .rebase_on(&subgraph);
+                let rebased_fragments = normalized_operation.named_fragments.rebase_on(&subgraph);
                 // F1 reduces to nothing, and F2 reduces to just __typename so we shouldn't keep them.
                 assert_eq!(1, rebased_fragments.size());
                 assert!(rebased_fragments.contains(&name!("TQuery")));

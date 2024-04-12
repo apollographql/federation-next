@@ -1,11 +1,11 @@
+use crate::error::{FederationError, MultipleFederationErrors, SingleFederationError};
+use crate::query_plan::operation::{NamedFragments, NormalizedSelectionSet};
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::executable::{FieldSet, SelectionSet};
 use apollo_compiler::schema::NamedType;
 use apollo_compiler::validation::Valid;
 use apollo_compiler::{NodeStr, Schema};
 use indexmap::IndexMap;
-use crate::error::{FederationError, MultipleFederationErrors, SingleFederationError};
-use crate::query_plan::operation::{NamedFragments, NormalizedSelectionSet};
 
 // Federation spec does not allow the alias syntax in field set strings.
 // However, since `parse_field_set` uses the standard GraphQL parser, which allows aliases,
