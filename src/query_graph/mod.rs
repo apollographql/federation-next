@@ -352,9 +352,11 @@ impl QueryGraph {
     }
 
     /// Returns an iterator over of node indices whose name matches the given type name.
-    pub(crate) fn nodes_for_type<'c, 'b: 'c, 'a: 'c>(&'a self, name: &'b Name) -> impl 'c + Iterator<Item = &'a NodeIndex> {
-        self
-            .types_to_nodes_by_source
+    pub(crate) fn nodes_for_type<'c, 'b: 'c, 'a: 'c>(
+        &'a self,
+        name: &'b Name,
+    ) -> impl 'c + Iterator<Item = &'a NodeIndex> {
+        self.types_to_nodes_by_source
             .values()
             .filter_map(|tys| tys.get(name))
             .flat_map(|vs| vs.iter())
