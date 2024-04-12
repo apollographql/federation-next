@@ -943,7 +943,7 @@ impl NormalizedFragmentSpreadSelection {
                     inline_fragment: NormalizedInlineFragment::new(NormalizedInlineFragmentData {
                         schema: schema.clone(),
                         parent_type_position: parent_type.clone(),
-                        type_condition_position: Some(parent_type.clone()),
+                        type_condition_position: None,
                         directives: Arc::new(DirectiveList::new()),
                         selection_id: SelectionId::new(),
                     }),
