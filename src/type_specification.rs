@@ -261,31 +261,6 @@ impl TypeSpecification for EnumTypeSpecification {
 //////////////////////////////////////////////////////////////////////////////
 // Helper functions for TypeSpecification implementations
 
-// TODO: Consider moving this to elsewhere.
-fn value_to_string(value: &Value) -> String {
-    match value {
-        Value::Null => "null".to_string(),
-        Value::Boolean(true) => "true".to_string(),
-        Value::Boolean(false) => "false".to_string(),
-        Value::Int(num) => format!("{num}"),
-        Value::Float(num) => format!("{num}"),
-        Value::String(str) => format!("{str}"),
-        Value::Enum(name) => format!("{name}"),
-        Value::Variable(name) => format!("${name}"),
-        Value::List(items) => {
-            let item_strings: Vec<_> = items.iter().map(|val| value_to_string(val)).collect();
-            format!("[{}]", item_strings.join(", "))
-        }
-        Value::Object(fields) => {
-            let field_strings: Vec<_> = fields
-                .iter()
-                .map(|(name, val)| format!("{name}: {}", value_to_string(val)))
-                .collect();
-            format!("{{{}}}", field_strings.join(", "))
-        }
-    }
-}
-
 // TODO: Consider moving this to the schema module.
 #[derive(Clone, PartialEq, Eq, Hash, derive_more::Display)]
 pub(crate) enum TypeKind {
@@ -381,7 +356,7 @@ fn is_valid_input_type_redefinition(
 fn default_value_message(value: Option<&Value>) -> String {
     match value {
         None => "no default value".to_string(),
-        Some(value) => format!("default value {}", value_to_string(value)),
+        Some(value) => format!("default value {}", value),
     }
 }
 
