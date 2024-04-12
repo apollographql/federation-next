@@ -775,7 +775,7 @@ pub(crate) mod normalized_field_selection {
 pub(crate) mod normalized_fragment_spread_selection {
     use crate::query_plan::operation::{
         directives_with_sorted_arguments, is_deferred_selection, HasNormalizedSelectionKey,
-        NamedFragments, NormalizedSelectionKey, NormalizedSelectionSet, SelectionId,
+        NormalizedSelectionKey, NormalizedSelectionSet, SelectionId,
     };
     use crate::schema::position::CompositeTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
@@ -836,7 +836,6 @@ pub(crate) mod normalized_fragment_spread_selection {
         // on different locations. While we now keep track of those references, they are currently ignored.
         pub(crate) fragment_directives: Arc<DirectiveList>,
         pub(crate) selection_id: SelectionId,
-        pub(crate) named_fragments: NamedFragments,
     }
 
     impl HasNormalizedSelectionKey for NormalizedFragmentSpreadData {
@@ -884,12 +883,7 @@ impl NormalizedFragmentSpreadSelection {
         // `self.fragments` would be incorrect. If we're on the same schema though, we're happy to default
         // to `self.fragments`.
         let rebase_on_same_schema = self.spread.data.schema == *schema;
-        let new_fragments = if rebase_on_same_schema {
-            &self.spread.data.named_fragments
-        } else {
-            named_fragments
-        };
-        let Some(named_fragment) = new_fragments.get(&self.spread.data.fragment_name) else {
+        let Some(named_fragment) = named_fragments.get(&self.spread.data.fragment_name) else {
             // If we're rebasing on another schema (think a subgraph), then named fragments will have been rebased on that, and some
             // of them may not contain anything that is on that subgraph, in which case they will not have been included at all.
             // If so, then as long as we're not asked to error if we cannot rebase, then we're happy to skip that spread (since again,
@@ -958,7 +952,6 @@ impl NormalizedFragmentSpreadSelection {
         let spread = NormalizedFragmentSpread::new(NormalizedFragmentSpreadData::from_fragment(
             &named_fragment,
             &self.spread.data.directives,
-            new_fragments,
         ));
         Ok(Some(NormalizedSelection::FragmentSpread(Arc::new(
             NormalizedFragmentSpreadSelection {
@@ -973,7 +966,6 @@ impl NormalizedFragmentSpreadData {
     pub(crate) fn from_fragment(
         fragment: &Node<NormalizedFragment>,
         spread_directives: &DirectiveList,
-        named_fragments: &NamedFragments,
     ) -> NormalizedFragmentSpreadData {
         NormalizedFragmentSpreadData {
             schema: fragment.schema.clone(),
@@ -982,7 +974,6 @@ impl NormalizedFragmentSpreadData {
             directives: Arc::new(spread_directives.clone()),
             fragment_directives: fragment.directives.clone(),
             selection_id: SelectionId::new(),
-            named_fragments: named_fragments.clone(),
         }
     }
 }
@@ -1207,7 +1198,6 @@ impl NormalizedSelectionSet {
                         NormalizedFragmentSpreadSelection::from_fragment_spread(
                             fragment_spread_selection,
                             &fragment,
-                            fragments,
                         )?;
                     destination.push(NormalizedSelection::FragmentSpread(Arc::new(
                         normalized_fragment_spread,
@@ -2081,12 +2071,10 @@ impl NormalizedFragmentSpreadSelection {
     pub(crate) fn from_fragment_spread(
         fragment_spread: &FragmentSpread,
         fragment: &Node<NormalizedFragment>,
-        fragments: &NamedFragments,
     ) -> Result<NormalizedFragmentSpreadSelection, FederationError> {
         let spread_data = NormalizedFragmentSpreadData::from_fragment(
             fragment,
             &fragment_spread.directives,
-            fragments,
         );
         Ok(NormalizedFragmentSpreadSelection {
             spread: NormalizedFragmentSpread::new(spread_data),
