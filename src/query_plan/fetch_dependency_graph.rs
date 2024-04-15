@@ -197,25 +197,25 @@ pub(crate) struct DeferContext {
 // PORT_NOTE: In JS this uses reference equality, not structural equality, so maybe we should just
 // do pointer comparisons?
 #[derive(Debug, Clone, PartialEq)]
-struct ParentRelation<'a> {
+struct ParentRelation {
     parent_node_id: NodeIndex,
-    path_in_parent: Option<&'a Arc<OpPath>>,
+    path_in_parent: Option<Arc<OpPath>>,
 }
 
 /// UnhandledGroups is used while processing fetch nodes in dependency order to track group for which
 /// one of the parent has been processed/handled but which has other parents. So it is a set of
 /// nodes and for each group which parent(s) remains to be processed before the group itself can be
 /// processed.
-type UnhandledNode<'a> = (NodeIndex, Vec<ParentRelation<'a>>);
+type UnhandledNode = (NodeIndex, Vec<ParentRelation>);
 
 /// Used during the processing of fetch nodes in dependency order.
 #[derive(Debug, Clone)]
-struct ProcessingState<'a> {
+struct ProcessingState {
     /// Nodes that can be handled (because all their parents/dependencies have been processed before).
     pub next: Vec<NodeIndex>,
     /// Nodes that needs some parents/dependencies to be processed first because they can be themselves.
     /// Note that we make sure that this never hold node with no "edges".
-    pub unhandled: Vec<UnhandledNode<'a>>,
+    pub unhandled: Vec<UnhandledNode>,
 }
 
 impl DeferContext {
@@ -241,7 +241,7 @@ impl Default for DeferContext {
     }
 }
 
-impl<'a> ProcessingState<'a> {
+impl ProcessingState {
     pub fn empty() -> Self {
         Self {
             next: vec![],
@@ -260,7 +260,7 @@ impl<'a> ProcessingState<'a> {
     // structure as `create_state_for_children_of_processed_node`, because it needs access to the
     // graph.
 
-    pub fn merge_with<'b>(self, other: ProcessingState<'b>) -> ProcessingState {
+    pub fn merge_with(self, other: ProcessingState) -> ProcessingState {
         let mut next = self.next;
         for g in other.next {
             // TODO(@goto-bus-stop): Seems like this should be a Set
@@ -272,11 +272,11 @@ impl<'a> ProcessingState<'a> {
         let mut unhandled = vec![];
         let mut that_unhandled = other.unhandled;
 
-        fn merge_remains_and_remove_if_found<'a, 'b>(
+        fn merge_remains_and_remove_if_found(
             node_index: NodeIndex,
-            mut in_edges: Vec<ParentRelation<'a>>,
-            other_nodes: &mut Vec<(NodeIndex, Vec<ParentRelation<'b>>)>,
-        ) -> Vec<ParentRelation<'a>> {
+            mut in_edges: Vec<ParentRelation>,
+            other_nodes: &mut Vec<(NodeIndex, Vec<ParentRelation>)>,
+        ) -> Vec<ParentRelation> {
             // remove_if
 
             let Some((index, (_, other_edges))) = other_nodes
@@ -521,7 +521,7 @@ impl FetchDependencyGraph {
         subgraph_name: &NodeStr,
         merge_at: &[FetchDataPathElement],
         type_: &CompositeTypeDefinitionPosition,
-        parent: ParentRelation<'_>,
+        parent: ParentRelation,
         conditions_nodes: &IndexSet<NodeIndex>,
         defer_ref: Option<&NodeStr>,
     ) -> Result<NodeIndex, FederationError> {
@@ -600,7 +600,7 @@ impl FetchDependencyGraph {
 
     /// Adds another node as a parent of `child`,
     /// meaning that this fetch should happen after the provided one.
-    fn add_parent(&mut self, child_id: NodeIndex, parent_relation: ParentRelation<'_>) {
+    fn add_parent(&mut self, child_id: NodeIndex, parent_relation: ParentRelation) {
         let ParentRelation {
             parent_node_id,
             path_in_parent,
@@ -618,7 +618,7 @@ impl FetchDependencyGraph {
             parent_node_id,
             child_id,
             Arc::new(FetchDependencyGraphEdge {
-                path: path_in_parent.cloned(),
+                path: path_in_parent.clone(),
             }),
         );
     }
@@ -660,12 +660,12 @@ impl FetchDependencyGraph {
     fn parents_relations_of(
         &self,
         node_id: NodeIndex,
-    ) -> impl Iterator<Item = ParentRelation<'_>> + '_ {
+    ) -> impl Iterator<Item = ParentRelation> + '_ {
         self.graph
             .edges_directed(node_id, petgraph::Direction::Incoming)
             .map(|edge| ParentRelation {
                 parent_node_id: edge.source(),
-                path_in_parent: edge.weight().path.as_ref(),
+                path_in_parent: edge.weight().path.clone(),
             })
     }
 
@@ -708,7 +708,7 @@ impl FetchDependencyGraph {
     }
 
     fn extract_children_and_deferred_dependencies(
-        &self,
+        &mut self,
         node_index: NodeIndex,
     ) -> Result<(Vec<NodeIndex>, DeferredGroups), FederationError> {
         let mut children = vec![];
@@ -729,11 +729,9 @@ impl FetchDependencyGraph {
                 };
 
                 if !node.selection_set.selection_set.selections.is_empty() {
-                    let id = *node.id.get_or_insert_with(|| {
-                        let id = self.fetch_id_generation;
-                        self.fetch_id_generation += 1;
-                        id
-                    });
+                    // TODO(@goto-bus-stop): This should handle `id` being `None`
+                    let id = node.id.unwrap();
+                    // TODO(@goto-bus-stop): Seems bad to do this here
                     self.defer_tracking
                         .add_dependency(child_defer_ref, format!("{id}").into());
                 }
@@ -769,10 +767,10 @@ impl FetchDependencyGraph {
 
     fn process_group<TProcessed, TDeferred>(
         &mut self,
-        mut processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
+        processor: &mut impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
         node_index: NodeIndex,
         handled_conditions: Conditions,
-    ) -> Result<(TProcessed, DeferredGroups, ProcessingState<'_>), FederationError> {
+    ) -> Result<(TProcessed, DeferredGroups, ProcessingState), FederationError> {
         let (children, deferred_groups) =
             self.extract_children_and_deferred_dependencies(node_index)?;
 
@@ -781,9 +779,9 @@ impl FetchDependencyGraph {
             .node_weight_mut(node_index)
             .ok_or_else(|| FederationError::internal("Node unexpectedly missing"))?;
         let conditions = handled_conditions.update_with(&node.selection_set.conditions);
-        let new_handled_conditions = conditions.merge(handled_conditions);
+        let new_handled_conditions = conditions.clone().merge(handled_conditions);
 
-        let processed = processor.on_node(node, &new_handled_conditions)?;
+        let processed = processor.on_node(Arc::make_mut(node), &new_handled_conditions)?;
         if children.is_empty() {
             return Ok((
                 processor.on_conditions(&conditions, processed),
@@ -803,18 +801,17 @@ impl FetchDependencyGraph {
             // We process the ready children as if they were parallel roots (they are from `processed`
             // in a way), and then just add process at the beginning of the sequence.
             let (main_sequence, all_deferred_groups, new_state) = self.process_root_main_groups(
-                &mut processor,
+                processor,
                 state,
                 true,
                 &deferred_groups,
                 new_handled_conditions,
             )?;
 
+            let reduced_sequence =
+                processor.reduce_sequence(std::iter::once(processed).chain(main_sequence));
             Ok((
-                processor.on_conditions(
-                    &conditions,
-                    processor.reduce_sequence(std::iter::once(processed).chain(main_sequence)),
-                ),
+                processor.on_conditions(&conditions, reduced_sequence),
                 all_deferred_groups,
                 new_state,
             ))
@@ -823,11 +820,11 @@ impl FetchDependencyGraph {
 
     fn process_groups<TProcessed, TDeferred>(
         &mut self,
-        mut processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
+        processor: &mut impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
         state: ProcessingState,
         process_in_parallel: bool,
         handled_conditions: Conditions,
-    ) -> Result<(TProcessed, DeferredGroups, ProcessingState<'_>), FederationError> {
+    ) -> Result<(TProcessed, DeferredGroups, ProcessingState), FederationError> {
         let mut processed_nodes = vec![];
         let mut all_deferred_groups = DeferredGroups::new();
         let mut new_state = ProcessingState {
@@ -836,7 +833,7 @@ impl FetchDependencyGraph {
         };
         for node_index in &state.next {
             let (main, deferred_groups, state_after_group) =
-                self.process_group(&mut processor, *node_index, handled_conditions)?;
+                self.process_group(processor, *node_index, handled_conditions.clone())?;
             processed_nodes.push(main);
             all_deferred_groups.extend(deferred_groups);
             new_state = new_state.merge_with(state_after_group);
@@ -863,7 +860,7 @@ impl FetchDependencyGraph {
     /// by this method but not otherwise processed.
     fn process_root_main_groups<TProcessed, TDeferred>(
         &mut self,
-        processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
+        processor: &mut impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
         mut state: ProcessingState,
         roots_are_parallel: bool,
         initial_deferred_groups: &DeferredGroups,
@@ -873,8 +870,12 @@ impl FetchDependencyGraph {
         let mut all_deferred_groups = initial_deferred_groups.clone();
         let mut process_in_parallel = roots_are_parallel;
         while !state.next.is_empty() {
-            let (processed, deferred_groups, new_state) =
-                self.process_groups(processor, state, process_in_parallel, handled_conditions)?;
+            let (processed, deferred_groups, new_state) = self.process_groups(
+                processor,
+                state,
+                process_in_parallel,
+                handled_conditions.clone(),
+            )?;
             // After the root groups, handled on the first iteration, we can process everything in parallel.
             process_in_parallel = true;
             main_sequence.push(processed);
@@ -899,7 +900,7 @@ impl FetchDependencyGraph {
             ProcessingState::of_ready_nodes(root_groups),
             roots_are_parallel,
             &Default::default(),
-            handled_conditions,
+            handled_conditions.clone(),
         )?;
         assert!(
             new_state.next.is_empty(),
@@ -960,7 +961,7 @@ impl FetchDependencyGraph {
                 true,
                 Some(&defer.label),
                 unhandled_defer_groups.as_ref(),
-                handled_conditions,
+                handled_conditions.clone(),
             )?;
             let main_reduced = processor.reduce_sequence(main_sequence_of_defer);
             let processed = if deferred_of_defer.is_empty() {
@@ -1177,7 +1178,7 @@ impl DeferTracking {
         let label = defer_args
             .label()
             .expect("All @defer should have been labeled at this point");
-        let deferred_block = self.deferred.entry(label.clone()).or_insert_with(|| {
+        let _deferred_block = self.deferred.entry(label.clone()).or_insert_with(|| {
             DeferredInfo::empty(
                 primary_selection.schema.clone(),
                 label.clone(),
@@ -1186,8 +1187,8 @@ impl DeferTracking {
             )
         });
 
-        if let Some(parent_ref) = defer_context.current_defer_ref {
-            let Some(parent_info) = self.deferred.get_mut(&parent_ref) else {
+        if let Some(parent_ref) = &defer_context.current_defer_ref {
+            let Some(parent_info) = self.deferred.get_mut(parent_ref) else {
                 panic!("Cannot find info for parent {parent_ref} or {label}");
             };
 
@@ -1428,7 +1429,7 @@ fn compute_nodes_for_key_resolution<'a>(
         &dest_type,
         ParentRelation {
             parent_node_id: stack_item.node_id,
-            path_in_parent: Some(path_in_parent),
+            path_in_parent: Some(Arc::clone(path_in_parent)),
         },
         &conditions_nodes,
         updated_defer_context.active_defer_ref.as_ref(),
@@ -1455,7 +1456,7 @@ fn compute_nodes_for_key_resolution<'a>(
             new_node_id,
             ParentRelation {
                 parent_node_id: condition_node,
-                path_in_parent: path.as_ref(),
+                path_in_parent: path,
             },
         )
     }
@@ -1597,7 +1598,7 @@ fn compute_nodes_for_root_type_resolution<'a>(
         new_node_id,
         ParentRelation {
             parent_node_id: stack_item.node_id,
-            path_in_parent: Some(&stack_item.node_path.path_in_node),
+            path_in_parent: Some(Arc::clone(&stack_item.node_path.path_in_node)),
         },
     );
     Ok(ComputeNodesStackItem {
