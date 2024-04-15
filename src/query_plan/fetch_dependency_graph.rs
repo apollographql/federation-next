@@ -209,7 +209,7 @@ type UnhandledGroup<'a> = (FetchDependencyGraphNode, Vec<ParentRelation<'a>>);
 #[derive(Debug, Clone)]
 struct ProcessingState<'a> {
     /// Groups that can be handled (because all their parents/dependencies have been processed before).
-    // TODO(@goto-bus-stop) NodeIndex
+    // TODO(@goto-bus-stop): NodeIndex vs FetchDependencyGraphNode
     pub next: Vec<FetchDependencyGraphNode>,
     /// Groups that needs some parents/dependencies to be processed first because they can be themselves.
     /// Note that we make sure that this never hold group with no "edges".
@@ -254,6 +254,7 @@ impl<'a> ProcessingState<'a> {
         }
     }
 
+    // TODO(@goto-bus-stop): NodeIndex vs FetchDependencyGraphNode
     pub fn for_children_of_processed_node(
         processed: &FetchDependencyGraphNode,
         children: Vec<FetchDependencyGraphNode>,
@@ -262,6 +263,75 @@ impl<'a> ProcessingState<'a> {
         let mut unhandled = vec![];
         for c in children {
             todo!()
+        }
+        ProcessingState { next, unhandled }
+    }
+
+    pub fn merge_with<'b>(self, other: ProcessingState<'b>) -> ProcessingState {
+        let mut next = self.next;
+        for g in other.next {
+            // TODO(@goto-bus-stop): Seems like this should be a Set
+            if !next.contains(&g) {
+                next.push(g);
+            }
+        }
+
+        let mut unhandled = vec![];
+        let mut that_unhandled = other.unhandled;
+
+        fn merge_remains_and_remove_if_found<'a, 'b>(
+            node_index: NodeIndex,
+            mut in_edges: Vec<ParentRelation<'a>>,
+            other_nodes: &mut Vec<(NodeIndex, Vec<ParentRelation<'b>>)>,
+        ) -> Vec<ParentRelation<'a>> {
+            // remove_if
+
+            let Some((index, other_edges)) = other_nodes
+                .iter()
+                .enumerate()
+                .find(|(_index, (other_index, _parents))| *other_index == node_index)
+            else {
+                return in_edges;
+            };
+
+            // The uhandled are the one that are unhandled on both side.
+            in_edges.retain(|e| !other_edges.contains(&e));
+            other_nodes.remove(index);
+            in_edges
+        }
+
+        for (g, edges) in self.unhandled {
+            let new_edges = merge_remains_and_remove_if_found(g, edges, &mut that_unhandled);
+            if new_edges.is_empty() {
+                if !next.contains(&g) {
+                    next.push(g)
+                }
+            } else {
+                unhandled.push((g, new_edges));
+            }
+        }
+
+        // Anything remaining in `thatUnhandled` are nodes that were not in `self` at all.
+        unhandled.extend(that_unhandled);
+
+        ProcessingState { next, unhandled }
+    }
+
+    // TODO(@goto-bus-stop): NodeIndex vs FetchDependencyGraphNode
+    pub fn update_for_processed_nodes(self, processed: &[NodeIndex]) -> ProcessingState {
+        let mut next = self.next;
+        let mut unhandled = vec![];
+        for (g, mut edges) in self.unhandled {
+            // Remove any of the processed nodes from the unhandled edges of that node.
+            // And if there is no remaining edge, that node can be handled.
+            edges.retain(|edge| processed.contains(&edge.parent_node_id));
+            if edges.is_empty() {
+                if !next.contains(&g) {
+                    next.push(g);
+                }
+            } else {
+                unhandled.push((g, edges));
+            }
         }
         ProcessingState { next, unhandled }
     }
@@ -706,6 +776,8 @@ impl FetchDependencyGraph {
                 ProcessingState::empty(),
             ));
         }
+
+        // TODO Ownership of `children`
         let state = ProcessingState::for_children_of_processed_node(node, children);
         if state.next.is_empty() {
             Ok((
@@ -714,12 +786,14 @@ impl FetchDependencyGraph {
                 state,
             ))
         } else {
+            // We process the ready children as if they were parallel roots (they are from `processed`
+            // in a way), and then just add process at the beginning of the sequence.
             let (main_sequence, all_deferred_groups, new_state) = self.process_root_main_groups(
                 &mut processor,
                 state,
                 true,
+                &deferred_groups,
                 new_handled_conditions,
-                deferred_groups,
             )?;
 
             Ok((
