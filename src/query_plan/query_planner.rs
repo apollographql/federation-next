@@ -412,7 +412,8 @@ impl QueryPlanner {
             operation: Arc::new(normalized_operation),
             processor,
             head: *root,
-            // FIXME(@goto-bus-stop): Is hardcoding this correct?
+            // PORT_NOTE(@goto-bus-stop): In JS, `root` is a `RootVertex`, which is dynamically
+            // checked at various points in query planning. This is our Rust equivalent of that.
             head_must_be_root: true,
             statistics,
             abstract_types_with_inconsistent_runtime_types: self
@@ -420,7 +421,7 @@ impl QueryPlanner {
                 .clone()
                 .into(),
             config: self.config.clone(),
-            // XXX(@goto-bus-stop): what about `override_conditions`?
+            // PORT_NOTE: JS provides `override_conditions` here: see port note in `QueryPlanner::new`.
         };
 
         let root_node = match defer_conditions {
