@@ -307,7 +307,6 @@ impl<'a> ProcessingState<'a> {
         ProcessingState { next, unhandled }
     }
 
-    // TODO(@goto-bus-stop): NodeIndex vs FetchDependencyGraphNode
     pub fn update_for_processed_nodes(self, processed: &[NodeIndex]) -> ProcessingState {
         let mut next = self.next;
         let mut unhandled = vec![];
@@ -821,12 +820,40 @@ impl FetchDependencyGraph {
 
     fn process_groups<TProcessed, TDeferred>(
         &mut self,
-        processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
+        mut processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
         state: ProcessingState,
         process_in_parallel: bool,
         handled_conditions: Conditions,
     ) -> Result<(TProcessed, DeferredGroups, ProcessingState<'_>), FederationError> {
-        todo!()
+        let mut processed_nodes = vec![];
+        let mut all_deferred_groups = DeferredGroups::new();
+        let mut new_state = ProcessingState {
+            next: Default::default(),
+            unhandled: state.unhandled,
+        };
+        for node_index in &state.next {
+            let (main, deferred_groups, state_after_group) =
+                self.process_group(&mut processor, *node_index, handled_conditions)?;
+            processed_nodes.push(main);
+            all_deferred_groups.extend(deferred_groups);
+            new_state = new_state.merge_with(state_after_group);
+        }
+
+        // Note that `newState` is the merged result of everything after each individual group (anything that was _only_ depending
+        // on it), but the fact that groups themselves (`state.next`) have been handled has not necessarily be taking into
+        // account yet, so we do it below. Also note that this must be done outside of the `for` loop above, because any
+        // group that dependend on multiple of the input groups of this function must not be handled _within_ this function
+        // but rather after it, and this is what ensures it.
+        let processed = if process_in_parallel {
+            processor.reduce_parallel(processed_nodes)
+        } else {
+            processor.reduce_sequence(processed_nodes)
+        };
+        Ok((
+            processed,
+            all_deferred_groups,
+            new_state.update_for_processed_nodes(&state.next),
+        ))
     }
 
     /// Process the "main" (non-deferred) groups starting at the provided roots. The deferred groups are collected
