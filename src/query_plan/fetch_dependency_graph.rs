@@ -839,10 +839,10 @@ impl FetchDependencyGraph {
             new_state = new_state.merge_with(state_after_group);
         }
 
-        // Note that `newState` is the merged result of everything after each individual group (anything that was _only_ depending
-        // on it), but the fact that groups themselves (`state.next`) have been handled has not necessarily be taking into
+        // Note that `new_state` is the merged result of everything after each individual node (anything that was _only_ depending
+        // on it), but the fact that nodes themselves (`state.next`) have been handled has not necessarily be taking into
         // account yet, so we do it below. Also note that this must be done outside of the `for` loop above, because any
-        // group that dependend on multiple of the input groups of this function must not be handled _within_ this function
+        // node that dependend on multiple of the input nodes of this function must not be handled _within_ this function
         // but rather after it, and this is what ensures it.
         let processed = if process_in_parallel {
             processor.reduce_parallel(processed_nodes)
@@ -861,12 +861,25 @@ impl FetchDependencyGraph {
     fn process_root_main_groups<TProcessed, TDeferred>(
         &mut self,
         processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
-        state: ProcessingState,
+        mut state: ProcessingState,
         roots_are_parallel: bool,
         initial_deferred_groups: &DeferredGroups,
         handled_conditions: Conditions,
     ) -> Result<(Vec<TProcessed>, DeferredGroups, ProcessingState), FederationError> {
-        todo!()
+        let mut main_sequence = vec![];
+        let mut all_deferred_groups = initial_deferred_groups.clone();
+        let mut process_in_parallel = roots_are_parallel;
+        while !state.next.is_empty() {
+            let (processed, deferred_groups, new_state) =
+                self.process_groups(processor, state, process_in_parallel, handled_conditions)?;
+            // After the root groups, handled on the first iteration, we can process everything in parallel.
+            process_in_parallel = true;
+            main_sequence.push(processed);
+            state = new_state;
+            all_deferred_groups.extend(deferred_groups);
+        }
+
+        Ok((main_sequence, all_deferred_groups, state))
     }
 
     fn process_root_groups<TProcessed, TDeferred>(
