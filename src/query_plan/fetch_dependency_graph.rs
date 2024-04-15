@@ -194,7 +194,9 @@ pub(crate) struct DeferContext {
 ///    be shorter than its parent's, in which case the `path`, which is essentially `child-mergeAt - parent-mergeAt`, does
 ///    not make sense (or rather, it's negative, which we cannot represent)). Tl;dr, `undefined` for the `path` means that
 ///    should make no assumption and bail on any merging that uses said path.
-#[derive(Debug, Clone)]
+// PORT_NOTE: In JS this uses reference equality, not structural equality, so maybe we should just
+// do pointer comparisons?
+#[derive(Debug, Clone, PartialEq)]
 struct ParentRelation<'a> {
     parent_node_id: NodeIndex,
     path_in_parent: Option<&'a Arc<OpPath>>,
