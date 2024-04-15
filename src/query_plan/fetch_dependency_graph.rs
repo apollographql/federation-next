@@ -28,7 +28,7 @@ use petgraph::stable_graph::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::EdgeRef;
 use std::sync::Arc;
 
-type DeferredGroups = multimap::MultiMap<String, NodeIndex<u32>>;
+type DeferredGroups = multimap::MultiMap<NodeStr, NodeIndex<u32>>;
 
 /// Represents a subgraph fetch of a query plan.
 // PORT_NOTE: The JS codebase called this `FetchGroup`, but this naming didn't make it apparent that
@@ -647,15 +647,24 @@ impl FetchDependencyGraph {
 
     fn extract_children_and_deferred_dependencies(
         &self,
-        node: &FetchDependencyGraphNode,
-    ) -> Result<(Vec<FetchDependencyGraphNode>, DeferredGroups), FederationError> {
+        node_index: NodeIndex,
+    ) -> Result<(Vec<Arc<FetchDependencyGraphNode>>, DeferredGroups), FederationError> {
         let mut children = vec![];
-        let deferred_groups = DeferredGroups::new();
-        for child in node.children() {
+        let mut deferred_groups = DeferredGroups::new();
+
+        let node_children = self
+            .graph
+            .neighbors_directed(node_index, petgraph::Direction::Outgoing);
+        let node = self.node_weight(node_index)?;
+        for child_index in node_children {
+            let child = self.node_weight(child_index)?;
             if node.defer_ref == child.defer_ref {
-                children.push(child);
+                children.push(Arc::clone(child));
             } else {
-                assert!(child.deref_ref.is_some(), "{node} has deref_ref `{}`, so its child {child} cannot have a top-level defer_ref.", node.defer_ref.as_deref().unwrap());
+                let parent_defer_ref = node.defer_ref.as_deref().unwrap();
+                let Some(child_defer_ref) = &child.defer_ref else {
+                    panic!("{node} has defer_ref `{parent_defer_ref}`, so its child {child} cannot have a top-level defer_ref.");
+                };
 
                 if !node.selection_set.selection_set.selections.is_empty() {
                     let id = *node.id.get_or_insert_with(|| {
@@ -664,9 +673,9 @@ impl FetchDependencyGraph {
                         id
                     });
                     self.defer_tracking
-                        .add_dependency(&child.defer_ref, format!("{id}").into());
+                        .add_dependency(child_defer_ref, format!("{id}").into());
                 }
-                deferred_groups.insert(child.defer_ref.clone(), child);
+                deferred_groups.insert(child_defer_ref.clone(), child_index);
             }
         }
 
@@ -676,12 +685,19 @@ impl FetchDependencyGraph {
     fn process_group<TProcessed, TDeferred>(
         &mut self,
         mut processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
-        node: &FetchDependencyGraphNode,
+        node_index: NodeIndex,
         handled_conditions: Conditions,
     ) -> Result<(TProcessed, DeferredGroups, ProcessingState<'_>), FederationError> {
+        let (children, deferred_groups) =
+            self.extract_children_and_deferred_dependencies(node_index)?;
+
+        let node = self
+            .graph
+            .node_weight_mut(node_index)
+            .ok_or_else(|| FederationError::internal("Node unexpectedly missing"))?;
         let conditions = handled_conditions.update_with(&node.selection_set.conditions);
         let new_handled_conditions = conditions.merge(handled_conditions);
-        let (children, deferred_groups) = self.extract_children_and_deferred_dependencies(node)?;
+
         let processed = processor.on_node(node, &new_handled_conditions)?;
         if children.is_empty() {
             return Ok((
@@ -820,6 +836,31 @@ impl FetchDependencyGraphNode {
         _op_name: Option<String>,
     ) -> Option<super::PlanNode> {
         todo!()
+    }
+}
+
+impl std::fmt::Display for FetchDependencyGraphNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO(@goto-bus-stop): Port this properly, if necessary.
+        // The node doesn't know about its own index, so most likely this should be a separate
+        // function.
+        if self.defer_ref.is_some() {
+            write!(f, "(deferred)")?;
+        }
+        write!(f, " {}", self.subgraph_name)?;
+
+        if let Some(merge_at) = &self.merge_at {
+            // write!(
+            //     f,
+            //     "@({merge_at})[{} => {}]",
+            //     self.inputs.as_deref().unwrap_or(&Default::default()),
+            //     self.selection_set.selection_set
+            // )?;
+        } else {
+            write!(f, "[{}]", self.selection_set.selection_set)?;
+        }
+
+        Ok(())
     }
 }
 
