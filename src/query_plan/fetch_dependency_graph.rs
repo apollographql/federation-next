@@ -152,7 +152,8 @@ pub(crate) struct DeferTracking {
 }
 
 // TODO: Write docstrings
-#[derive(Debug)]
+// TODO(@goto-bus-stop): this does not seem like it should be cloned around
+#[derive(Debug, Clone)]
 pub(crate) struct DeferredInfo {
     pub(crate) label: NodeStr,
     pub(crate) path: FetchDependencyGraphPath,
@@ -714,6 +715,8 @@ impl FetchDependencyGraph {
         let mut children = vec![];
         let mut deferred_groups = DeferredGroups::new();
 
+        let mut defer_dependencies = vec![];
+
         let node_children = self
             .graph
             .neighbors_directed(node_index, petgraph::Direction::Outgoing);
@@ -723,7 +726,7 @@ impl FetchDependencyGraph {
             if node.defer_ref == child.defer_ref {
                 children.push(child_index);
             } else {
-                let parent_defer_ref = node.defer_ref.as_deref().unwrap();
+                let parent_defer_ref = node.defer_ref.as_ref().unwrap();
                 let Some(child_defer_ref) = &child.defer_ref else {
                     panic!("{node} has defer_ref `{parent_defer_ref}`, so its child {child} cannot have a top-level defer_ref.");
                 };
@@ -731,12 +734,14 @@ impl FetchDependencyGraph {
                 if !node.selection_set.selection_set.selections.is_empty() {
                     // TODO(@goto-bus-stop): This should handle `id` being `None`
                     let id = node.id.unwrap();
-                    // TODO(@goto-bus-stop): Seems bad to do this here
-                    self.defer_tracking
-                        .add_dependency(child_defer_ref, format!("{id}").into());
+                    defer_dependencies.push((child_defer_ref.clone(), format!("{id}").into()));
                 }
                 deferred_groups.insert(child_defer_ref.clone(), child_index);
             }
+        }
+
+        for (defer_ref, dependency) in defer_dependencies {
+            self.defer_tracking.add_dependency(&defer_ref, dependency);
         }
 
         Ok((children, deferred_groups))
@@ -950,6 +955,8 @@ impl FetchDependencyGraph {
         // still create `DeferNode` and `DeferredNode` in those case so that the execution can at least defer the sending of
         // the response back (future handling of defer-passthrough will also piggy-back on this).
         let mut all_deferred: Vec<TDeferred> = vec![];
+        // TODO(@goto-bus-stop): this clone looks expensive and could be avoided with a refactor
+        let defers_in_current = defers_in_current.into_iter().cloned().collect::<Vec<_>>();
         for defer in defers_in_current {
             let groups = all_deferred_groups
                 .get_vec(&defer.label)
@@ -969,7 +976,7 @@ impl FetchDependencyGraph {
             } else {
                 processor.reduce_defer(main_reduced, &defer.sub_selection, deferred_of_defer)?
             };
-            all_deferred.push(processor.reduce_deferred(defer, processed)?);
+            all_deferred.push(processor.reduce_deferred(&defer, processed)?);
         }
         Ok((main_sequence, all_deferred))
     }
@@ -1198,7 +1205,8 @@ impl DeferTracking {
                 .add_at_path(&defer_context.path_to_defer_parent, None);
         } else {
             self.top_level_deferred.insert(label.clone());
-            primary_selection.add_at_path(&defer_context.path_to_defer_parent, None);
+            // TODO(@goto-bus-stop): I don't think it makes sense to Arc this
+            Arc::make_mut(primary_selection).add_at_path(&defer_context.path_to_defer_parent, None);
         }
     }
 
