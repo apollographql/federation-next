@@ -340,17 +340,16 @@ impl QueryPlanner {
             }
         }
 
-        let _reuse_query_fragments = self.config.reuse_query_fragments;
-        /*
-            let fragments = operation.fragments;
-            if (fragments && !fragments.isEmpty() && reuseQueryFragments) {
-              // For all subgraph fetches we query `__typename` on every abstract types (see `FetchGroup.toPlanNode`) so if we want
-              // to have a chance to reuse fragments, we should make sure those fragments also query `__typename` for every abstract type.
-              fragments = addTypenameFieldForAbstractTypesInNamedFragments(fragments);
-            } else {
-              fragments = undefined;
-            }
-        */
+        let reuse_query_fragments = self.config.reuse_query_fragments;
+        if reuse_query_fragments && !document.fragments.is_empty() {
+            // For all subgraph fetches we query `__typename` on every abstract types (see `FetchDependencyGraphNode::to_plan_node`)
+            // so if we want to have a chance to reuse fragments, we should make sure those fragments also query `__typename` for
+            // every abstract type.
+            //
+            // TODO: FED-165
+            //
+            // JS: fragments = addTypenameFieldForAbstractTypesInNamedFragments(fragments);
+        }
 
         let normalized_operation = normalize_operation(
             operation,
