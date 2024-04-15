@@ -117,7 +117,7 @@ type FetchDependencyGraphPetgraph =
 ///
 /// In the graph, two fetches are connected if one of them (the parent/head) must be performed
 /// strictly before the other one (the child/tail).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct FetchDependencyGraph {
     /// The supergraph schema that generated the federated query graph.
     supergraph_schema: ValidFederationSchema,
@@ -144,7 +144,7 @@ pub(crate) struct FetchDependencyGraph {
 }
 
 // TODO: Write docstrings
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct DeferTracking {
     pub(crate) top_level_deferred: IndexSet<NodeStr>,
     pub(crate) deferred: IndexMap<NodeStr, DeferredInfo>,
@@ -152,7 +152,7 @@ pub(crate) struct DeferTracking {
 }
 
 // TODO: Write docstrings
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct DeferredInfo {
     pub(crate) label: NodeStr,
     pub(crate) path: FetchDependencyGraphPath,
