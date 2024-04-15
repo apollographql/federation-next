@@ -1,4 +1,5 @@
 use crate::error::FederationError;
+use crate::link::graphql_definition::DeferDirectiveArguments;
 use crate::query_graph::graph_path::{
     OpGraphPathContext, OpGraphPathTrigger, OpPath, OpPathElement,
 };
@@ -662,7 +663,8 @@ impl FetchDependencyGraph {
                         self.fetch_id_generation += 1;
                         id
                     });
-                    self.defer_tracking.add_dependency(&child.defer_ref, id);
+                    self.defer_tracking
+                        .add_dependency(&child.defer_ref, format!("{id}").into());
                 }
                 deferred_groups.insert(child.defer_ref.clone(), child);
             }
@@ -912,6 +914,45 @@ impl DeferTracking {
         }
     }
 
+    fn register_defer(
+        &mut self,
+        defer_context: &DeferContext,
+        defer_args: &DeferDirectiveArguments,
+        path: FetchDependencyGraphPath,
+        parent_type: CompositeTypeDefinitionPosition,
+    ) {
+        // Having the primary selection undefined means that @defer handling is actually disabled, so there's no need to track anything.
+        let Some(primary_selection) = self.primary_selection.as_mut() else {
+            return;
+        };
+
+        let label = defer_args
+            .label()
+            .expect("All @defer should have been labeled at this point");
+        let deferred_block = self.deferred.entry(label.clone()).or_insert_with(|| {
+            DeferredInfo::empty(
+                primary_selection.schema.clone(),
+                label.clone(),
+                path,
+                parent_type.clone(),
+            )
+        });
+
+        if let Some(parent_ref) = defer_context.current_defer_ref {
+            let Some(parent_info) = self.deferred.get_mut(&parent_ref) else {
+                panic!("Cannot find info for parent {parent_ref} or {label}");
+            };
+
+            parent_info.deferred.insert(label.clone());
+            parent_info
+                .sub_selection
+                .add_at_path(&defer_context.path_to_defer_parent, None);
+        } else {
+            self.top_level_deferred.insert(label.clone());
+            primary_selection.add_at_path(&defer_context.path_to_defer_parent, None);
+        }
+    }
+
     fn update_subselection(
         &mut self,
         defer_context: &DeferContext,
@@ -931,6 +972,31 @@ impl DeferTracking {
             let primary_selection = Arc::make_mut(primary_selection);
             Arc::make_mut(&mut primary_selection.selections)
                 .add_at_path(&defer_context.path_to_defer_parent, selection_set)
+        }
+    }
+
+    fn add_dependency(&mut self, label: &str, id_dependency: NodeStr) {
+        let info = self
+            .deferred
+            .get_mut(label)
+            .expect("Cannot find info for label");
+        info.dependencies.insert(id_dependency);
+    }
+}
+
+impl DeferredInfo {
+    fn empty(
+        schema: ValidFederationSchema,
+        label: NodeStr,
+        path: FetchDependencyGraphPath,
+        parent_type: CompositeTypeDefinitionPosition,
+    ) -> Self {
+        Self {
+            label,
+            path,
+            sub_selection: NormalizedSelectionSet::empty(schema, parent_type),
+            deferred: Default::default(),
+            dependencies: Default::default(),
         }
     }
 }
