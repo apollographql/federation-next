@@ -26,6 +26,7 @@ use apollo_compiler::{Node, NodeStr};
 use indexmap::{IndexMap, IndexSet};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::EdgeRef;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 type DeferredGroups = multimap::MultiMap<NodeStr, NodeIndex<u32>>;
@@ -884,13 +885,90 @@ impl FetchDependencyGraph {
 
     fn process_root_groups<TProcessed, TDeferred>(
         &mut self,
-        processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
-        root_groups: &[FetchDependencyGraphNode],
+        processor: &mut impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
+        root_groups: Vec<NodeIndex>,
         roots_are_parallel: bool,
+        current_defer_ref: Option<&str>,
         other_defer_groups: Option<&DeferredGroups>,
         handled_conditions: Conditions,
     ) -> Result<(Vec<TProcessed>, Vec<TDeferred>), FederationError> {
-        todo!()
+        let (main_sequence, deferred_groups, new_state) = self.process_root_main_groups(
+            processor,
+            ProcessingState::of_ready_nodes(root_groups),
+            roots_are_parallel,
+            &Default::default(),
+            handled_conditions,
+        )?;
+        assert!(
+            new_state.next.is_empty(),
+            "Should not have left some ready groups, but got {:?}",
+            new_state.next
+        );
+        assert!(
+            new_state.unhandled.is_empty(),
+            "Root nodes:\n{}\nshould have no remaining nodes unhandled, but got: {}",
+            "TODO", // rootGroups.map((g) => ` - ${g}`).join('\n'),
+            "TODO", // printUnhandled(new_state.unhandled)
+        );
+        let mut all_deferred_groups = other_defer_groups.cloned().unwrap_or_default();
+        all_deferred_groups.extend(deferred_groups);
+
+        // We're going to handled all @defer at our "current level" (so at top-level, that's all the non-nested @defer),
+        // and the "starting" group for those defers, if any, are in `all_deferred_groups`. However, `all_deferred_groups`
+        // can actually contains defer groups that are for "deeper" level of @defer-nestedness, and that is because
+        // sometimes the key we need to resume a nested @defer is the same than for the current @defer (or put another way,
+        // a @defer B may be nested inside @defer A "in the query", but be such that we don't need anything fetched within
+        // the deferred part of A to start the deferred part of B).
+        // Long story short, we first collect the groups from `all_deferred_groups` that are _not_ in our current level, if
+        // any, and pass those to recursion call below so they can be use a their proper level of nestedness.
+        let defers_in_current = self.defer_tracking.defers_in_parent(current_defer_ref);
+        let handled_defers_in_current = defers_in_current
+            .iter()
+            .map(|info| info.label.clone())
+            .collect::<HashSet<_>>();
+        let unhandled_defer_groups = all_deferred_groups
+            .keys()
+            .filter(|label| !handled_defers_in_current.contains(*label))
+            .map(|label| {
+                (
+                    label.clone(),
+                    all_deferred_groups.get_vec(label).cloned().unwrap(),
+                )
+            })
+            .collect::<DeferredGroups>();
+        let unhandled_defer_groups = if unhandled_defer_groups.is_empty() {
+            None
+        } else {
+            Some(unhandled_defer_groups)
+        };
+
+        // We now iterate on every @defer of said "current level". Note in particular that we may not be able to truly defer
+        // anything for some of those @defer due the limitations of what can be done at the query planner level. However, we
+        // still create `DeferNode` and `DeferredNode` in those case so that the execution can at least defer the sending of
+        // the response back (future handling of defer-passthrough will also piggy-back on this).
+        let mut all_deferred: Vec<TDeferred> = vec![];
+        for defer in defers_in_current {
+            let groups = all_deferred_groups
+                .get_vec(&defer.label)
+                .cloned()
+                .unwrap_or_default();
+            let (main_sequence_of_defer, deferred_of_defer) = self.process_root_groups(
+                processor,
+                groups,
+                true,
+                Some(&defer.label),
+                unhandled_defer_groups.as_ref(),
+                handled_conditions,
+            )?;
+            let main_reduced = processor.reduce_sequence(main_sequence_of_defer);
+            let processed = if deferred_of_defer.is_empty() {
+                main_reduced
+            } else {
+                processor.reduce_defer(main_reduced, &defer.sub_selection, deferred_of_defer)?
+            };
+            all_deferred.push(processor.reduce_deferred(defer, processed)?);
+        }
+        Ok((main_sequence, all_deferred))
     }
 
     /// Processes the "plan" represented by this query graph using the provided `processor`.
@@ -898,21 +976,22 @@ impl FetchDependencyGraph {
     /// Returns a main part and a (potentially empty) deferred part.
     pub(crate) fn process<TProcessed, TDeferred>(
         &mut self,
-        processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
+        mut processor: impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
         root_kind: SchemaRootDefinitionKind,
     ) -> Result<(TProcessed, Vec<TDeferred>), FederationError> {
         self.reduce_and_optimize();
 
         let (main_sequence, deferred) = self.process_root_groups(
-            processor,
-            self.root_nodes_by_subgraph.values(),
+            &mut processor,
+            self.root_nodes_by_subgraph.values().cloned().collect(),
             root_kind == SchemaRootDefinitionKind::Query,
+            None,
             None,
             Conditions::Boolean(true),
         )?;
 
         // Note that the return of `process_root_groups` should always be reduced as a sequence, regardless of `root_kind`.
-        // For queries, it just happens in that the majority of cases, `mainSequence` will be an array of a single element
+        // For queries, it just happens in that the majority of cases, `main_sequence` will be an array of a single element
         // and that single element will be a parallel node of the actual roots. But there is some special cases where some
         // while the roots are started in parallel, the overall plan shape is something like:
         //   Root1 \
@@ -1148,6 +1227,27 @@ impl DeferTracking {
             .get_mut(label)
             .expect("Cannot find info for label");
         info.dependencies.insert(id_dependency);
+    }
+
+    fn defers_in_parent<'s>(&'s self, parent_ref: Option<&str>) -> Vec<&'s DeferredInfo> {
+        let labels = match parent_ref {
+            Some(parent_ref) => {
+                let Some(info) = self.deferred.get(parent_ref) else {
+                    return vec![];
+                };
+                &info.deferred
+            }
+            None => &self.top_level_deferred,
+        };
+
+        labels
+            .iter()
+            .map(|label| {
+                self.deferred
+                    .get(label)
+                    .expect("referenced defer label without existing info")
+            })
+            .collect()
     }
 }
 
