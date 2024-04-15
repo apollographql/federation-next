@@ -187,7 +187,7 @@ pub(crate) struct DeferContext {
 /// Namely, this structure stores:
 /// 1. the actual parent group, and
 /// 2. the path of the group for which this is a "parent relation" into said parent (`group`). This information
-///    is maintained for the case where we want/need to merge groups into each other. One can roughly think of
+///    is maintained for the case where we want/need to merge nodes into each other. One can roughly think of
 ///    this as similar to a `mergeAt`, but that is relative to the start of `group`. It can be `undefined`, which
 ///    either mean we don't know that path or that this simply doesn't make sense (there is case where a child `mergeAt` can
 ///    be shorter than its parent's, in which case the `path`, which is essentially `child-mergeAt - parent-mergeAt`, does
@@ -199,21 +199,20 @@ struct ParentRelation<'a> {
     path_in_parent: Option<&'a Arc<OpPath>>,
 }
 
-/// UnhandledGroups is used while processing fetch groups in dependency order to track group for which
+/// UnhandledGroups is used while processing fetch nodes in dependency order to track group for which
 /// one of the parent has been processed/handled but which has other parents. So it is a set of
-/// groups and for each group which parent(s) remains to be processed before the group itself can be
+/// nodes and for each group which parent(s) remains to be processed before the group itself can be
 /// processed.
-type UnhandledGroup<'a> = (FetchDependencyGraphNode, Vec<ParentRelation<'a>>);
+type UnhandledNode<'a> = (NodeIndex, Vec<ParentRelation<'a>>);
 
-/// Used during the processing of fetch groups in dependency order.
+/// Used during the processing of fetch nodes in dependency order.
 #[derive(Debug, Clone)]
 struct ProcessingState<'a> {
-    /// Groups that can be handled (because all their parents/dependencies have been processed before).
-    // TODO(@goto-bus-stop): NodeIndex vs FetchDependencyGraphNode
-    pub next: Vec<FetchDependencyGraphNode>,
-    /// Groups that needs some parents/dependencies to be processed first because they can be themselves.
-    /// Note that we make sure that this never hold group with no "edges".
-    pub unhandled: Vec<UnhandledGroup<'a>>,
+    /// Nodes that can be handled (because all their parents/dependencies have been processed before).
+    pub next: Vec<NodeIndex>,
+    /// Nodes that needs some parents/dependencies to be processed first because they can be themselves.
+    /// Note that we make sure that this never hold node with no "edges".
+    pub unhandled: Vec<UnhandledNode<'a>>,
 }
 
 impl DeferContext {
@@ -247,25 +246,16 @@ impl<'a> ProcessingState<'a> {
         }
     }
 
-    pub fn of_ready_nodes(nodes: Vec<FetchDependencyGraphNode>) -> Self {
+    pub fn of_ready_nodes(nodes: Vec<NodeIndex>) -> Self {
         Self {
             next: nodes,
             unhandled: vec![],
         }
     }
 
-    // TODO(@goto-bus-stop): NodeIndex vs FetchDependencyGraphNode
-    pub fn for_children_of_processed_node(
-        processed: &FetchDependencyGraphNode,
-        children: Vec<FetchDependencyGraphNode>,
-    ) -> Self {
-        let mut next = vec![];
-        let mut unhandled = vec![];
-        for c in children {
-            todo!()
-        }
-        ProcessingState { next, unhandled }
-    }
+    // PORT_NOTE: `forChildrenOfProcessedNode` is moved into the FetchDependencyGraph
+    // structure as `create_state_for_children_of_processed_node`, because it needs access to the
+    // graph.
 
     pub fn merge_with<'b>(self, other: ProcessingState<'b>) -> ProcessingState {
         let mut next = self.next;
@@ -286,7 +276,7 @@ impl<'a> ProcessingState<'a> {
         ) -> Vec<ParentRelation<'a>> {
             // remove_if
 
-            let Some((index, other_edges)) = other_nodes
+            let Some((index, (_, other_edges))) = other_nodes
                 .iter()
                 .enumerate()
                 .find(|(_index, (other_index, _parents))| *other_index == node_index)
@@ -295,7 +285,7 @@ impl<'a> ProcessingState<'a> {
             };
 
             // The uhandled are the one that are unhandled on both side.
-            in_edges.retain(|e| !other_edges.contains(&e));
+            in_edges.retain(|e| !other_edges.contains(e));
             other_nodes.remove(index);
             in_edges
         }
@@ -718,7 +708,7 @@ impl FetchDependencyGraph {
     fn extract_children_and_deferred_dependencies(
         &self,
         node_index: NodeIndex,
-    ) -> Result<(Vec<Arc<FetchDependencyGraphNode>>, DeferredGroups), FederationError> {
+    ) -> Result<(Vec<NodeIndex>, DeferredGroups), FederationError> {
         let mut children = vec![];
         let mut deferred_groups = DeferredGroups::new();
 
@@ -729,7 +719,7 @@ impl FetchDependencyGraph {
         for child_index in node_children {
             let child = self.node_weight(child_index)?;
             if node.defer_ref == child.defer_ref {
-                children.push(Arc::clone(child));
+                children.push(child_index);
             } else {
                 let parent_defer_ref = node.defer_ref.as_deref().unwrap();
                 let Some(child_defer_ref) = &child.defer_ref else {
@@ -750,6 +740,29 @@ impl FetchDependencyGraph {
         }
 
         Ok((children, deferred_groups))
+    }
+
+    fn create_state_for_children_of_processed_node(
+        &self,
+        processed_index: NodeIndex,
+        children: impl IntoIterator<Item = NodeIndex>,
+    ) -> ProcessingState {
+        let mut next = vec![];
+        let mut unhandled = vec![];
+        for c in children {
+            let num_parents = self.parents_of(c).count();
+            if num_parents == 1 {
+                // The parent we have processed is the only one parent of that child; we can handle the children
+                next.push(c)
+            } else {
+                let parents = self
+                    .parents_relations_of(c)
+                    .filter(|parent| parent.parent_node_id != processed_index)
+                    .collect();
+                unhandled.push((c, parents));
+            }
+        }
+        ProcessingState { next, unhandled }
     }
 
     fn process_group<TProcessed, TDeferred>(
@@ -777,8 +790,7 @@ impl FetchDependencyGraph {
             ));
         }
 
-        // TODO Ownership of `children`
-        let state = ProcessingState::for_children_of_processed_node(node, children);
+        let state = self.create_state_for_children_of_processed_node(node_index, children);
         if state.next.is_empty() {
             Ok((
                 processor.on_conditions(&conditions, processed),
