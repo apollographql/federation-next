@@ -17,11 +17,11 @@ use crate::schema::position::{
     SchemaRootDefinitionKind, SchemaRootDefinitionPosition, TypeDefinitionPosition,
     UnionTypeDefinitionPosition,
 };
-use crate::schema::{FederationSchema, ValidFederationSchema};
-use crate::type_specification::{
-    FieldSpecification, ObjectTypeSpecification, ScalarTypeSpecification, TypeSpecification,
-    UnionTypeSpecification,
+use crate::schema::type_and_directive_specification::{
+    FieldSpecification, ObjectTypeSpecification, ScalarTypeSpecification,
+    TypeAndDirectiveSpecification, UnionTypeSpecification,
 };
+use crate::schema::{FederationSchema, ValidFederationSchema};
 use apollo_compiler::ast::FieldDefinition;
 use apollo_compiler::executable::{Field, Selection, SelectionSet};
 use apollo_compiler::schema::{

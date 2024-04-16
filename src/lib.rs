@@ -9,7 +9,6 @@ pub mod query_graph;
 pub mod query_plan;
 pub mod schema;
 pub mod subgraph;
-mod type_specification;
 
 pub use crate::api_schema::ApiSchemaOptions;
 use crate::error::FederationError;
