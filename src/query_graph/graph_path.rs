@@ -30,6 +30,7 @@ use indexmap::IndexSet;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -332,6 +333,7 @@ impl Display for OpGraphPathContext {
 /// for this by splitting a path into multiple paths (one for each possible outcome). The common
 /// example is abstract types, where we may end up taking a different edge depending on the runtime
 /// type (e.g. during type explosion).
+#[derive(Clone)]
 pub(crate) struct SimultaneousPaths(pub(crate) Vec<Arc<OpGraphPath>>);
 
 /// One of the options for an `OpenBranch` (see the documentation of that struct for details). This
@@ -340,6 +342,7 @@ pub(crate) struct SimultaneousPaths(pub(crate) Vec<Arc<OpGraphPath>>);
 // PORT_NOTE: The JS codebase stored a `ConditionResolver` callback here, but it was the same for
 // a given traversal (and cached resolution across the traversal), so we accordingly store it in
 // `QueryPlanTraversal` and pass it down when needed instead.
+#[derive(Clone)]
 pub(crate) struct SimultaneousPathsWithLazyIndirectPaths {
     pub(crate) paths: SimultaneousPaths,
     pub(crate) context: OpGraphPathContext,
@@ -2404,6 +2407,33 @@ impl SimultaneousPathsWithLazyIndirectPaths {
 
         let all_options = SimultaneousPaths::flat_cartesian_product(options_for_each_path);
         Ok(Some(self.create_lazy_options(all_options, updated_context)))
+    }
+}
+
+pub fn create_initial_options(
+    initial_path: GraphPath<OpGraphPathTrigger, Option<EdgeIndex>>,
+    initial_context: OpGraphPathContext,
+    condition_resolver: impl ConditionResolver,
+    excluded_edges: ExcludedDestinations,
+    excluded_conditions: ExcludedConditions,
+    override_conditions: HashSet<String>,
+) -> Result<Vec<SimultaneousPathsWithLazyIndirectPaths>, FederationError> {
+    let initial_paths = SimultaneousPaths::from(initial_path);
+    let mut lazy_initial_path = SimultaneousPathsWithLazyIndirectPaths::new(
+        initial_paths,
+        initial_context.clone(),
+        excluded_edges,
+        excluded_conditions,
+    );
+
+    // TODO: FED-147
+    /* is_federated_graph_root_type(initial_path.tail) */
+    #[allow(unused)]
+    if false {
+        let initial_options = lazy_initial_path.indirect_options(&initial_context, 0)?;
+        Ok(lazy_initial_path.create_lazy_options(todo!(), initial_context))
+    } else {
+        Ok(vec![lazy_initial_path])
     }
 }
 

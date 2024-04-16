@@ -1,7 +1,8 @@
 use crate::error::FederationError;
 use crate::query_graph::condition_resolver::CachingConditionResolver;
 use crate::query_graph::graph_path::{
-    ClosedBranch, ClosedPath, OpPathElement, OpenBranch, SimultaneousPaths,
+    create_initial_options, ClosedBranch, ClosedPath, ExcludedConditions, ExcludedDestinations,
+    OpGraphPath, OpGraphPathContext, OpPathElement, OpenBranch, SimultaneousPaths,
     SimultaneousPathsWithLazyIndirectPaths,
 };
 use crate::query_graph::path_tree::OpPathTree;
@@ -79,6 +80,8 @@ pub(crate) struct QueryPlanningTraversal<'a> {
     /// The closed branches that have been planned.
     closed_branches: Vec<ClosedBranch>,
     /// The best plan found as a result of query planning.
+    // TODO(@goto-bus-stop): can we remove this? `find_best_plan` consumes `self` and returns the
+    // best plan, so it should not be necessary to store it
     best_plan: Option<BestQueryPlanInfo>,
 }
 
@@ -121,24 +124,82 @@ impl<'a> QueryPlanningTraversal<'a> {
         // The ownership of `QueryPlanningParameters` is awkward and should probably be
         // refactored.
         parameters: &'a QueryPlanningParameters,
-        _selection_set: NormalizedSelectionSet,
+        selection_set: NormalizedSelectionSet,
         has_defers: bool,
         root_kind: SchemaRootDefinitionKind,
         cost_processor: FetchDependencyGraphToCostProcessor,
     ) -> Self {
+        Self::new_inner(
+            parameters,
+            selection_set,
+            0,
+            has_defers,
+            root_kind,
+            cost_processor,
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        )
+    }
+
+    fn new_inner(
+        parameters: &'a QueryPlanningParameters,
+        selection_set: NormalizedSelectionSet,
+        starting_id_generation: u64,
+        has_defers: bool,
+        root_kind: SchemaRootDefinitionKind,
+        cost_processor: FetchDependencyGraphToCostProcessor,
+        initial_context: OpGraphPathContext,
+        excluded_destinations: ExcludedDestinations,
+        excluded_conditions: ExcludedConditions,
+    ) -> Self {
         // FIXME(@goto-bus-stop): Is this correct?
         let is_top_level = parameters.head_must_be_root;
+
+        fn map_options_to_selections(
+            selection_set: NormalizedSelectionSet,
+            options: Vec<SimultaneousPathsWithLazyIndirectPaths>,
+        ) -> Vec<OpenBranchAndSelections> {
+            let open_branch = OpenBranch(options);
+            let selections = selection_set.selections.values().cloned().rev().collect();
+            vec![OpenBranchAndSelections {
+                open_branch,
+                selections,
+            }]
+        }
+
+        let initial_path = OpGraphPath::new(
+            Arc::clone(&parameters.federated_query_graph),
+            parameters.head,
+        )
+        .unwrap();
+        // TODO: Use `self.resolve_condition_plan()` once it exists. See FED-46.
+        let condition_resolver = CachingConditionResolver;
+        // TODO(@goto-bus-stop): This is parameters.override_conditions
+        // It looks like that will be mutated by the traversal?
+        // Keeping it like this for the time being.
+        let override_conditions = Default::default();
+        let initial_options = create_initial_options(
+            initial_path,
+            initial_context,
+            condition_resolver,
+            excluded_destinations,
+            excluded_conditions,
+            override_conditions,
+        )
+        .unwrap();
+
+        let open_branches = map_options_to_selections(selection_set, initial_options);
+
         Self {
             parameters,
             root_kind,
             has_defers,
-            starting_id_generation: 0,
+            starting_id_generation,
             cost_processor,
             is_top_level,
-            // TODO: Use `self.resolve_condition_plan()` once it exists. See FED-46.
             condition_resolver: CachingConditionResolver,
-            // TODO: In JS this calls `createInitialOptions()`. Do we still need that? See FED-147.
-            open_branches: Default::default(),
+            open_branches,
             closed_branches: Default::default(),
             best_plan: None,
         }
