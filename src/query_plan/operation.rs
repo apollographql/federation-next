@@ -1811,7 +1811,7 @@ impl NormalizedSelectionSet {
                     NormalizedSelectionOrSet::Selection(normalized_selection) => {
                         normalized_selection_map.insert(normalized_selection);
                     }
-                    NormalizedSelectionOrSet::SelectionSet(mut normalized_set) => {
+                    NormalizedSelectionOrSet::SelectionSet(normalized_set) => {
                         normalized_selection_map.extend(
                             normalized_set
                                 .selections
@@ -2780,13 +2780,15 @@ pub(crate) struct NamedFragments {
     fragments: Arc<IndexMap<Name, Node<NormalizedFragment>>>,
 }
 
-impl NamedFragments {
-    fn default() -> NamedFragments {
+impl Default for NamedFragments {
+    fn default() -> Self {
         NamedFragments {
             fragments: Arc::new(IndexMap::new()),
         }
     }
+}
 
+impl NamedFragments {
     pub(crate) fn new(
         fragments: &IndexMap<Name, Node<Fragment>>,
         schema: &ValidFederationSchema,
