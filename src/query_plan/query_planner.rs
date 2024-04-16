@@ -12,6 +12,7 @@ use crate::query_plan::fetch_dependency_graph_processor::FetchDependencyGraphToQ
 use crate::query_plan::operation::normalize_operation;
 use crate::query_plan::operation::NormalizedDefer;
 use crate::query_plan::operation::NormalizedSelectionSet;
+use crate::query_plan::operation::RebasedFragments;
 use crate::query_plan::query_planning_traversal::BestQueryPlanInfo;
 use crate::query_plan::query_planning_traversal::QueryPlanningParameters;
 use crate::query_plan::query_planning_traversal::QueryPlanningTraversal;
@@ -404,9 +405,7 @@ impl QueryPlanner {
         let processor = FetchDependencyGraphToQueryPlanProcessor::new(
             Arc::new(self.config.clone()),
             operation.variables.clone(),
-            // TODO(@goto-bus-stop): Use the new RebasedFragments type from
-            // https://github.com/apollographql/federation-next/pull/239
-            None, // RebasedFragments::new(normalized_operation.fragments),
+            Some(RebasedFragments::new(&normalized_operation.named_fragments)),
             operation_name.clone(),
             assigned_defer_labels,
         );
