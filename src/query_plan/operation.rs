@@ -1812,8 +1812,12 @@ impl NormalizedSelectionSet {
                         normalized_selection_map.insert(normalized_selection);
                     }
                     NormalizedSelectionOrSet::SelectionSet(mut normalized_set) => {
-                        let selections = Arc::make_mut(&mut normalized_set.selections).clone();
-                        normalized_selection_map.extend(selections.into_iter());
+                        normalized_selection_map.extend(
+                            normalized_set
+                                .selections
+                                .iter()
+                                .map(|(k, v)| (k.clone(), v.clone())),
+                        );
                     }
                 }
             }
@@ -3007,7 +3011,7 @@ impl RebasedFragments {
             .or_insert_with(|| {
                 self.original_fragments
                     .rebase_on(&subgraph.schema)
-                    .unwrap_or_else(|_| NamedFragments::default())
+                    .unwrap_or_default()
             })
             .clone()
     }
