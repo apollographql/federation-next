@@ -4,6 +4,7 @@ use apollo_compiler::executable::{
 };
 use apollo_compiler::validation::Valid;
 use apollo_compiler::{ExecutableDocument, NodeStr};
+use std::sync::Arc;
 
 pub(crate) mod conditions;
 mod display;

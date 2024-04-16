@@ -222,7 +222,7 @@ impl ValidFederationSchema {
     }
 
     pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.schema, &other.schema)
     }
 
     /// Construct a ValidFederationSchema by assuming the given FederationSchema is valid.
@@ -268,26 +268,7 @@ impl ValidFederationSchema {
         // those to the federation spec without requiring users to add those types to their @link `import`,
         // and that wouldn't be a good user experience (because most users don't really know what those types
         // are/do). And so we special case it.
-        if name.starts_with("_") {
-            return NodeStr::new(name)
-                .try_into()
-                .map_err(|_| FederationError::internal("invalid name".to_string()));
-        }
-
-        todo!()
-    }
-
-    pub(crate) fn federation_type_name_in_schema(
-        &self,
-        name: &str,
-    ) -> Result<Name, FederationError> {
-        // Currently, the types used to define the federation operations, that is _Any, _Entity and _Service,
-        // are not considered part of the federation spec, and are instead hardcoded to the names above.
-        // The reason being that there is no way to maintain backward compatbility with fed2 if we were to add
-        // those to the federation spec without requiring users to add those types to their @link `import`,
-        // and that wouldn't be a good user experience (because most users don't really know what those types
-        // are/do). And so we special case it.
-        if name.starts_with("_") {
+        if name.starts_with('_') {
             return NodeStr::new(name)
                 .try_into()
                 .map_err(|_| FederationError::internal("invalid name".to_string()));

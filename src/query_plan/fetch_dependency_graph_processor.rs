@@ -3,7 +3,6 @@ use crate::query_plan::conditions::Conditions;
 use crate::query_plan::fetch_dependency_graph::DeferredInfo;
 use crate::query_plan::fetch_dependency_graph::FetchDependencyGraph;
 use crate::query_plan::fetch_dependency_graph::FetchDependencyGraphNode;
-use crate::query_plan::operation::NamedFragments;
 use crate::query_plan::operation::{NormalizedSelectionSet, RebasedFragments};
 use crate::query_plan::ConditionNode;
 use crate::query_plan::DeferNode;
@@ -14,14 +13,11 @@ use crate::query_plan::PlanNode;
 use crate::query_plan::PrimaryDeferBlock;
 use crate::query_plan::QueryPlanCost;
 use crate::query_plan::SequenceNode;
-use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::Name;
 use apollo_compiler::executable::VariableDefinition;
 use apollo_compiler::Node;
 use apollo_compiler::NodeStr;
-use std::collections::HashMap;
 use std::collections::HashSet;
-use std::sync::Arc;
 
 /// Constant used during query plan cost computation to account for the base cost of doing a fetch,
 /// that is the fact any fetch imply some networking cost, request serialization/deserialization,
@@ -51,12 +47,6 @@ pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
     operation_name: Option<Name>,
     assigned_defer_labels: Option<HashSet<NodeStr>>,
     counter: u32,
-}
-
-#[derive(Default)]
-pub(crate) struct RebasedFragments {
-    pub(crate) query_fragments: NamedFragments,
-    by_subgraph: HashMap<NodeStr, Option<NamedFragments>>,
 }
 
 /// Computes the cost of a Plan.
@@ -122,10 +112,11 @@ where
 {
     fn on_node(
         &mut self,
+        graph: &FetchDependencyGraph,
         node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<TProcessed, FederationError> {
-        (*self).on_node(node, handled_conditions)
+        (*self).on_node(graph, node, handled_conditions)
     }
     fn on_conditions(&mut self, conditions: &Conditions, value: TProcessed) -> TProcessed {
         (*self).on_conditions(conditions, value)
@@ -456,31 +447,4 @@ fn flat_wrap_nodes(
         NodeKind::Parallel => PlanNode::Parallel(ParallelNode { nodes }),
         NodeKind::Sequence => PlanNode::Sequence(SequenceNode { nodes }),
     })
-}
-
-impl RebasedFragments {
-    pub(crate) fn new(query_fragments: NamedFragments) -> Self {
-        Self {
-            query_fragments,
-            by_subgraph: HashMap::new(),
-        }
-    }
-
-    pub(crate) fn for_subgraph(
-        &mut self,
-        subgraph_name: NodeStr,
-        subgraph_schema: &ValidFederationSchema,
-    ) -> Option<&NamedFragments> {
-        self.by_subgraph
-            .entry(subgraph_name)
-            .or_insert_with(|| Self::rebase_on(&self.query_fragments, subgraph_schema))
-            .as_ref()
-    }
-
-    fn rebase_on(
-        _query_fragments: &NamedFragments,
-        _subgraph_schema: &ValidFederationSchema,
-    ) -> Option<NamedFragments> {
-        todo!() // TODO: port JS `NamedFragments.rebaseOn` from `operations.ts`
-    }
 }

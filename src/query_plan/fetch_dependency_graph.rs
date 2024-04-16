@@ -680,11 +680,11 @@ impl FetchDependencyGraphNode {
             )?
         };
         let fragments = fragments
-            .and_then(|rebased| rebased.for_subgraph(self.subgraph_name.clone(), subgraph_schema));
+            .map(|rebased| rebased.for_subgraph(self.subgraph_name.clone(), subgraph_schema));
         operation.optimize(fragments, Default::default());
         let operation_document = operation.try_into()?;
 
-        let node = super::PlanNode::Fetch(Arc::new(super::FetchNode {
+        let node = super::PlanNode::Fetch(Box::new(super::FetchNode {
             subgraph_name: self.subgraph_name.clone(),
             id: self.id,
             variable_usages,
@@ -697,7 +697,10 @@ impl FetchDependencyGraphNode {
         }));
 
         Ok(Some(if let Some(path) = self.merge_at.clone() {
-            super::PlanNode::Flatten(Arc::new(super::FlattenNode { path, node }))
+            super::PlanNode::Flatten(super::FlattenNode {
+                path,
+                node: Box::new(node),
+            })
         } else {
             node
         }))
@@ -778,7 +781,7 @@ fn operation_for_entities_fetch(
     };
 
     if !query_type
-        .get(&subgraph_schema.schema())?
+        .get(subgraph_schema.schema())?
         .fields
         .contains_key(&ENTITIES_QUERY)
     {
@@ -823,7 +826,7 @@ fn operation_for_entities_fetch(
         variables: Arc::new(variable_definitions),
         directives: Default::default(),
         selection_set,
-        fragments: Default::default(),
+        named_fragments: Default::default(),
     })
 }
 
@@ -851,7 +854,7 @@ fn operation_for_query_fetch(
         variables: Arc::new(variable_definitions),
         directives: Default::default(),
         selection_set,
-        fragments: Default::default(),
+        named_fragments: Default::default(),
     })
 }
 

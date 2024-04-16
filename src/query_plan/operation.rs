@@ -2,7 +2,6 @@ use crate::error::FederationError;
 use crate::error::SingleFederationError;
 use crate::error::SingleFederationError::Internal;
 use crate::link::federation_spec_definition::get_federation_spec_definition_from_subgraph;
-use crate::query_graph::extract_subgraphs_from_supergraph::ValidFederationSubgraph;
 use crate::query_graph::graph_path::OpPath;
 use crate::query_graph::graph_path::OpPathElement;
 use crate::query_plan::conditions::Conditions;
@@ -20,6 +19,8 @@ use crate::query_plan::operation::normalized_selection_map::{
     NormalizedInlineFragmentSelectionValue, NormalizedSelectionMap, NormalizedSelectionValue,
 };
 use crate::query_plan::FetchDataKeyRenamer;
+use crate::query_plan::FetchDataPathElement;
+use crate::query_plan::FetchDataRewrite;
 use crate::schema::definitions::base_type;
 use crate::schema::definitions::is_composite_type;
 use crate::schema::definitions::types_can_be_merged;
@@ -38,7 +39,6 @@ use apollo_compiler::executable::{
 };
 use apollo_compiler::validation::Valid;
 use apollo_compiler::NodeStr;
-use apollo_compiler::NodeStr;
 use apollo_compiler::{name, Node};
 use indexmap::{IndexMap, IndexSet};
 use std::borrow::Cow;
@@ -49,10 +49,6 @@ use std::hash::Hash;
 use std::iter::once;
 use std::ops::Deref;
 use std::sync::{atomic, Arc};
-
-use super::fetch_dependency_graph_processor::RebasedFragments;
-use super::FetchDataPathElement;
-use super::FetchDataRewrite;
 
 pub(crate) const TYPENAME_FIELD: Name = name!("__typename");
 
@@ -72,8 +68,6 @@ impl SelectionId {
         Self(NEXT_ID.fetch_add(1, atomic::Ordering::AcqRel))
     }
 }
-
-pub(crate) type NamedFragments = IndexMap<Name, Node<NormalizedFragment>>;
 
 /// An analogue of the apollo-compiler type `Operation` with these changes:
 /// - Stores the schema that the operation is queried against.
@@ -993,8 +987,6 @@ pub(crate) mod normalized_fragment_spread_selection {
     use apollo_compiler::ast::{DirectiveList, Name};
     use std::sync::Arc;
 
-    use super::NormalizedSelectionSet;
-
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) struct NormalizedFragmentSpreadSelection {
         pub(crate) spread: NormalizedFragmentSpread,
@@ -1026,13 +1018,6 @@ pub(crate) mod normalized_fragment_spread_selection {
 
         pub(crate) fn data(&self) -> &NormalizedFragmentSpreadData {
             &self.data
-        }
-
-        pub(crate) fn with_updated_selection_set(
-            &self,
-            _selection_set: Option<NormalizedSelectionSet>,
-        ) -> Self {
-            unimplemented!("unsupported")
         }
     }
 
@@ -2510,7 +2495,10 @@ pub(crate) fn subselection_type_if_abstract(
         NormalizedSelection::FragmentSpread(fragment_spread) => {
             let fragment = fragments
                 .as_ref()
-                .and_then(|r| r.query_fragments.get(&fragment_spread.data().fragment_name))
+                .and_then(|r| {
+                    r.original_fragments
+                        .get(&fragment_spread.spread.data().fragment_name)
+                })
                 .ok_or(FederationError::SingleFederationError(
                     crate::error::SingleFederationError::InvalidGraphQL {
                         message: "missing fragment".to_string(),
@@ -2865,6 +2853,13 @@ impl NormalizedFragmentSpreadSelection {
         })
     }
 
+    pub(crate) fn with_updated_selection_set(
+        &self,
+        _selection_set: Option<NormalizedSelectionSet>,
+    ) -> Self {
+        unimplemented!("unsupported")
+    }
+
     pub(crate) fn normalize(
         &self,
         _parent_type: &CompositeTypeDefinitionPosition,
@@ -3183,7 +3178,7 @@ pub(crate) enum RebaseErrorHandlingOption {
 /// However a cloned `NamedFragments` still behaves like a deep copy:
 /// unlike in JS where we can have multiple references to a mutable map,
 /// here modifying a cloned map will leave the original unchanged.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub(crate) struct NamedFragments {
     fragments: Arc<IndexMap<Name, Node<NormalizedFragment>>>,
 }
@@ -3391,10 +3386,10 @@ impl NamedFragments {
 }
 
 pub(crate) struct RebasedFragments {
-    original_fragments: NamedFragments,
+    pub(crate) original_fragments: NamedFragments,
     // JS PORT NOTE: In JS implementation values were optional
     /// Map key: subgraph name
-    rebased_fragments: Arc<HashMap<String, NamedFragments>>,
+    rebased_fragments: Arc<HashMap<NodeStr, NamedFragments>>,
 }
 
 impl RebasedFragments {
@@ -3405,11 +3400,21 @@ impl RebasedFragments {
         }
     }
 
-    pub(crate) fn for_subgraph(&mut self, subgraph: &ValidFederationSubgraph) -> NamedFragments {
+    pub(crate) fn for_subgraph(
+        &mut self,
+        subgraph_name: impl Into<NodeStr>,
+        subgraph_schema: &ValidFederationSchema,
+    ) -> &NamedFragments {
         Arc::make_mut(&mut self.rebased_fragments)
-            .entry(subgraph.name.clone())
-            .or_insert_with(|| self.original_fragments.rebase_on(&subgraph.schema))
-            .clone()
+            .entry(subgraph_name.into())
+            .or_insert_with(|| self.original_fragments.rebase_on(subgraph_schema))
+    }
+
+    fn rebase_on(
+        _query_fragments: &NamedFragments,
+        _subgraph_schema: &ValidFederationSchema,
+    ) -> Option<NamedFragments> {
+        todo!() // TODO: port JS `NamedFragments.rebaseOn` from `operations.ts`
     }
 }
 
@@ -3570,14 +3575,6 @@ impl From<&NormalizedFragmentSpreadSelection> for FragmentSpread {
                 .deref()
                 .to_owned(),
         }
-    }
-}
-
-impl TryFrom<NormalizedOperation> for Valid<executable::ExecutableDocument> {
-    type Error = FederationError;
-
-    fn try_from(_value: NormalizedOperation) -> Result<Self, Self::Error> {
-        todo!()
     }
 }
 
