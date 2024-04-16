@@ -2087,17 +2087,23 @@ impl OpGraphPath {
             let ty = valid_schema
                 .get_type(implem.type_name.clone())?
                 .get(schema)?;
-            if !ty.directives().iter().any(|d| d.name == "key") {
+            if !ty.directives().has("key") {
                 continue;
             }
-            if !field.directives.iter().any(|d| d.name == "shareable") {
+            if !field.directives.has("shareable") {
                 continue;
             }
-            if is_leaf_type(schema, &field.name) {
+            let base_ty_name = field.ty.inner_named_type();
+            if is_leaf_type(schema, base_ty_name) {
                 continue;
             }
             match schema.get_object(&field.name) {
-                Some(ty) if ty.fields.values().all(|ty| is_leaf_type(schema, &ty.name)) => {
+                Some(ty)
+                    if ty
+                        .fields
+                        .values()
+                        .all(|ty| is_leaf_type(schema, ty.ty.inner_named_type())) =>
+                {
                     for node in self.graph.nodes_for_type(&ty.name).cloned() {
                         let node = &self.graph.graph()[node];
                         let tail = &self.graph.graph()[self.tail];
@@ -2115,8 +2121,7 @@ impl OpGraphPath {
                         };
                         let node_ty_name = node_ty.type_name();
                         let node_ty = valid_schema.get_type(node_ty_name.clone())?.get(schema)?;
-                        let is_shareable =
-                            node_ty.directives().iter().any(|d| d.name == "shareable");
+                        let is_shareable = node_ty.directives().has("shareable");
                         let fields = match node_ty {
                             ExtendedType::Object(obj) => obj.fields.keys(),
                             ExtendedType::Interface(int) => int.fields.keys(),
@@ -2130,7 +2135,7 @@ impl OpGraphPath {
                         if !is_shareable || !fields.clone().any(|f| f == &itf.field_name) {
                             continue;
                         }
-                        if node_ty_name != &itf.type_name {
+                        if node_ty_name != base_ty_name {
                             // We have a genuine difference here, so we should explore type explosion.
                             return Ok(true);
                         }
