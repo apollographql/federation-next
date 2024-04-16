@@ -581,6 +581,8 @@ fn compute_plan_for_defer_conditionals(
 
 #[cfg(test)]
 mod tests {
+    use crate::subgraph::Subgraph;
+
     use super::*;
 
     const TEST_SUPERGRAPH: &str = r#"
@@ -738,5 +740,64 @@ type User
         let plan = planner.build_query_plan(&document, None).unwrap();
 
         todo!("{plan}");
+    }
+
+    #[test]
+    fn bypass_planner_for_single_subgraph() {
+        let a = Subgraph::parse_and_expand(
+            "A",
+            "https://A",
+            r#"
+            type Query {
+                a: A
+            }
+            type A {
+                b: B
+            }
+            type B {
+                x: Int
+                y: String
+            }
+        "#,
+        )
+        .unwrap();
+        let subgraphs = vec![&a];
+        let supergraph = Supergraph::compose(subgraphs).unwrap();
+        let api_schema = supergraph.to_api_schema(Default::default()).unwrap();
+
+        let document = ExecutableDocument::parse_and_validate(
+            api_schema.schema(),
+            r#"
+            {
+                a {
+                    b {
+                        x
+                        y
+                    }
+                }
+            }
+            "#,
+            "",
+        )
+        .unwrap();
+
+        let mut config = QueryPlannerConfig::default();
+        config.debug.bypass_planner_for_single_subgraph = true;
+        let planner = QueryPlanner::new(&supergraph, config).unwrap();
+        let plan = planner.build_query_plan(&document, None).unwrap();
+        insta::assert_snapshot!(plan, @r###"
+        QueryPlan {
+          Fetch(service: "A") {
+            {
+                    a {
+                b {
+                  x
+                  y
+                }
+              }
+            }
+          }
+        }
+        "###);
     }
 }

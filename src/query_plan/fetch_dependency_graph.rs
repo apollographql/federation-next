@@ -204,9 +204,8 @@ struct ParentRelation {
 }
 
 /// UnhandledNode is used while processing fetch nodes in dependency order to track nodes for which
-/// one of the parents has been processed/handled but which has other parents. So it is a set of
-/// nodes and for each group which parent(s) remains to be processed before the group itself can be
-/// processed.
+/// one of the parents has been processed/handled but which has other parents.
+// PORT_NOTE: In JS this was a tuple
 #[derive(Debug)]
 struct UnhandledNode {
     /// The unhandled node.
