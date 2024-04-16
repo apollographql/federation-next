@@ -724,9 +724,9 @@ type User
     #[test]
     fn it_does_not_crash() {
         let supergraph = Supergraph::new(TEST_SUPERGRAPH).unwrap();
-        let _planner = QueryPlanner::new(&supergraph, Default::default()).unwrap();
+        let planner = QueryPlanner::new(&supergraph, Default::default()).unwrap();
 
-        let _document = ExecutableDocument::parse_and_validate(
+        let document = ExecutableDocument::parse_and_validate(
             supergraph
                 .to_api_schema(Default::default())
                 .unwrap()
@@ -735,7 +735,8 @@ type User
             "operation.graphql",
         )
         .unwrap();
-        // This part does crash :)
-        // let _plan = planner.build_query_plan(&document, None).unwrap();
+        let plan = planner.build_query_plan(&document, None).unwrap();
+
+        todo!("{plan}");
     }
 }
