@@ -19,15 +19,6 @@ pub(crate) enum WrapperType {
     NonNull(Type),
 }
 
-pub(crate) fn base_type(ty: &Type) -> &NamedType {
-    match ty {
-        Type::Named(named) => named,
-        Type::NonNullNamed(named) => named,
-        Type::List(ty) => base_type(ty),
-        Type::NonNullList(ty) => base_type(ty),
-    }
-}
-
 pub(crate) fn is_abstract_type(ty: TypeDefinitionPosition) -> bool {
     matches!(
         ty,

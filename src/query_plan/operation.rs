@@ -21,7 +21,6 @@ use crate::query_plan::operation::normalized_selection_map::{
 use crate::query_plan::FetchDataKeyRenamer;
 use crate::query_plan::FetchDataPathElement;
 use crate::query_plan::FetchDataRewrite;
-use crate::schema::definitions::base_type;
 use crate::schema::definitions::is_composite_type;
 use crate::schema::definitions::types_can_be_merged;
 use crate::schema::definitions::AbstractType;
@@ -2360,7 +2359,7 @@ fn compute_aliases_for_non_merging_fields(
                 {
                     // If the type is non-composite, then we're all set. But if it is composite, we need to record the sub-selection to that response name
                     // as we need to "recurse" on the merged of both the previous and this new field.
-                    if is_composite_type(base_type(field_type), schema.schema())? {
+                    if is_composite_type(field_type.inner_named_type(), schema.schema())? {
                         match &previous.selections {
                             None => {
                                 return Err(SingleFederationError::Internal {
