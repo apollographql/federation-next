@@ -726,14 +726,19 @@ type User
     #[test]
     fn it_does_not_crash() {
         let supergraph = Supergraph::new(TEST_SUPERGRAPH).unwrap();
+        let api_schema = supergraph.to_api_schema(Default::default()).unwrap();
         let planner = QueryPlanner::new(&supergraph, Default::default()).unwrap();
 
         let document = ExecutableDocument::parse_and_validate(
-            supergraph
-                .to_api_schema(Default::default())
-                .unwrap()
-                .schema(),
-            "{ userById(id: 1) { name email } }",
+            api_schema.schema(),
+            r#"
+            {
+                userById(id: 1) {
+                    name
+                    email
+                }
+            }
+            "#,
             "operation.graphql",
         )
         .unwrap();
