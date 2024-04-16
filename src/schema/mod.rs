@@ -220,10 +220,18 @@ impl ValidFederationSchema {
         Self::new_assume_valid(schema).map_err(|(_schema, error)| error)
     }
 
+    /// Construct a ValidFederationSchema by assuming the given FederationSchema is valid.
     fn new_assume_valid(
         mut schema: FederationSchema,
     ) -> Result<ValidFederationSchema, (FederationSchema, FederationError)> {
-        let subgraph_metadata = match compute_subgraph_metadata(Valid::assume_valid_ref(&schema)) {
+        // Populating subgraph metadata requires a mutable FederationSchema, while computing the subgraph
+        // metadata requires a valid FederationSchema. Since valid schemas are immutable, we have
+        // to jump through some hoops here. We already assume that `schema` is valid GraphQL, so we
+        // can temporarily create a `&Valid<FederationSchema>` to compute subgraph metadata, drop
+        // that reference to populate the metadata, and finally move the finished FederationSchema into
+        // the ValidFederationSchema instance.
+        let valid_schema = Valid::assume_valid_ref(&schema);
+        let subgraph_metadata = match compute_subgraph_metadata(valid_schema) {
             Ok(metadata) => metadata.map(Box::new),
             Err(err) => return Err((schema, err)),
         };
