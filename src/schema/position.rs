@@ -582,6 +582,26 @@ pub(crate) enum FieldDefinitionPosition {
     Union(UnionTypenameFieldDefinitionPosition),
 }
 
+impl PartialEq<CompositeTypeDefinitionPosition> for FieldDefinitionPosition {
+    fn eq(&self, other: &CompositeTypeDefinitionPosition) -> bool {
+        match (self, other) {
+            (
+                FieldDefinitionPosition::Object(ty_a),
+                CompositeTypeDefinitionPosition::Object(ty_b),
+            ) => ty_a.type_name == ty_b.type_name,
+            (
+                FieldDefinitionPosition::Interface(ty_a),
+                CompositeTypeDefinitionPosition::Interface(ty_b),
+            ) => ty_a.type_name == ty_b.type_name,
+            (
+                FieldDefinitionPosition::Union(ty_a),
+                CompositeTypeDefinitionPosition::Union(ty_b),
+            ) => ty_a.type_name == ty_b.type_name,
+            _ => false,
+        }
+    }
+}
+
 impl Debug for FieldDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -2731,6 +2751,10 @@ pub(crate) struct InterfaceTypeDefinitionPosition {
 }
 
 impl InterfaceTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn field(&self, field_name: Name) -> InterfaceFieldDefinitionPosition {
         InterfaceFieldDefinitionPosition {
             type_name: self.type_name.clone(),
@@ -3964,6 +3988,10 @@ pub(crate) struct UnionTypeDefinitionPosition {
 }
 
 impl UnionTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn introspection_typename_field(&self) -> UnionTypenameFieldDefinitionPosition {
         UnionTypenameFieldDefinitionPosition {
             type_name: self.type_name.clone(),
