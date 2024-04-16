@@ -3,7 +3,7 @@ members = [".", "cli"]
 
 [package]
 name = "apollo-federation"
-version = "0.0.10"
+version = "0.0.11"
 authors = ["The Apollo GraphQL Contributors"]
 edition = "2021"
 description = "Apollo Federation"
@@ -13,7 +13,7 @@ license = "Elastic-2.0"
 autotests = false                                               # Integration tests are modules of tests/main.rs
 
 [workspace.dependencies]
-apollo-compiler = "=1.0.0-beta.15"
+apollo-compiler = "=1.0.0-beta.16"
 
 [dependencies]
 apollo-compiler.workspace = true
