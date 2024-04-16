@@ -539,10 +539,10 @@ fn compute_plan_internal(
                 None => local_main,
             };
             deferred.extend(local_deferred);
-            let new_selection = dependency_graph.defer_tracking.primary_selection.as_deref();
+            let new_selection = dependency_graph.defer_tracking.primary_selection;
             match primary_selection.as_mut() {
-                Some(selection) => selection.merge_into(new_selection.into_iter())?,
-                None => primary_selection = new_selection.cloned(),
+                Some(selection) => selection.merge_into(new_selection.iter())?,
+                None => primary_selection = new_selection,
             }
         }
         (main, deferred, primary_selection)
@@ -551,11 +551,7 @@ fn compute_plan_internal(
 
         let (main, deferred) = dependency_graph.process(&mut parameters.processor, root_kind)?;
         // XXX(@goto-bus-stop) Maybe `.defer_tracking` should be on the return value of `process()`..?
-        let primary_selection = dependency_graph
-            .defer_tracking
-            .primary_selection
-            .as_deref()
-            .cloned();
+        let primary_selection = dependency_graph.defer_tracking.primary_selection;
 
         (main, deferred, primary_selection)
     };

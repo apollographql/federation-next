@@ -169,7 +169,7 @@ pub(crate) struct FetchDependencyGraph {
 pub(crate) struct DeferTracking {
     pub(crate) top_level_deferred: IndexSet<NodeStr>,
     pub(crate) deferred: IndexMap<NodeStr, DeferredInfo>,
-    pub(crate) primary_selection: Option<Arc<NormalizedSelectionSet>>,
+    pub(crate) primary_selection: Option<NormalizedSelectionSet>,
 }
 
 // TODO: Write docstrings
@@ -1201,13 +1201,8 @@ impl DeferTracking {
         Self {
             top_level_deferred: Default::default(),
             deferred: Default::default(),
-            primary_selection: root_type_for_defer.map(|type_position| {
-                Arc::new(NormalizedSelectionSet {
-                    schema: schema.clone(),
-                    type_position,
-                    selections: Default::default(),
-                })
-            }),
+            primary_selection: root_type_for_defer
+                .map(|type_position| NormalizedSelectionSet::empty(schema.clone(), type_position)),
         }
     }
 
@@ -1246,8 +1241,7 @@ impl DeferTracking {
                 .add_at_path(&defer_context.path_to_defer_parent, None);
         } else {
             self.top_level_deferred.insert(label.clone());
-            // TODO(@goto-bus-stop): I don't think it makes sense to Arc this
-            Arc::make_mut(primary_selection).add_at_path(&defer_context.path_to_defer_parent, None);
+            primary_selection.add_at_path(&defer_context.path_to_defer_parent, None);
         }
     }
 
@@ -1267,9 +1261,7 @@ impl DeferTracking {
                 .sub_selection
                 .add_at_path(&defer_context.path_to_defer_parent, selection_set)
         } else {
-            let primary_selection = Arc::make_mut(primary_selection);
-            Arc::make_mut(&mut primary_selection.selections)
-                .add_at_path(&defer_context.path_to_defer_parent, selection_set)
+            primary_selection.add_at_path(&defer_context.path_to_defer_parent, selection_set)
         }
     }
 
