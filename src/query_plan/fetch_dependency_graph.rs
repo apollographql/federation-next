@@ -203,14 +203,20 @@ struct ParentRelation {
     path_in_parent: Option<Arc<OpPath>>,
 }
 
-/// UnhandledGroups is used while processing fetch nodes in dependency order to track group for which
-/// one of the parent has been processed/handled but which has other parents. So it is a set of
+/// UnhandledNode is used while processing fetch nodes in dependency order to track nodes for which
+/// one of the parents has been processed/handled but which has other parents. So it is a set of
 /// nodes and for each group which parent(s) remains to be processed before the group itself can be
 /// processed.
-type UnhandledNode = (NodeIndex, Vec<ParentRelation>);
+#[derive(Debug)]
+struct UnhandledNode {
+    /// The unhandled node.
+    node: NodeIndex,
+    /// The parents that still need to be processed before the node can be.
+    unhandled_parents: Vec<ParentRelation>,
+}
 
 /// Used during the processing of fetch nodes in dependency order.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ProcessingState {
     /// Nodes that can be handled (because all their parents/dependencies have been processed before).
     pub next: Vec<NodeIndex>,
@@ -276,32 +282,37 @@ impl ProcessingState {
         fn merge_remains_and_remove_if_found(
             node_index: NodeIndex,
             mut in_edges: Vec<ParentRelation>,
-            other_nodes: &mut Vec<(NodeIndex, Vec<ParentRelation>)>,
+            other_nodes: &mut Vec<UnhandledNode>,
         ) -> Vec<ParentRelation> {
-            // remove_if
-
-            let Some((index, (_, other_edges))) = other_nodes
+            let Some((other_index, other_node)) = other_nodes
                 .iter()
                 .enumerate()
-                .find(|(_index, (other_index, _parents))| *other_index == node_index)
+                .find(|(_index, other)| other.node == node_index)
             else {
                 return in_edges;
             };
 
             // The uhandled are the one that are unhandled on both side.
-            in_edges.retain(|e| !other_edges.contains(e));
-            other_nodes.remove(index);
+            in_edges.retain(|e| !other_node.unhandled_parents.contains(e));
+            other_nodes.remove(other_index);
             in_edges
         }
 
-        for (g, edges) in self.unhandled {
-            let new_edges = merge_remains_and_remove_if_found(g, edges, &mut that_unhandled);
+        for node in self.unhandled {
+            let new_edges = merge_remains_and_remove_if_found(
+                node.node,
+                node.unhandled_parents,
+                &mut that_unhandled,
+            );
             if new_edges.is_empty() {
-                if !next.contains(&g) {
-                    next.push(g)
+                if !next.contains(&node.node) {
+                    next.push(node.node)
                 }
             } else {
-                unhandled.push((g, new_edges));
+                unhandled.push(UnhandledNode {
+                    node: node.node,
+                    unhandled_parents: new_edges,
+                });
             }
         }
 
@@ -314,7 +325,11 @@ impl ProcessingState {
     pub fn update_for_processed_nodes(self, processed: &[NodeIndex]) -> ProcessingState {
         let mut next = self.next;
         let mut unhandled = vec![];
-        for (g, mut edges) in self.unhandled {
+        for UnhandledNode {
+            node: g,
+            unhandled_parents: mut edges,
+        } in self.unhandled
+        {
             // Remove any of the processed nodes from the unhandled edges of that node.
             // And if there is no remaining edge, that node can be handled.
             edges.retain(|edge| processed.contains(&edge.parent_node_id));
@@ -323,7 +338,10 @@ impl ProcessingState {
                     next.push(g);
                 }
             } else {
-                unhandled.push((g, edges));
+                unhandled.push(UnhandledNode {
+                    node: g,
+                    unhandled_parents: edges,
+                });
             }
         }
         ProcessingState { next, unhandled }
@@ -764,7 +782,10 @@ impl FetchDependencyGraph {
                     .parents_relations_of(c)
                     .filter(|parent| parent.parent_node_id != processed_index)
                     .collect();
-                unhandled.push((c, parents));
+                unhandled.push(UnhandledNode {
+                    node: c,
+                    unhandled_parents: parents,
+                });
             }
         }
         ProcessingState { next, unhandled }
