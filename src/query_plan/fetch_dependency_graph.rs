@@ -27,7 +27,7 @@ use indexmap::{IndexMap, IndexSet};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::EdgeRef;
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU64, Arc, OnceLock};
 
 type DeferredGroups = multimap::MultiMap<NodeStr, NodeIndex<u32>>;
 
@@ -60,7 +60,9 @@ pub(crate) struct FetchDependencyGraphNode {
     /// path at which to merge in the data for this particular fetch.
     merge_at: Option<Vec<FetchDataPathElement>>,
     /// The fetch ID generation, if one is necessary (used when handling `@defer`).
-    id: Option<u64>,
+    ///
+    /// This can be treated as an Option using `OnceLock::get()`.
+    id: OnceLock<u64>,
     /// The label of the `@defer` block this fetch appears in, if any.
     defer_ref: Option<NodeStr>,
     /// The cached computation of this fetch's cost, if it's been done already.
@@ -71,6 +73,25 @@ pub(crate) struct FetchDependencyGraphNode {
     /// If true, then we skip an expensive computation during `is_useless()`. (This partially
     /// caches that computation.)
     is_known_useful: bool,
+}
+
+/// Safely generate IDs for fetch dependency nodes without mutable access.
+#[derive(Debug)]
+struct FetchIdGenerator {
+    next: AtomicU64,
+}
+impl FetchIdGenerator {
+    /// Create an ID generator, starting at the given value.
+    pub fn new(start_at: u64) -> Self {
+        Self {
+            next: AtomicU64::new(start_at),
+        }
+    }
+
+    /// Generate a new ID for a fetch dependency node.
+    pub fn next_id(&self) -> u64 {
+        self.next.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -135,7 +156,7 @@ pub(crate) struct FetchDependencyGraph {
     /// The initial fetch ID generation (used when handling `@defer`).
     starting_id_generation: u64,
     /// The current fetch ID generation (used when handling `@defer`).
-    fetch_id_generation: u64,
+    fetch_id_generation: FetchIdGenerator,
     /// Whether this fetch dependency graph has undergone a transitive reduction.
     is_reduced: bool,
     /// Whether this fetch dependency graph has undergone optimization (e.g. transitive reduction,
@@ -218,8 +239,10 @@ struct UnhandledNode {
 #[derive(Debug)]
 struct ProcessingState {
     /// Nodes that can be handled (because all their parents/dependencies have been processed before).
+    // TODO(@goto-bus-stop): Seems like this should be an IndexSet, since every `.push()` first
+    // checks if the element is unique.
     pub next: Vec<NodeIndex>,
-    /// Nodes that needs some parents/dependencies to be processed first because they can be themselves.
+    /// Nodes that needs some parents/dependencies to be processed first before they can be themselves.
     /// Note that we make sure that this never hold node with no "edges".
     pub unhandled: Vec<UnhandledNode>,
 }
@@ -269,7 +292,6 @@ impl ProcessingState {
     pub fn merge_with(self, other: ProcessingState) -> ProcessingState {
         let mut next = self.next;
         for g in other.next {
-            // TODO(@goto-bus-stop): Seems like this should be a Set
             if !next.contains(&g) {
                 next.push(g);
             }
@@ -410,7 +432,7 @@ impl FetchDependencyGraph {
             graph: Default::default(),
             root_nodes_by_subgraph: Default::default(),
             starting_id_generation,
-            fetch_id_generation: starting_id_generation,
+            fetch_id_generation: FetchIdGenerator::new(starting_id_generation),
             is_reduced: false,
             is_optimized: false,
         }
@@ -488,7 +510,7 @@ impl FetchDependencyGraph {
                 .then(|| Arc::new(FetchInputs::empty(self.supergraph_schema.clone()))),
             input_rewrites: Default::default(),
             merge_at,
-            id: None,
+            id: OnceLock::new(),
             defer_ref,
             cached_cost: None,
             must_preserve_selection_set: false,
@@ -749,8 +771,7 @@ impl FetchDependencyGraph {
                 };
 
                 if !node.selection_set.selection_set.selections.is_empty() {
-                    // TODO(@goto-bus-stop): This should handle `id` being `None`
-                    let id = node.id.unwrap();
+                    let id = *node.id.get_or_init(|| self.fetch_id_generation.next_id());
                     defer_dependencies.push((child_defer_ref.clone(), format!("{id}").into()));
                 }
                 deferred_groups.insert(child_defer_ref.clone(), child_index);
