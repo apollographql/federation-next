@@ -182,7 +182,7 @@ impl<'a> QueryPlanningTraversal<'a> {
         let initial_options = create_initial_options(
             initial_path,
             initial_context,
-            condition_resolver,
+            &condition_resolver,
             excluded_destinations,
             excluded_conditions,
             override_conditions,
@@ -198,7 +198,7 @@ impl<'a> QueryPlanningTraversal<'a> {
             starting_id_generation,
             cost_processor,
             is_top_level,
-            condition_resolver: CachingConditionResolver,
+            condition_resolver,
             open_branches,
             closed_branches: Default::default(),
             best_plan: None,

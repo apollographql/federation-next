@@ -2413,10 +2413,10 @@ impl SimultaneousPathsWithLazyIndirectPaths {
 pub fn create_initial_options(
     initial_path: GraphPath<OpGraphPathTrigger, Option<EdgeIndex>>,
     initial_context: OpGraphPathContext,
-    condition_resolver: impl ConditionResolver,
+    _condition_resolver: &impl ConditionResolver,
     excluded_edges: ExcludedDestinations,
     excluded_conditions: ExcludedConditions,
-    override_conditions: HashSet<String>,
+    _override_conditions: HashSet<String>,
 ) -> Result<Vec<SimultaneousPathsWithLazyIndirectPaths>, FederationError> {
     let initial_paths = SimultaneousPaths::from(initial_path);
     let mut lazy_initial_path = SimultaneousPathsWithLazyIndirectPaths::new(
@@ -2426,9 +2426,10 @@ pub fn create_initial_options(
         excluded_conditions,
     );
 
-    // TODO: FED-147
-    /* is_federated_graph_root_type(initial_path.tail) */
+    // TODO(@goto-bus-stop): FED-147: This would need access to the graph so it can look up the
+    // node because `tail` is just a node index in the Rust codebase
     #[allow(unused)]
+    // if is_federated_graph_root_type(initial_path.tail)
     if false {
         let initial_options = lazy_initial_path.indirect_options(&initial_context, 0)?;
         Ok(lazy_initial_path.create_lazy_options(todo!(), initial_context))
