@@ -1,4 +1,8 @@
-use apollo_compiler::NodeStr;
+use apollo_compiler::{ast::Directive, schema::Component, NodeStr};
+
+use crate::{error::FederationError, schema::ValidFederationSchema};
+
+use super::definition::SOURCE_DIRECTIVE_NAME_IN_SPEC;
 
 /// An upstream connector source
 ///
@@ -17,6 +21,37 @@ pub(crate) struct Source {
 
     /// Common HTTP options
     pub(crate) http: HTTPSource,
+}
+
+impl Source {
+    // Grab an iterator over all of the sources for this schema
+    // TODO: What should the error type be here?
+    pub(crate) fn all_from_schema(
+        schema: &ValidFederationSchema,
+    ) -> Result<impl Iterator<Item = Source>, FederationError> {
+        let sources = schema
+            .referencers()
+            .get_directive(&SOURCE_DIRECTIVE_NAME_IN_SPEC)?;
+
+        // Extract the sources from the schema definition and map them to their `Source` equivalent
+        // TODO: We can safely assume that a source can only be on a schema, right?
+        let Some(schema_def) = &sources.schema else {
+            return Ok(todo!());
+        };
+        let sources = schema_def
+            .get(schema.schema())
+            .directives
+            .iter()
+            .filter(|directive| directive.name == SOURCE_DIRECTIVE_NAME_IN_SPEC)
+            .map(Source::from_directive);
+
+        Ok(sources)
+    }
+
+    /// Creates a [Source] from its equivalent GraphQL directive
+    fn from_directive(directive: &Component<Directive>) -> Self {
+        todo!()
+    }
 }
 
 /// Common HTTP options for a connector [Source]
@@ -63,8 +98,9 @@ mod tests {
 
     use crate::{
         schema::ValidFederationSchema,
-        sources::connect::spec::definition::{
-            CONNECT_DIRECTIVE_NAME_IN_SPEC, SOURCE_DIRECTIVE_NAME_IN_SPEC,
+        sources::connect::spec::{
+            definition::{CONNECT_DIRECTIVE_NAME_IN_SPEC, SOURCE_DIRECTIVE_NAME_IN_SPEC},
+            directives::Source,
         },
     };
 
@@ -224,6 +260,23 @@ mod tests {
                 posts: [Post] @connect(source: "json", http: {GET: "/posts"}, selection: "id title body")
             "###
         );
+    }
+
+    #[test]
+    fn it_extracts_at_source() {
+        // Convert the schema into its validated form
+        let schema_str = format!(
+            "{}\n{}\n{}",
+            SUBGRAPH_SCHEMA, TEMP_FEDERATION_DEFINITIONS, TEMP_SOURCE_DEFINITIONS
+        );
+        let schema = Schema::parse(schema_str, "schema.graphql").unwrap();
+        let schema = ValidFederationSchema::new(schema.validate().unwrap()).unwrap();
+
+        // Try to extract the source information from the valid schema
+        let sources: Vec<_> = Source::all_from_schema(&schema).unwrap().collect();
+        insta::assert_debug_snapshot!(sources, @"");
+
+        assert!(false, "nope");
     }
 
     static TEMP_FEDERATION_DEFINITIONS: &str = r#"
