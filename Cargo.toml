@@ -3,7 +3,7 @@ members = [".", "cli"]
 
 [package]
 name = "apollo-federation"
-version = "0.0.9"
+version = "0.0.11"
 authors = ["The Apollo GraphQL Contributors"]
 edition = "2021"
 description = "Apollo Federation"
@@ -12,9 +12,14 @@ repository = "https://github.com/apollographql/federation-next"
 license = "Elastic-2.0"
 autotests = false                                               # Integration tests are modules of tests/main.rs
 
+[workspace.dependencies]
+apollo-compiler = "=1.0.0-beta.16"
+
 [dependencies]
-apollo-compiler = "=1.0.0-beta.14"
-time = { version = "0.3.34", default-features = false, features = ["local-offset"] }
+apollo-compiler.workspace = true
+time = { version = "0.3.34", default-features = false, features = [
+    "local-offset",
+] }
 derive_more = "0.99.17"
 indexmap = "2.1.0"
 lazy_static = "1.4.0"
