@@ -27,11 +27,15 @@ pub(crate) enum Condition {
 /// is negated in the condition. We maintain the invariant that there's at least one condition (i.e.
 /// the map is non-empty), and that there's at most one condition per variable name.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct VariableConditions(pub(crate) Arc<IndexMap<Name, bool>>);
+pub(crate) struct VariableConditions(Arc<IndexMap<Name, bool>>);
 
 impl VariableConditions {
-    pub fn new() -> Self {
-        Self(Arc::new(IndexMap::new()))
+    /// Construct VariableConditions from a non-empty map of variable names.
+    ///
+    /// In release builds, this does not check if the map is empty.
+    pub fn new_unchecked(map: IndexMap<Name, bool>) -> Self {
+        debug_assert!(!map.is_empty());
+        Self(Arc::new(map))
     }
 
     pub fn insert(&mut self, name: Name, negated: bool) {
@@ -57,6 +61,10 @@ impl VariableConditions {
     pub fn is_negated(&self, name: &str) -> Option<bool> {
         self.0.get(name).copied()
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&Name, bool)> {
+        self.0.iter().map(|(name, &negated)| (name, negated))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,8 +74,18 @@ pub(crate) struct VariableCondition {
 }
 
 impl Conditions {
+    /// Create conditions from a map of variable conditions. If empty, instead returns a
+    /// condition that always evaluates to true.
+    fn from_variables(map: IndexMap<Name, bool>) -> Self {
+        if map.is_empty() {
+            Self::Boolean(true)
+        } else {
+            Self::Variables(VariableConditions::new_unchecked(map))
+        }
+    }
+
     pub(crate) fn from_directives(directives: &DirectiveList) -> Result<Self, FederationError> {
-        let mut variables = None;
+        let mut variables = IndexMap::new();
         for directive in directives {
             let negated = match directive.name.as_str() {
                 "include" => false,
@@ -84,22 +102,17 @@ impl Conditions {
                 Value::Boolean(false) if !negated => return Ok(Self::Boolean(false)),
                 Value::Boolean(true) if negated => return Ok(Self::Boolean(false)),
                 Value::Boolean(_) => {}
-                Value::Variable(name) => {
-                    match variables
-                        .get_or_insert_with(IndexMap::new)
-                        .entry(name.clone())
-                    {
-                        Entry::Occupied(entry) => {
-                            let previous_negated = *entry.get();
-                            if previous_negated != negated {
-                                return Ok(Self::Boolean(false));
-                            }
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(negated);
+                Value::Variable(name) => match variables.entry(name.clone()) {
+                    Entry::Occupied(entry) => {
+                        let previous_negated = *entry.get();
+                        if previous_negated != negated {
+                            return Ok(Self::Boolean(false));
                         }
                     }
-                }
+                    Entry::Vacant(entry) => {
+                        entry.insert(negated);
+                    }
+                },
                 _ => {
                     return Err(FederationError::internal(format!(
                         "expected boolean or variable `if` argument, got {value}",
@@ -107,17 +120,14 @@ impl Conditions {
                 }
             }
         }
-        Ok(match variables {
-            Some(map) => Self::Variables(VariableConditions(Arc::new(map))),
-            None => Self::Boolean(true),
-        })
+        Ok(Self::from_variables(variables))
     }
 
     pub(crate) fn update_with(&self, new_conditions: &Self) -> Self {
         match (new_conditions, self) {
             (Conditions::Boolean(_), _) | (_, Conditions::Boolean(_)) => new_conditions.clone(),
             (Conditions::Variables(new_conditions), Conditions::Variables(handled_conditions)) => {
-                let mut filtered = VariableConditions::new();
+                let mut filtered = IndexMap::new();
                 for (cond_name, &cond_negated) in new_conditions.0.iter() {
                     match handled_conditions.is_negated(&cond_name) {
                         Some(handled_cond) if cond_negated != handled_cond => {
@@ -127,14 +137,12 @@ impl Conditions {
                             return Conditions::Boolean(false);
                         }
                         Some(_) => {}
-                        None => filtered.insert(cond_name.clone(), cond_negated),
+                        None => {
+                            filtered.insert(cond_name.clone(), cond_negated);
+                        }
                     }
                 }
-                if filtered.is_empty() {
-                    Conditions::Boolean(true)
-                } else {
-                    Conditions::Variables(filtered)
-                }
+                Self::from_variables(filtered)
             }
         }
     }
