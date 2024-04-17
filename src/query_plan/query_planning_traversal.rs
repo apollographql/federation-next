@@ -80,8 +80,8 @@ pub(crate) struct QueryPlanningTraversal<'a> {
     /// The closed branches that have been planned.
     closed_branches: Vec<ClosedBranch>,
     /// The best plan found as a result of query planning.
-    // TODO(@goto-bus-stop): can we remove this? `find_best_plan` consumes `self` and returns the
-    // best plan, so it should not be necessary to store it
+    // TODO(@goto-bus-stop): FED-164: can we remove this? `find_best_plan` consumes `self` and returns the
+    // best plan, so it should not be necessary to store it.
     best_plan: Option<BestQueryPlanInfo>,
 }
 

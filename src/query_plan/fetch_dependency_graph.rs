@@ -235,6 +235,19 @@ struct UnhandledNode {
     unhandled_parents: Vec<ParentRelation>,
 }
 
+impl std::fmt::Display for UnhandledNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} (missing: [", self.node.index(),)?;
+        for (i, unhandled) in self.unhandled_parents.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", unhandled.parent_node_id.index())?;
+        }
+        write!(f, "])")
+    }
+}
+
 /// Used during the processing of fetch nodes in dependency order.
 #[derive(Debug)]
 struct ProcessingState {
@@ -958,9 +971,13 @@ impl FetchDependencyGraph {
         );
         assert!(
             new_state.unhandled.is_empty(),
-            "Root nodes:\n{}\nshould have no remaining nodes unhandled, but got: {}",
-            "TODO", // rootGroups.map((g) => ` - ${g}`).join('\n'),
-            "TODO", // printUnhandled(new_state.unhandled)
+            "Root nodes should have no remaining nodes unhandled, but got: [{}]",
+            new_state
+                .unhandled
+                .iter()
+                .map(|unhandled| unhandled.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
         );
         let mut all_deferred_groups = other_defer_groups.cloned().unwrap_or_default();
         all_deferred_groups.extend(deferred_groups);
