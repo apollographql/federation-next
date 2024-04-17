@@ -172,10 +172,6 @@ impl<'a> QueryPlanningTraversal<'a> {
             parameters.head,
         )
         .unwrap();
-        // TODO(@goto-bus-stop): This is parameters.override_conditions
-        // It looks like that will be mutated by the traversal?
-        // Keeping it like this for the time being.
-        let override_conditions = Default::default();
         // In JS this is done *inside* create_initial_options, which would require awareness of the
         // query graph.
         let tail = parameters
@@ -188,7 +184,6 @@ impl<'a> QueryPlanningTraversal<'a> {
             initial_context,
             excluded_destinations,
             excluded_conditions,
-            override_conditions,
         )?;
 
         let open_branches = map_options_to_selections(selection_set, initial_options);

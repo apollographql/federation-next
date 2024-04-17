@@ -30,7 +30,6 @@ use indexmap::IndexSet;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::cmp::Ordering;
-use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -2418,13 +2417,17 @@ impl SimultaneousPathsWithLazyIndirectPaths {
 
 // PORT_NOTE: JS passes a ConditionResolver here, we do not: see port note for
 // `SimultaneousPathsWithLazyIndirectPaths`
+// TODO(@goto-bus-stop): JS passes `override_conditions` here and maintains stores
+// references to it in the created paths. AFAICT override conditions
+// are shared mutable state among different query graphs, so having references to
+// it in many structures would require synchronization. We should likely pass it as
+// an argument to exactly the functionality that uses it.
 pub fn create_initial_options(
     initial_path: GraphPath<OpGraphPathTrigger, Option<EdgeIndex>>,
     initial_type: &QueryGraphNodeType,
     initial_context: OpGraphPathContext,
     excluded_edges: ExcludedDestinations,
     excluded_conditions: ExcludedConditions,
-    _override_conditions: HashSet<String>,
 ) -> Result<Vec<SimultaneousPathsWithLazyIndirectPaths>, FederationError> {
     let initial_paths = SimultaneousPaths::from(initial_path);
     let mut lazy_initial_path = SimultaneousPathsWithLazyIndirectPaths::new(
@@ -2432,7 +2435,6 @@ pub fn create_initial_options(
         initial_context.clone(),
         excluded_edges,
         excluded_conditions,
-        // _override_conditions,
     );
 
     if initial_type.is_federated_root_type() {
