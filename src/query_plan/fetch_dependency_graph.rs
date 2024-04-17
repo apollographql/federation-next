@@ -29,7 +29,7 @@ use petgraph::visit::EdgeRef;
 use std::collections::HashSet;
 use std::sync::{atomic::AtomicU64, Arc, OnceLock};
 
-type DeferredGroups = multimap::MultiMap<NodeStr, NodeIndex<u32>>;
+type DeferredNodes = multimap::MultiMap<NodeStr, NodeIndex<u32>>;
 
 /// Represents a subgraph fetch of a query plan.
 // PORT_NOTE: The JS codebase called this `FetchGroup`, but this naming didn't make it apparent that
@@ -67,7 +67,7 @@ pub(crate) struct FetchDependencyGraphNode {
     defer_ref: Option<NodeStr>,
     /// The cached computation of this fetch's cost, if it's been done already.
     cached_cost: Option<QueryPlanCost>,
-    /// Set in some code paths to indicate that the selection set of the group should not be
+    /// Set in some code paths to indicate that the selection set of the node should not be
     /// optimized away even if it "looks" useless.
     must_preserve_selection_set: bool,
     /// If true, then we skip an expensive computation during `is_useless()`. (This partially
@@ -120,7 +120,7 @@ pub(crate) struct FetchInputs {
 #[derive(Debug, Clone)]
 pub(crate) struct FetchDependencyGraphEdge {
     /// The operation path of the tail/child _relative_ to the head/parent. This information is
-    /// maintained in case we want/need to merge groups into each other. This can roughly be thought
+    /// maintained in case we want/need to merge nodes into each other. This can roughly be thought
     /// of similarly to `merge_at` in the child, but is relative to the start of the parent. It can
     /// be `None`, which either means we don't know the relative path, or that the concept of a
     /// relative path doesn't make sense in this context. E.g. there is case where a child's
@@ -206,15 +206,15 @@ pub(crate) struct DeferContext {
     is_part_of_query: bool,
 }
 
-/// Used in `FetchDependencyGraph` to store, for a given group, information about one of its parent.
+/// Used in `FetchDependencyGraph` to store, for a given node, information about one of its parent.
 /// Namely, this structure stores:
-/// 1. the actual parent group, and
-/// 2. the path of the group for which this is a "parent relation" into said parent (`group`). This information
+/// 1. the actual parent node index, and
+/// 2. the path of the node for which this is a "parent relation" into said parent (`path_in_parent`). This information
 ///    is maintained for the case where we want/need to merge nodes into each other. One can roughly think of
-///    this as similar to a `mergeAt`, but that is relative to the start of `group`. It can be `undefined`, which
+///    this as similar to a `mergeAt`, but that is relative to the start of `group`. It can be `None`, which
 ///    either mean we don't know that path or that this simply doesn't make sense (there is case where a child `mergeAt` can
 ///    be shorter than its parent's, in which case the `path`, which is essentially `child-mergeAt - parent-mergeAt`, does
-///    not make sense (or rather, it's negative, which we cannot represent)). Tl;dr, `undefined` for the `path` means that
+///    not make sense (or rather, it's negative, which we cannot represent)). Tl;dr, `None` for the `path` means that
 ///    should make no assumption and bail on any merging that uses said path.
 // PORT_NOTE: In JS this uses reference equality, not structural equality, so maybe we should just
 // do pointer comparisons?
@@ -663,7 +663,7 @@ impl FetchDependencyGraph {
         }
         assert!(
             !self.graph.contains_edge(child_id, parent_node_id),
-            "Group {parent_node_id:?} is a child of {child_id:?}: \
+            "Node {parent_node_id:?} is a child of {child_id:?}: \
              adding it as parent would create a cycle"
         );
         self.on_modification();
@@ -733,7 +733,7 @@ impl FetchDependencyGraph {
 
     /// Do a transitive reduction (https://en.wikipedia.org/wiki/Transitive_reduction) of the graph
     /// We keep it simple and do a DFS from each vertex. The complexity is not amazing, but dependency
-    /// graphs between fetch groups will almost surely never be huge and query planning performance
+    /// graphs between fetch nodes will almost surely never be huge and query planning performance
     /// is not paramount so this is almost surely "good enough".
     fn reduce(&mut self) {
         if std::mem::replace(&mut self.is_reduced, true) {
@@ -763,9 +763,9 @@ impl FetchDependencyGraph {
     fn extract_children_and_deferred_dependencies(
         &mut self,
         node_index: NodeIndex,
-    ) -> Result<(Vec<NodeIndex>, DeferredGroups), FederationError> {
+    ) -> Result<(Vec<NodeIndex>, DeferredNodes), FederationError> {
         let mut children = vec![];
-        let mut deferred_groups = DeferredGroups::new();
+        let mut deferred_nodes = DeferredNodes::new();
 
         let mut defer_dependencies = vec![];
 
@@ -790,7 +790,7 @@ impl FetchDependencyGraph {
                     let id = *node.id.get_or_init(|| self.fetch_id_generation.next_id());
                     defer_dependencies.push((child_defer_ref.clone(), format!("{id}").into()));
                 }
-                deferred_groups.insert(child_defer_ref.clone(), child_index);
+                deferred_nodes.insert(child_defer_ref.clone(), child_index);
             }
         }
 
@@ -798,7 +798,7 @@ impl FetchDependencyGraph {
             self.defer_tracking.add_dependency(&defer_ref, dependency);
         }
 
-        Ok((children, deferred_groups))
+        Ok((children, deferred_nodes))
     }
 
     fn create_state_for_children_of_processed_node(
@@ -827,13 +827,13 @@ impl FetchDependencyGraph {
         ProcessingState { next, unhandled }
     }
 
-    fn process_group<TProcessed, TDeferred>(
+    fn process_node<TProcessed, TDeferred>(
         &mut self,
         processor: &mut impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
         node_index: NodeIndex,
         handled_conditions: Conditions,
-    ) -> Result<(TProcessed, DeferredGroups, ProcessingState), FederationError> {
-        let (children, deferred_groups) =
+    ) -> Result<(TProcessed, DeferredNodes, ProcessingState), FederationError> {
+        let (children, deferred_nodes) =
             self.extract_children_and_deferred_dependencies(node_index)?;
 
         let node = self
@@ -847,7 +847,7 @@ impl FetchDependencyGraph {
         if children.is_empty() {
             return Ok((
                 processor.on_conditions(&conditions, processed),
-                deferred_groups,
+                deferred_nodes,
                 ProcessingState::empty(),
             ));
         }
@@ -856,17 +856,17 @@ impl FetchDependencyGraph {
         if state.next.is_empty() {
             Ok((
                 processor.on_conditions(&conditions, processed),
-                deferred_groups,
+                deferred_nodes,
                 state,
             ))
         } else {
             // We process the ready children as if they were parallel roots (they are from `processed`
             // in a way), and then just add process at the beginning of the sequence.
-            let (main_sequence, all_deferred_groups, new_state) = self.process_root_main_groups(
+            let (main_sequence, all_deferred_nodes, new_state) = self.process_root_main_nodes(
                 processor,
                 state,
                 true,
-                &deferred_groups,
+                &deferred_nodes,
                 new_handled_conditions,
             )?;
 
@@ -874,31 +874,31 @@ impl FetchDependencyGraph {
                 processor.reduce_sequence(std::iter::once(processed).chain(main_sequence));
             Ok((
                 processor.on_conditions(&conditions, reduced_sequence),
-                all_deferred_groups,
+                all_deferred_nodes,
                 new_state,
             ))
         }
     }
 
-    fn process_groups<TProcessed, TDeferred>(
+    fn process_nodes<TProcessed, TDeferred>(
         &mut self,
         processor: &mut impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
         state: ProcessingState,
         process_in_parallel: bool,
         handled_conditions: Conditions,
-    ) -> Result<(TProcessed, DeferredGroups, ProcessingState), FederationError> {
+    ) -> Result<(TProcessed, DeferredNodes, ProcessingState), FederationError> {
         let mut processed_nodes = vec![];
-        let mut all_deferred_groups = DeferredGroups::new();
+        let mut all_deferred_nodes = DeferredNodes::new();
         let mut new_state = ProcessingState {
             next: Default::default(),
             unhandled: state.unhandled,
         };
         for node_index in &state.next {
-            let (main, deferred_groups, state_after_group) =
-                self.process_group(processor, *node_index, handled_conditions.clone())?;
+            let (main, deferred_nodes, state_after_node) =
+                self.process_node(processor, *node_index, handled_conditions.clone())?;
             processed_nodes.push(main);
-            all_deferred_groups.extend(deferred_groups);
-            new_state = new_state.merge_with(state_after_group);
+            all_deferred_nodes.extend(deferred_nodes);
+            new_state = new_state.merge_with(state_after_node);
         }
 
         // Note that `new_state` is the merged result of everything after each individual node (anything that was _only_ depending
@@ -913,60 +913,60 @@ impl FetchDependencyGraph {
         };
         Ok((
             processed,
-            all_deferred_groups,
+            all_deferred_nodes,
             new_state.update_for_processed_nodes(&state.next),
         ))
     }
 
-    /// Process the "main" (non-deferred) groups starting at the provided roots. The deferred groups are collected
+    /// Process the "main" (non-deferred) nodes starting at the provided roots. The deferred nodes are collected
     /// by this method but not otherwise processed.
-    fn process_root_main_groups<TProcessed, TDeferred>(
+    fn process_root_main_nodes<TProcessed, TDeferred>(
         &mut self,
         processor: &mut impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
         mut state: ProcessingState,
         roots_are_parallel: bool,
-        initial_deferred_groups: &DeferredGroups,
+        initial_deferred_nodes: &DeferredNodes,
         handled_conditions: Conditions,
-    ) -> Result<(Vec<TProcessed>, DeferredGroups, ProcessingState), FederationError> {
+    ) -> Result<(Vec<TProcessed>, DeferredNodes, ProcessingState), FederationError> {
         let mut main_sequence = vec![];
-        let mut all_deferred_groups = initial_deferred_groups.clone();
+        let mut all_deferred_nodes = initial_deferred_nodes.clone();
         let mut process_in_parallel = roots_are_parallel;
         while !state.next.is_empty() {
-            let (processed, deferred_groups, new_state) = self.process_groups(
+            let (processed, deferred_nodes, new_state) = self.process_nodes(
                 processor,
                 state,
                 process_in_parallel,
                 handled_conditions.clone(),
             )?;
-            // After the root groups, handled on the first iteration, we can process everything in parallel.
+            // After the root nodes, handled on the first iteration, we can process everything in parallel.
             process_in_parallel = true;
             main_sequence.push(processed);
             state = new_state;
-            all_deferred_groups.extend(deferred_groups);
+            all_deferred_nodes.extend(deferred_nodes);
         }
 
-        Ok((main_sequence, all_deferred_groups, state))
+        Ok((main_sequence, all_deferred_nodes, state))
     }
 
-    fn process_root_groups<TProcessed, TDeferred>(
+    fn process_root_nodes<TProcessed, TDeferred>(
         &mut self,
         processor: &mut impl FetchDependencyGraphProcessor<TProcessed, TDeferred>,
-        root_groups: Vec<NodeIndex>,
+        root_nodes: Vec<NodeIndex>,
         roots_are_parallel: bool,
         current_defer_ref: Option<&str>,
-        other_defer_groups: Option<&DeferredGroups>,
+        other_defer_nodes: Option<&DeferredNodes>,
         handled_conditions: Conditions,
     ) -> Result<(Vec<TProcessed>, Vec<TDeferred>), FederationError> {
-        let (main_sequence, deferred_groups, new_state) = self.process_root_main_groups(
+        let (main_sequence, deferred_nodes, new_state) = self.process_root_main_nodes(
             processor,
-            ProcessingState::of_ready_nodes(root_groups),
+            ProcessingState::of_ready_nodes(root_nodes),
             roots_are_parallel,
             &Default::default(),
             handled_conditions.clone(),
         )?;
         assert!(
             new_state.next.is_empty(),
-            "Should not have left some ready groups, but got {:?}",
+            "Should not have left some ready nodes, but got {:?}",
             new_state.next
         );
         assert!(
@@ -979,36 +979,36 @@ impl FetchDependencyGraph {
                 .collect::<Vec<_>>()
                 .join(", "),
         );
-        let mut all_deferred_groups = other_defer_groups.cloned().unwrap_or_default();
-        all_deferred_groups.extend(deferred_groups);
+        let mut all_deferred_nodes = other_defer_nodes.cloned().unwrap_or_default();
+        all_deferred_nodes.extend(deferred_nodes);
 
         // We're going to handled all @defer at our "current level" (so at top-level, that's all the non-nested @defer),
-        // and the "starting" group for those defers, if any, are in `all_deferred_groups`. However, `all_deferred_groups`
-        // can actually contains defer groups that are for "deeper" level of @defer-nestedness, and that is because
+        // and the "starting" node for those defers, if any, are in `all_deferred_nodes`. However, `all_deferred_nodes`
+        // can actually contains defer nodes that are for "deeper" level of @defer-nestedness, and that is because
         // sometimes the key we need to resume a nested @defer is the same than for the current @defer (or put another way,
         // a @defer B may be nested inside @defer A "in the query", but be such that we don't need anything fetched within
         // the deferred part of A to start the deferred part of B).
-        // Long story short, we first collect the groups from `all_deferred_groups` that are _not_ in our current level, if
+        // Long story short, we first collect the nodes from `all_deferred_nodes` that are _not_ in our current level, if
         // any, and pass those to recursion call below so they can be use a their proper level of nestedness.
         let defers_in_current = self.defer_tracking.defers_in_parent(current_defer_ref);
         let handled_defers_in_current = defers_in_current
             .iter()
             .map(|info| info.label.clone())
             .collect::<HashSet<_>>();
-        let unhandled_defer_groups = all_deferred_groups
+        let unhandled_defer_nodes = all_deferred_nodes
             .keys()
             .filter(|label| !handled_defers_in_current.contains(*label))
             .map(|label| {
                 (
                     label.clone(),
-                    all_deferred_groups.get_vec(label).cloned().unwrap(),
+                    all_deferred_nodes.get_vec(label).cloned().unwrap(),
                 )
             })
-            .collect::<DeferredGroups>();
-        let unhandled_defer_groups = if unhandled_defer_groups.is_empty() {
+            .collect::<DeferredNodes>();
+        let unhandled_defer_node = if unhandled_defer_nodes.is_empty() {
             None
         } else {
-            Some(unhandled_defer_groups)
+            Some(unhandled_defer_nodes)
         };
 
         // We now iterate on every @defer of said "current level". Note in particular that we may not be able to truly defer
@@ -1019,16 +1019,16 @@ impl FetchDependencyGraph {
         // TODO(@goto-bus-stop): this clone looks expensive and could be avoided with a refactor
         let defers_in_current = defers_in_current.into_iter().cloned().collect::<Vec<_>>();
         for defer in defers_in_current {
-            let groups = all_deferred_groups
+            let nodes = all_deferred_nodes
                 .get_vec(&defer.label)
                 .cloned()
                 .unwrap_or_default();
-            let (main_sequence_of_defer, deferred_of_defer) = self.process_root_groups(
+            let (main_sequence_of_defer, deferred_of_defer) = self.process_root_nodes(
                 processor,
-                groups,
+                nodes,
                 true,
                 Some(&defer.label),
-                unhandled_defer_groups.as_ref(),
+                unhandled_defer_node.as_ref(),
                 handled_conditions.clone(),
             )?;
             let main_reduced = processor.reduce_sequence(main_sequence_of_defer);
@@ -1052,7 +1052,7 @@ impl FetchDependencyGraph {
     ) -> Result<(TProcessed, Vec<TDeferred>), FederationError> {
         self.reduce_and_optimize();
 
-        let (main_sequence, deferred) = self.process_root_groups(
+        let (main_sequence, deferred) = self.process_root_nodes(
             &mut processor,
             self.root_nodes_by_subgraph.values().cloned().collect(),
             root_kind == SchemaRootDefinitionKind::Query,
@@ -1061,7 +1061,7 @@ impl FetchDependencyGraph {
             Conditions::Boolean(true),
         )?;
 
-        // Note that the return of `process_root_groups` should always be reduced as a sequence, regardless of `root_kind`.
+        // Note that the return of `process_root_nodes` should always be reduced as a sequence, regardless of `root_kind`.
         // For queries, it just happens in that the majority of cases, `main_sequence` will be an array of a single element
         // and that single element will be a parallel node of the actual roots. But there is some special cases where some
         // while the roots are started in parallel, the overall plan shape is something like:
