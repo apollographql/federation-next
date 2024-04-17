@@ -29,7 +29,11 @@ use petgraph::visit::EdgeRef;
 use std::collections::HashSet;
 use std::sync::{atomic::AtomicU64, Arc, OnceLock};
 
-type DeferredNodes = multimap::MultiMap<NodeStr, NodeIndex<u32>>;
+/// Represents the value of a `@defer(label:)` argument.
+type DeferRef = NodeStr;
+
+/// Map of defer labels to nodes of the fetch dependency graph.
+type DeferredNodes = multimap::MultiMap<DeferRef, NodeIndex<u32>>;
 
 /// Represents a subgraph fetch of a query plan.
 // PORT_NOTE: The JS codebase called this `FetchGroup`, but this naming didn't make it apparent that
@@ -64,7 +68,7 @@ pub(crate) struct FetchDependencyGraphNode {
     /// This can be treated as an Option using `OnceLock::get()`.
     id: OnceLock<u64>,
     /// The label of the `@defer` block this fetch appears in, if any.
-    defer_ref: Option<NodeStr>,
+    defer_ref: Option<DeferRef>,
     /// The cached computation of this fetch's cost, if it's been done already.
     cached_cost: Option<QueryPlanCost>,
     /// Set in some code paths to indicate that the selection set of the node should not be
@@ -167,8 +171,8 @@ pub(crate) struct FetchDependencyGraph {
 // TODO: Write docstrings
 #[derive(Debug)]
 pub(crate) struct DeferTracking {
-    pub(crate) top_level_deferred: IndexSet<NodeStr>,
-    pub(crate) deferred: IndexMap<NodeStr, DeferredInfo>,
+    pub(crate) top_level_deferred: IndexSet<DeferRef>,
+    pub(crate) deferred: IndexMap<DeferRef, DeferredInfo>,
     pub(crate) primary_selection: Option<NormalizedSelectionSet>,
 }
 
@@ -176,11 +180,11 @@ pub(crate) struct DeferTracking {
 // TODO(@goto-bus-stop): this does not seem like it should be cloned around
 #[derive(Debug, Clone)]
 pub(crate) struct DeferredInfo {
-    pub(crate) label: NodeStr,
+    pub(crate) label: DeferRef,
     pub(crate) path: FetchDependencyGraphPath,
     pub(crate) sub_selection: NormalizedSelectionSet,
-    pub(crate) deferred: IndexSet<NodeStr>,
-    pub(crate) dependencies: IndexSet<NodeStr>,
+    pub(crate) deferred: IndexSet<DeferRef>,
+    pub(crate) dependencies: IndexSet<DeferRef>,
 }
 
 // TODO: Write docstrings
@@ -200,9 +204,9 @@ pub(crate) struct FetchDependencyGraphNodePath {
 
 #[derive(Debug, Clone)]
 pub(crate) struct DeferContext {
-    current_defer_ref: Option<NodeStr>,
+    current_defer_ref: Option<DeferRef>,
     path_to_defer_parent: Arc<OpPath>,
-    active_defer_ref: Option<NodeStr>,
+    active_defer_ref: Option<DeferRef>,
     is_part_of_query: bool,
 }
 
@@ -486,7 +490,7 @@ impl FetchDependencyGraph {
         root_kind: SchemaRootDefinitionKind,
         parent_type: &ObjectTypeDefinitionPosition,
         merge_at: Option<Vec<FetchDataPathElement>>,
-        defer_ref: Option<NodeStr>,
+        defer_ref: Option<DeferRef>,
     ) -> Result<NodeIndex, FederationError> {
         let has_inputs = false;
         self.new_node(
@@ -506,7 +510,7 @@ impl FetchDependencyGraph {
         has_inputs: bool,
         root_kind: SchemaRootDefinitionKind,
         merge_at: Option<Vec<FetchDataPathElement>>,
-        defer_ref: Option<NodeStr>,
+        defer_ref: Option<DeferRef>,
     ) -> Result<NodeIndex, FederationError> {
         let subgraph_schema = self
             .federated_query_graph
@@ -576,7 +580,7 @@ impl FetchDependencyGraph {
         type_: &CompositeTypeDefinitionPosition,
         parent: ParentRelation,
         conditions_nodes: &IndexSet<NodeIndex>,
-        defer_ref: Option<&NodeStr>,
+        defer_ref: Option<&DeferRef>,
     ) -> Result<NodeIndex, FederationError> {
         // Let's look if we can reuse a node we have, that is an existing child of the parent that:
         // 1. is for the same subgraph
@@ -629,7 +633,7 @@ impl FetchDependencyGraph {
         &mut self,
         subgraph_name: &NodeStr,
         merge_at: Vec<FetchDataPathElement>,
-        defer_ref: Option<NodeStr>,
+        defer_ref: Option<DeferRef>,
     ) -> Result<NodeIndex, FederationError> {
         let entity_type = self
             .federated_query_graph
@@ -1355,7 +1359,7 @@ impl DeferTracking {
         }
     }
 
-    fn add_dependency(&mut self, label: &str, id_dependency: NodeStr) {
+    fn add_dependency(&mut self, label: &str, id_dependency: DeferRef) {
         let info = self
             .deferred
             .get_mut(label)
@@ -1388,7 +1392,7 @@ impl DeferTracking {
 impl DeferredInfo {
     fn empty(
         schema: ValidFederationSchema,
-        label: NodeStr,
+        label: DeferRef,
         path: FetchDependencyGraphPath,
         parent_type: CompositeTypeDefinitionPosition,
     ) -> Self {
