@@ -2074,16 +2074,15 @@ impl OpGraphPath {
         let comp_type_pos = CompositeTypeDefinitionPosition::Interface(itf.parent());
         let valid_schema = self.graph.schema()?;
         let schema = valid_schema.schema();
-        let Some(field) = schema
-            .get_interface(&itf.type_name)
-            .and_then(|n| n.fields.get(&itf.field_name))
-        else {
-            // Should not happen
-            return Err(FederationError::internal(
-                "Unable to find interface field ({itf}) in schema: {schema}",
-            ));
-        };
         for implem in valid_schema.possible_runtime_types(comp_type_pos)? {
+            let field = schema
+                .get_interface(&implem.type_name)
+                .and_then(|n| n.fields.get(&itf.field_name))
+                .ok_or_else(|| {
+                    FederationError::internal(
+                        "Unable to find interface field ({itf}) in schema: {schema}",
+                    )
+                })?;
             let ty = valid_schema
                 .get_type(implem.type_name.clone())?
                 .get(schema)?;
@@ -2097,16 +2096,16 @@ impl OpGraphPath {
             if is_leaf_type(schema, base_ty_name) {
                 continue;
             }
-            match schema.get_object(&field.name) {
+            match schema.get_object(base_ty_name) {
                 Some(ty)
                     if ty
                         .fields
                         .values()
-                        .all(|ty| is_leaf_type(schema, ty.ty.inner_named_type())) =>
+                        .all(|f| is_leaf_type(schema, f.ty.inner_named_type())) =>
                 {
-                    for node in self.graph.nodes_for_type(&ty.name).cloned() {
-                        let node = &self.graph.graph()[node];
-                        let tail = &self.graph.graph()[self.tail];
+                    for node in self.graph.nodes_for_type(&ty.name) {
+                        let node = self.graph.node_weight(node)?;
+                        let tail = self.graph.node_weight(self.tail)?;
                         if node.source == tail.source {
                             continue;
                         }
@@ -2121,10 +2120,9 @@ impl OpGraphPath {
                         };
                         let node_ty_name = node_ty.type_name();
                         let node_ty = valid_schema.get_type(node_ty_name.clone())?.get(schema)?;
-                        let is_shareable = node_ty.directives().has("shareable");
                         let fields = match node_ty {
-                            ExtendedType::Object(obj) => obj.fields.keys(),
-                            ExtendedType::Interface(int) => int.fields.keys(),
+                            ExtendedType::Object(obj) => obj.fields.iter(),
+                            ExtendedType::Interface(int) => int.fields.iter(),
                             _ => {
                                 return Err(FederationError::internal(format!(
                                     "{implem} is an object in {} but a {} in {}",
@@ -2132,14 +2130,17 @@ impl OpGraphPath {
                                 )))
                             }
                         };
-                        if !is_shareable || !fields.clone().any(|f| f == &itf.field_name) {
+                        let Some((_, field)) = fields.clone().find(|f| f.0 == &itf.field_name) else {
+                            continue
+                        };
+                        if field.directives.iter().any(|d| d.name == "shareable") {
                             continue;
                         }
                         if node_ty_name != base_ty_name {
                             // We have a genuine difference here, so we should explore type explosion.
                             return Ok(true);
                         }
-                        let names: HashSet<_> = fields.collect();
+                        let names: HashSet<_> = fields.map(|f| f.0).collect();
                         if !ty.fields.iter().all(|f| names.contains(&f.0)) {
                             // Same, we have a genuine difference.
                             return Ok(true);

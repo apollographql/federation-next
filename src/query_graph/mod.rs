@@ -355,11 +355,11 @@ impl QueryGraph {
     pub(crate) fn nodes_for_type<'c, 'b: 'c, 'a: 'c>(
         &'a self,
         name: &'b Name,
-    ) -> impl 'c + Iterator<Item = &'a NodeIndex> {
+    ) -> impl 'c + Iterator<Item = NodeIndex> {
         self.types_to_nodes_by_source
             .values()
             .filter_map(|tys| tys.get(name))
-            .flat_map(|vs| vs.iter())
+            .flat_map(|vs| vs.iter().cloned())
     }
 
     pub(crate) fn types_to_nodes(
