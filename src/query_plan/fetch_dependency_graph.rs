@@ -767,7 +767,10 @@ impl FetchDependencyGraph {
             } else {
                 let parent_defer_ref = node.defer_ref.as_ref().unwrap();
                 let Some(child_defer_ref) = &child.defer_ref else {
-                    panic!("{node} has defer_ref `{parent_defer_ref}`, so its child {child} cannot have a top-level defer_ref.");
+                    panic!("{} has defer_ref `{parent_defer_ref}`, so its child {} cannot have a top-level defer_ref.",
+                        node.display(node_index),
+                        child.display(child_index),
+                    );
                 };
 
                 if !node.selection_set.selection_set.selections.is_empty() {
@@ -1093,30 +1096,76 @@ impl FetchDependencyGraphNode {
     ) -> Option<super::PlanNode> {
         todo!()
     }
-}
 
-impl std::fmt::Display for FetchDependencyGraphNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO(@goto-bus-stop): Port this properly, if necessary.
-        // The node doesn't know about its own index, so most likely this should be a separate
-        // function.
-        if self.defer_ref.is_some() {
-            write!(f, "(deferred)")?;
+    /// Return a concise display for this node. The node index in the graph
+    /// must be passed in externally.
+    fn display(&self, index: NodeIndex) -> impl std::fmt::Display + '_ {
+        use std::fmt;
+        use std::fmt::Display;
+        use std::fmt::Formatter;
+
+        struct DisplayList<'a, T: Display>(&'a [T]);
+        impl<T: Display> Display for DisplayList<'_, T> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                let mut iter = self.0.iter();
+                if let Some(x) = iter.next() {
+                    write!(f, "{x}")?;
+                }
+                for x in iter {
+                    write!(f, ",{x}")?;
+                }
+                Ok(())
+            }
         }
-        write!(f, " {}", self.subgraph_name)?;
 
-        if let Some(merge_at) = &self.merge_at {
-            // write!(
-            //     f,
-            //     "@({merge_at})[{} => {}]",
-            //     self.inputs.as_deref().unwrap_or(&Default::default()),
-            //     self.selection_set.selection_set
-            // )?;
-        } else {
-            write!(f, "[{}]", self.selection_set.selection_set)?;
+        struct FetchDependencyNodeDisplay<'a> {
+            node: &'a FetchDependencyGraphNode,
+            index: NodeIndex,
         }
 
-        Ok(())
+        impl Display for FetchDependencyNodeDisplay<'_> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                write!(f, "[{}]", self.index.index())?;
+                if self.node.defer_ref.is_some() {
+                    write!(f, "(deferred)")?;
+                }
+                if let Some(&id) = self.node.id.get() {
+                    write!(f, "{{id: {id}}}")?;
+                }
+
+                write!(f, " {}", self.node.subgraph_name)?;
+
+                match (self.node.merge_at.as_deref(), self.node.inputs.as_deref()) {
+                    (Some(merge_at), Some(inputs)) => {
+                        write!(
+                            f,
+                            // @(path,to,*,field)[{input1,input2} => { id }]
+                            "@({})[{} => {}]",
+                            DisplayList(merge_at),
+                            inputs,
+                            self.node.selection_set.selection_set
+                        )?;
+                    }
+                    (Some(merge_at), None) => {
+                        write!(
+                            f,
+                            // @(path,to,*,field)[{} => { id }]
+                            "@({})[{{}} => {}]",
+                            DisplayList(merge_at),
+                            self.node.selection_set.selection_set
+                        )?;
+                    }
+                    (None, _) => {
+                        // [{ id }]
+                        write!(f, "[{}]", self.node.selection_set.selection_set)?;
+                    }
+                }
+
+                Ok(())
+            }
+        }
+
+        FetchDependencyNodeDisplay { node: self, index }
     }
 }
 
@@ -1190,6 +1239,30 @@ impl FetchInputs {
             "Inputs selections must be based on the supergraph schema"
         );
         todo!()
+    }
+}
+
+impl std::fmt::Display for FetchInputs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.selection_sets_per_parent_type.len() {
+            0 => f.write_str("{}"),
+            1 => write!(
+                f,
+                "{}",
+                // We can safely unwrap because we know the len >= 1.
+                self.selection_sets_per_parent_type.values().next().unwrap()
+            ),
+            2.. => {
+                write!(f, "[")?;
+                let mut iter = self.selection_sets_per_parent_type.values();
+                // We can safely unwrap because we know the len >= 1.
+                write!(f, "{}", iter.next().unwrap())?;
+                for x in iter {
+                    write!(f, ",{}", x)?;
+                }
+                write!(f, "]")
+            }
+        }
     }
 }
 
