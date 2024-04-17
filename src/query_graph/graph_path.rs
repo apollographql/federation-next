@@ -2153,9 +2153,15 @@ impl SimultaneousPaths {
     }
 }
 
+impl From<Arc<OpGraphPath>> for SimultaneousPaths {
+    fn from(value: Arc<OpGraphPath>) -> Self {
+        Self(vec![value])
+    }
+}
+
 impl From<OpGraphPath> for SimultaneousPaths {
     fn from(value: OpGraphPath) -> Self {
-        Self(vec![Arc::new(value)])
+        Self::from(Arc::new(value))
     }
 }
 
@@ -2410,10 +2416,12 @@ impl SimultaneousPathsWithLazyIndirectPaths {
     }
 }
 
+// PORT_NOTE: JS passes a ConditionResolver here, we do not: see port note for
+// `SimultaneousPathsWithLazyIndirectPaths`
 pub fn create_initial_options(
     initial_path: GraphPath<OpGraphPathTrigger, Option<EdgeIndex>>,
+    initial_type: &QueryGraphNodeType,
     initial_context: OpGraphPathContext,
-    _condition_resolver: &impl ConditionResolver,
     excluded_edges: ExcludedDestinations,
     excluded_conditions: ExcludedConditions,
     _override_conditions: HashSet<String>,
@@ -2424,15 +2432,18 @@ pub fn create_initial_options(
         initial_context.clone(),
         excluded_edges,
         excluded_conditions,
+        // _override_conditions,
     );
 
-    // TODO(@goto-bus-stop): FED-147: This would need access to the graph so it can look up the
-    // node because `tail` is just a node index in the Rust codebase
-    #[allow(unused)]
-    // if is_federated_graph_root_type(initial_path.tail)
-    if false {
+    if initial_type.is_federated_root_type() {
         let initial_options = lazy_initial_path.indirect_options(&initial_context, 0)?;
-        Ok(lazy_initial_path.create_lazy_options(todo!(), initial_context))
+        let options = initial_options
+            .paths
+            .iter()
+            .cloned()
+            .map(SimultaneousPaths::from)
+            .collect();
+        Ok(lazy_initial_path.create_lazy_options(options, initial_context))
     } else {
         Ok(vec![lazy_initial_path])
     }

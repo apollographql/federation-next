@@ -66,6 +66,15 @@ pub(crate) enum QueryGraphNodeType {
     FederatedRootType(SchemaRootDefinitionKind),
 }
 
+impl QueryGraphNodeType {
+    pub fn is_schema_type(&self) -> bool {
+        matches!(self, Self::SchemaType(_))
+    }
+    pub fn is_federated_root_type(&self) -> bool {
+        matches!(self, Self::FederatedRootType(_))
+    }
+}
+
 impl Display for QueryGraphNodeType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

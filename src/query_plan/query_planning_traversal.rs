@@ -128,7 +128,7 @@ impl<'a> QueryPlanningTraversal<'a> {
         has_defers: bool,
         root_kind: SchemaRootDefinitionKind,
         cost_processor: FetchDependencyGraphToCostProcessor,
-    ) -> Self {
+    ) -> Result<Self, FederationError> {
         Self::new_inner(
             parameters,
             selection_set,
@@ -152,8 +152,7 @@ impl<'a> QueryPlanningTraversal<'a> {
         initial_context: OpGraphPathContext,
         excluded_destinations: ExcludedDestinations,
         excluded_conditions: ExcludedConditions,
-    ) -> Self {
-        // FIXME(@goto-bus-stop): Is this correct?
+    ) -> Result<Self, FederationError> {
         let is_top_level = parameters.head_must_be_root;
 
         fn map_options_to_selections(
@@ -173,25 +172,31 @@ impl<'a> QueryPlanningTraversal<'a> {
             parameters.head,
         )
         .unwrap();
-        // TODO: Use `self.resolve_condition_plan()` once it exists. See FED-46.
-        let condition_resolver = CachingConditionResolver;
         // TODO(@goto-bus-stop): This is parameters.override_conditions
         // It looks like that will be mutated by the traversal?
         // Keeping it like this for the time being.
         let override_conditions = Default::default();
+        // In JS this is done *inside* create_initial_options, which would require awareness of the
+        // query graph.
+        let tail = parameters
+            .federated_query_graph
+            .node_weight(initial_path.tail)?;
+
         let initial_options = create_initial_options(
             initial_path,
+            &tail.type_,
             initial_context,
-            &condition_resolver,
             excluded_destinations,
             excluded_conditions,
             override_conditions,
-        )
-        .unwrap();
+        )?;
 
         let open_branches = map_options_to_selections(selection_set, initial_options);
 
-        Self {
+        // TODO: Use `self.resolve_condition_plan()` once it exists. See FED-46.
+        let condition_resolver = CachingConditionResolver;
+
+        Ok(Self {
             parameters,
             root_kind,
             has_defers,
@@ -202,7 +207,7 @@ impl<'a> QueryPlanningTraversal<'a> {
             open_branches,
             closed_branches: Default::default(),
             best_plan: None,
-        }
+        })
     }
 
     // PORT_NOTE: In JS, the traversal is still usable after finding the best plan. Here we consume
