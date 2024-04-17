@@ -129,7 +129,7 @@ impl Conditions {
             (Conditions::Variables(new_conditions), Conditions::Variables(handled_conditions)) => {
                 let mut filtered = IndexMap::new();
                 for (cond_name, &cond_negated) in new_conditions.0.iter() {
-                    match handled_conditions.is_negated(&cond_name) {
+                    match handled_conditions.is_negated(cond_name) {
                         Some(handled_cond) if cond_negated != handled_cond => {
                             // If we've already handled that exact condition, we can skip it.
                             // But if we've already handled the _negation_ of this condition, then this mean the overall conditions

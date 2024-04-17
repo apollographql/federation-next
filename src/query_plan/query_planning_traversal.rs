@@ -142,6 +142,8 @@ impl<'a> QueryPlanningTraversal<'a> {
         )
     }
 
+    // Many arguments is okay for a private constructor function.
+    #[allow(clippy::too_many_arguments)]
     fn new_inner(
         parameters: &'a QueryPlanningParameters,
         selection_set: NormalizedSelectionSet,
