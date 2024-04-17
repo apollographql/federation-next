@@ -2066,7 +2066,7 @@ impl OpGraphPath {
         _source: &NodeStr,
         itf: InterfaceFieldDefinitionPosition,
     ) -> Result<bool, FederationError> {
-        if self.graph.schema()?.0.metadata().is_none() {
+        if self.graph.schema()?.metadata().is_none() {
             return Err(FederationError::internal(
                 "Interface should have come from a federation subgraph",
             ));
