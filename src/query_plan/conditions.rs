@@ -33,7 +33,7 @@ impl VariableConditions {
     /// Construct VariableConditions from a non-empty map of variable names.
     ///
     /// In release builds, this does not check if the map is empty.
-    pub fn new_unchecked(map: IndexMap<Name, bool>) -> Self {
+    fn new_unchecked(map: IndexMap<Name, bool>) -> Self {
         debug_assert!(!map.is_empty());
         Self(Arc::new(map))
     }
