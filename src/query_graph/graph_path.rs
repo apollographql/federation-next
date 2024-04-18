@@ -2130,8 +2130,9 @@ impl OpGraphPath {
                                 )))
                             }
                         };
-                        let Some((_, field)) = fields.clone().find(|f| f.0 == &itf.field_name) else {
-                            continue
+                        let Some((_, field)) = fields.clone().find(|f| f.0 == &itf.field_name)
+                        else {
+                            continue;
                         };
                         if field.directives.iter().any(|d| d.name == "shareable") {
                             continue;
