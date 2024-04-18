@@ -90,42 +90,12 @@ impl NormalizedOperation {
     }
 
     pub(crate) fn without_defer(self) -> Self {
-        fn field_has_defer(field: &NormalizedFieldSelection) -> bool {
-            field.field.data().directives.has("defer")
-                || field
-                    .selection_set
-                    .as_ref()
-                    .is_some_and(selection_set_has_defer)
-        }
-        fn fragment_spread_has_defer(fragment: &NormalizedFragmentSpreadSelection) -> bool {
-            fragment.spread.data().directives.has("defer")
-        }
-        fn inline_fragment_has_defer(inline: &NormalizedInlineFragmentSelection) -> bool {
-            inline.inline_fragment.data().directives.has("defer")
-                || selection_set_has_defer(&inline.selection_set)
-        }
-        fn selection_has_defer(selection: &NormalizedSelection) -> bool {
-            match selection {
-                NormalizedSelection::Field(field) => field_has_defer(field),
-                NormalizedSelection::FragmentSpread(fragment) => {
-                    fragment_spread_has_defer(fragment)
-                }
-                NormalizedSelection::InlineFragment(inline) => inline_fragment_has_defer(inline),
-            }
-        }
-        fn selection_set_has_defer(set: &NormalizedSelectionSet) -> bool {
-            set.selections.values().any(selection_has_defer)
-        }
-        fn fragment_definition_has_defer(fragment: &Node<NormalizedFragment>) -> bool {
-            selection_set_has_defer(&fragment.selection_set)
-        }
-
-        if selection_set_has_defer(&self.selection_set)
+        if self.selection_set.has_defer()
             || self
                 .named_fragments
                 .fragments
                 .values()
-                .any(fragment_definition_has_defer)
+                .any(|f| f.has_defer())
         {
             todo!("@defer not implemented");
         }
@@ -601,8 +571,19 @@ impl NormalizedSelection {
         }
     }
 
-    pub(crate) fn has_defer(&self) -> Result<bool, FederationError> {
-        todo!()
+    pub(crate) fn has_defer(&self) -> bool {
+        match self {
+            NormalizedSelection::Field(field_selection) => {
+                // @defer cannot be on a field at the moment
+                field_selection.has_defer()
+            }
+            NormalizedSelection::FragmentSpread(fragment_spread_selection) => {
+                fragment_spread_selection.has_defer()
+            }
+            NormalizedSelection::InlineFragment(inline_fragment_selection) => {
+                inline_fragment_selection.has_defer()
+            }
+        }
     }
 
     fn collect_used_fragment_names(&self, aggregator: &mut HashMap<Name, i32>) {
@@ -730,6 +711,10 @@ impl NormalizedFragment {
     fn collect_used_fragment_names(&self, aggregator: &mut HashMap<Name, i32>) {
         self.selection_set.collect_used_fragment_names(aggregator)
     }
+
+    fn has_defer(&self) -> bool {
+        self.selection_set.has_defer()
+    }
 }
 
 pub(crate) mod normalized_field_selection {
@@ -757,6 +742,13 @@ pub(crate) mod normalized_field_selection {
     pub(crate) struct NormalizedFieldSelection {
         pub(crate) field: NormalizedField,
         pub(crate) selection_set: Option<NormalizedSelectionSet>,
+    }
+
+    impl NormalizedFieldSelection {
+        pub(crate) fn has_defer(&self) -> bool {
+            self.field.data().directives.has("defer")
+                || self.selection_set.as_ref().is_some_and(|s| s.has_defer())
+        }
     }
 
     impl HasNormalizedSelectionKey for NormalizedFieldSelection {
@@ -855,6 +847,12 @@ pub(crate) mod normalized_fragment_spread_selection {
     pub(crate) struct NormalizedFragmentSpreadSelection {
         pub(crate) spread: NormalizedFragmentSpread,
         pub(crate) selection_set: NormalizedSelectionSet,
+    }
+
+    impl NormalizedFragmentSpreadSelection {
+        pub(crate) fn has_defer(&self) -> bool {
+            self.spread.data.directives.has("defer")
+        }
     }
 
     impl HasNormalizedSelectionKey for NormalizedFragmentSpreadSelection {
@@ -1071,6 +1069,17 @@ pub(crate) mod normalized_inline_fragment_selection {
     pub(crate) struct NormalizedInlineFragmentSelection {
         pub(crate) inline_fragment: NormalizedInlineFragment,
         pub(crate) selection_set: NormalizedSelectionSet,
+    }
+
+    impl NormalizedInlineFragmentSelection {
+        pub(crate) fn has_defer(&self) -> bool {
+            self.inline_fragment.data().directives.has("defer")
+                || self
+                    .selection_set
+                    .selections
+                    .values()
+                    .any(|s| s.has_defer())
+        }
     }
 
     impl HasNormalizedSelectionKey for NormalizedInlineFragmentSelection {
@@ -1828,6 +1837,10 @@ impl NormalizedSelectionSet {
             type_position: self.type_position.clone(),
             selections: Arc::new(normalized_selection_map),
         })
+    }
+
+    fn has_defer(&self) -> bool {
+        self.selections.values().any(|s| s.has_defer())
     }
 }
 
