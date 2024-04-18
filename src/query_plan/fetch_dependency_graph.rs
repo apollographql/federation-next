@@ -986,14 +986,14 @@ impl FetchDependencyGraph {
         let mut all_deferred_nodes = other_defer_nodes.cloned().unwrap_or_default();
         all_deferred_nodes.extend(deferred_nodes);
 
-        // We're going to handled all @defer at our "current level" (so at top-level, that's all the non-nested @defer),
+        // We're going to handle all `@defer`s at our "current" level (eg. at the top level, that's all the non-nested @defer),
         // and the "starting" node for those defers, if any, are in `all_deferred_nodes`. However, `all_deferred_nodes`
-        // can actually contains defer nodes that are for "deeper" level of @defer-nestedness, and that is because
-        // sometimes the key we need to resume a nested @defer is the same than for the current @defer (or put another way,
+        // can actually contain defer nodes that are for "deeper" levels of @defer-nesting, and that is because
+        // sometimes the key we need to resume a nested @defer is the same as for the current @defer (or put another way,
         // a @defer B may be nested inside @defer A "in the query", but be such that we don't need anything fetched within
         // the deferred part of A to start the deferred part of B).
         // Long story short, we first collect the nodes from `all_deferred_nodes` that are _not_ in our current level, if
-        // any, and pass those to recursion call below so they can be use a their proper level of nestedness.
+        // any, and pass those to the recursive call below so they can be use a their proper level of nesting.
         let defers_in_current = self.defer_tracking.defers_in_parent(current_defer_ref);
         let handled_defers_in_current = defers_in_current
             .iter()
@@ -1021,6 +1021,7 @@ impl FetchDependencyGraph {
         // the response back (future handling of defer-passthrough will also piggy-back on this).
         let mut all_deferred: Vec<TDeferred> = vec![];
         // TODO(@goto-bus-stop): this clone looks expensive and could be avoided with a refactor
+        // See also PORT_NOTE in `.defers_in_parent()`.
         let defers_in_current = defers_in_current.into_iter().cloned().collect::<Vec<_>>();
         for defer in defers_in_current {
             let nodes = all_deferred_nodes
@@ -1367,6 +1368,11 @@ impl DeferTracking {
         info.dependencies.insert(id_dependency);
     }
 
+    // PORT_NOTE: this probably should just return labels and not the whole DeferredInfo
+    // to make it a bit easier to work with, since at the usage site, the return value
+    // is iterated over while also mutating the fetch dependency graph, which is mutually exclusive
+    // with holding a reference to a DeferredInfo. For now we just clone the return value when
+    // necessary.
     fn defers_in_parent<'s>(&'s self, parent_ref: Option<&str>) -> Vec<&'s DeferredInfo> {
         let labels = match parent_ref {
             Some(parent_ref) => {
