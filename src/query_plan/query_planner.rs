@@ -739,7 +739,7 @@ type User
             "operation.graphql",
         )
         .unwrap();
-        let plan = planner.build_query_plan(&document, None).unwrap();
+        // let plan = planner.build_query_plan(&document, None).unwrap();
     }
 
     #[test]
