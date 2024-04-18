@@ -323,7 +323,7 @@ type ArgumentMergerFactory =
     dyn Fn(&FederationSchema) -> Result<ArgumentMerger, SingleFederationError>;
 
 pub(crate) struct DirectiveCompositionSpecification {
-    pub supergraph_specification: fn(federation_version: Version) -> dyn SpecDefinition,
+    pub supergraph_specification: fn(federation_version: Version) -> Box<dyn SpecDefinition>,
     /// Factory function returning an actual argument merger for given federation schema.
     pub argument_merger: Option<Box<ArgumentMergerFactory>>,
 }
@@ -336,6 +336,9 @@ pub(crate) struct DirectiveSpecification {
     locations: Vec<DirectiveLocation>,
 }
 
+// TODO: revisit DirectiveSpecification::new() API once we start porting
+// composition.
+// https://apollographql.atlassian.net/browse/FED-172
 impl DirectiveSpecification {
     pub fn new(
         name: Name,
@@ -343,7 +346,9 @@ impl DirectiveSpecification {
         repeatable: bool,
         locations: &[DirectiveLocation],
         composes: bool,
-        supergraph_specification: Option<fn(federation_version: Version) -> dyn SpecDefinition>,
+        supergraph_specification: Option<
+            fn(federation_version: Version) -> Box<dyn SpecDefinition>,
+        >,
     ) -> Self {
         let mut composition: Option<DirectiveCompositionSpecification> = None;
         if composes {
@@ -361,7 +366,7 @@ impl DirectiveSpecification {
                 });
             let arg_strategies: IndexMap<String, ArgumentCompositionStrategy> =
                 IndexMap::from_iter(arg_strategies_iter);
-            if arg_strategies.len() > 1 {
+            if !arg_strategies.is_empty() {
                 assert!(!repeatable, "Invalid directive specification for @{name}: @{name} is repeatable and should not define composition strategy for its arguments");
                 assert!(arg_strategies.len() == args.len(), "Invalid directive specification for @{name}: not all arguments define a composition strategy");
                 let name_capture = name.clone();
@@ -406,7 +411,7 @@ impl DirectiveSpecification {
             composition = Some(DirectiveCompositionSpecification {
                 supergraph_specification: supergraph_specification.unwrap(),
                 argument_merger,
-            });
+            })
         }
         Self {
             name,
@@ -740,4 +745,127 @@ fn ensure_same_directive_structure(
         });
     }
     MultipleFederationErrors::from_iter(arg_errors).into_result()
+}
+
+#[cfg(test)]
+mod tests {
+    use apollo_compiler::{
+        ast::{DirectiveLocation, Type},
+        name,
+    };
+
+    use crate::{
+        error::SingleFederationError,
+        link::{
+            link_spec_definition::LinkSpecDefinition,
+            spec::{Identity, Version},
+            spec_definition::SpecDefinition,
+        },
+        schema::{
+            argument_composition_strategies::ArgumentCompositionStrategy,
+            type_and_directive_specification::DirectiveSpecification, FederationSchema,
+        },
+    };
+
+    use super::{ArgumentSpecification, DirectiveArgumentSpecification};
+
+    #[test]
+    #[should_panic(
+        expected = "Should provide a @link specification to use in supergraph for directive @foo if it composes"
+    )]
+    fn must_have_supergraph_link_if_composed() {
+        DirectiveSpecification::new(
+            name!("foo"),
+            &[],
+            false,
+            &[DirectiveLocation::Object],
+            true,
+            None,
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Invalid directive specification for @foo: not all arguments define a composition strategy"
+    )]
+    fn must_have_a_merge_strategy_on_all_arguments_if_any() {
+        fn link_spec(_version: Version) -> Box<dyn SpecDefinition> {
+            Box::new(LinkSpecDefinition::new(
+                Version { major: 1, minor: 0 },
+                None,
+                Identity {
+                    domain: String::from("https://specs.apollo.dev/link/v1.0"),
+                    name: name!("link"),
+                },
+            ))
+        }
+
+        DirectiveSpecification::new(
+            name!("foo"),
+            &[
+                DirectiveArgumentSpecification {
+                    base_spec: ArgumentSpecification {
+                        name: name!("v1"),
+                        get_type:
+                            move |_schema: &FederationSchema| -> Result<Type, SingleFederationError> {
+                                Ok(Type::Named(name!("Int")))
+                            },
+                        default_value: None,
+                    },
+                    composition_strategy: Some(ArgumentCompositionStrategy::Max),
+                },
+                DirectiveArgumentSpecification {
+                    base_spec: ArgumentSpecification {
+                        name: name!("v2"),
+                        get_type:
+                            move |_schema: &FederationSchema| -> Result<Type, SingleFederationError> {
+                                Ok(Type::Named(name!("Int")))
+                            },
+                        default_value: None,
+                    },
+                    composition_strategy: None,
+                },
+            ],
+            false,
+            &[DirectiveLocation::Object],
+            true,
+            Some(link_spec)
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Invalid directive specification for @foo: @foo is repeatable and should not define composition strategy for its arguments"
+    )]
+    fn must_be_not_be_repeatable_if_it_has_a_merge_strategy() {
+        fn link_spec(_version: Version) -> Box<dyn SpecDefinition> {
+            Box::new(LinkSpecDefinition::new(
+                Version { major: 1, minor: 0 },
+                None,
+                Identity {
+                    domain: String::from("https://specs.apollo.dev/link/v1.0"),
+                    name: name!("link"),
+                },
+            ))
+        }
+
+        DirectiveSpecification::new(
+            name!("foo"),
+            &[DirectiveArgumentSpecification {
+                base_spec: ArgumentSpecification {
+                    name: name!("v"),
+                    get_type:
+                        move |_schema: &FederationSchema| -> Result<Type, SingleFederationError> {
+                            Ok(Type::Named(name!("Int")))
+                        },
+                    default_value: None,
+                },
+                composition_strategy: Some(ArgumentCompositionStrategy::Max),
+            }],
+            true,
+            &[DirectiveLocation::Object],
+            true,
+            Some(link_spec),
+        );
+    }
 }

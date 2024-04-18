@@ -16,16 +16,16 @@ pub(crate) enum ArgumentCompositionStrategy {
 }
 
 lazy_static! {
-    pub(crate) static ref MAX_STRATEGY: MaxArgumentCompositionStrategyImpl =
-        MaxArgumentCompositionStrategyImpl::new();
-    pub(crate) static ref MIN_STRATEGY: MinArgumentCompositionStrategyImpl =
-        MinArgumentCompositionStrategyImpl::new();
-    pub(crate) static ref SUM_STRATEGY: SumArgumentCompositionStrategyImpl =
-        SumArgumentCompositionStrategyImpl::new();
-    pub(crate) static ref INTERSECTION_STRATEGY: IntersectionArgumentCompositionStrategyImpl =
-        IntersectionArgumentCompositionStrategyImpl {};
-    pub(crate) static ref UNION_STRATEGY: UnionArgumentCompositionStrategyImpl =
-        UnionArgumentCompositionStrategyImpl {};
+    pub(crate) static ref MAX_STRATEGY: MaxArgumentCompositionStrategy =
+        MaxArgumentCompositionStrategy::new();
+    pub(crate) static ref MIN_STRATEGY: MinArgumentCompositionStrategy =
+        MinArgumentCompositionStrategy::new();
+    pub(crate) static ref SUM_STRATEGY: SumArgumentCompositionStrategy =
+        SumArgumentCompositionStrategy::new();
+    pub(crate) static ref INTERSECTION_STRATEGY: IntersectionArgumentCompositionStrategy =
+        IntersectionArgumentCompositionStrategy {};
+    pub(crate) static ref UNION_STRATEGY: UnionArgumentCompositionStrategy =
+        UnionArgumentCompositionStrategy {};
 }
 
 impl ArgumentCompositionStrategy {
@@ -74,9 +74,11 @@ impl ArgumentCompositionStrategy {
 //////////////////////////////////////////////////////////////////////////////
 // Implementation of ArgumentCompositionStrategy's
 
-/// ArgumentCompositionStrategy (for Directives)
-/// - Determines how to compose the merged argument value from directive applications across subgraph schemas.
-pub(crate) trait ArgumentCompositionStrategyImpl {
+/// Argument composition strategy for directives.
+///
+/// Determines how to compose the merged argument value from directive
+/// applications across subgraph schemas.
+pub(crate) trait ArgumentComposition {
     /// The name of the validator.
     fn name(&self) -> &str;
     /// Is the type `ty`  supported by this validator?
@@ -123,11 +125,11 @@ fn support_any_non_null_array(ty: &Type) -> Result<(), String> {
 
 // MAX
 #[derive(Clone)]
-pub(crate) struct MaxArgumentCompositionStrategyImpl {
+pub(crate) struct MaxArgumentCompositionStrategy {
     validator: FixedTypeSupportValidator,
 }
 
-impl MaxArgumentCompositionStrategyImpl {
+impl MaxArgumentCompositionStrategy {
     fn new() -> Self {
         Self {
             validator: FixedTypeSupportValidator {
@@ -137,7 +139,7 @@ impl MaxArgumentCompositionStrategyImpl {
     }
 }
 
-impl ArgumentCompositionStrategyImpl for MaxArgumentCompositionStrategyImpl {
+impl ArgumentComposition for MaxArgumentCompositionStrategy {
     fn name(&self) -> &str {
         "MAX"
     }
@@ -146,6 +148,8 @@ impl ArgumentCompositionStrategyImpl for MaxArgumentCompositionStrategyImpl {
         self.validator.is_type_supported(schema, ty)
     }
 
+    // TODO: check if this neeeds to be an Result<Value> to avoid the panic!()
+    // https://apollographql.atlassian.net/browse/FED-170
     fn merge_values(&self, values: &[Value]) -> Value {
         values
             .iter()
@@ -161,11 +165,11 @@ impl ArgumentCompositionStrategyImpl for MaxArgumentCompositionStrategyImpl {
 
 // MIN
 #[derive(Clone)]
-pub(crate) struct MinArgumentCompositionStrategyImpl {
+pub(crate) struct MinArgumentCompositionStrategy {
     validator: FixedTypeSupportValidator,
 }
 
-impl MinArgumentCompositionStrategyImpl {
+impl MinArgumentCompositionStrategy {
     fn new() -> Self {
         Self {
             validator: FixedTypeSupportValidator {
@@ -175,7 +179,7 @@ impl MinArgumentCompositionStrategyImpl {
     }
 }
 
-impl ArgumentCompositionStrategyImpl for MinArgumentCompositionStrategyImpl {
+impl ArgumentComposition for MinArgumentCompositionStrategy {
     fn name(&self) -> &str {
         "MIN"
     }
@@ -184,6 +188,8 @@ impl ArgumentCompositionStrategyImpl for MinArgumentCompositionStrategyImpl {
         self.validator.is_type_supported(schema, ty)
     }
 
+    // TODO: check if this neeeds to be an Result<Value> to avoid the panic!()
+    // https://apollographql.atlassian.net/browse/FED-170
     fn merge_values(&self, values: &[Value]) -> Value {
         values
             .iter()
@@ -199,11 +205,11 @@ impl ArgumentCompositionStrategyImpl for MinArgumentCompositionStrategyImpl {
 
 // SUM
 #[derive(Clone)]
-pub(crate) struct SumArgumentCompositionStrategyImpl {
+pub(crate) struct SumArgumentCompositionStrategy {
     validator: FixedTypeSupportValidator,
 }
 
-impl SumArgumentCompositionStrategyImpl {
+impl SumArgumentCompositionStrategy {
     fn new() -> Self {
         Self {
             validator: FixedTypeSupportValidator {
@@ -213,7 +219,7 @@ impl SumArgumentCompositionStrategyImpl {
     }
 }
 
-impl ArgumentCompositionStrategyImpl for SumArgumentCompositionStrategyImpl {
+impl ArgumentComposition for SumArgumentCompositionStrategy {
     fn name(&self) -> &str {
         "SUM"
     }
@@ -222,6 +228,8 @@ impl ArgumentCompositionStrategyImpl for SumArgumentCompositionStrategyImpl {
         self.validator.is_type_supported(schema, ty)
     }
 
+    // TODO: check if this neeeds to be an Result<Value> to avoid the panic!()
+    // https://apollographql.atlassian.net/browse/FED-170
     fn merge_values(&self, values: &[Value]) -> Value {
         values
             .iter()
@@ -236,9 +244,9 @@ impl ArgumentCompositionStrategyImpl for SumArgumentCompositionStrategyImpl {
 
 // INTERSECTION
 #[derive(Clone)]
-pub(crate) struct IntersectionArgumentCompositionStrategyImpl {}
+pub(crate) struct IntersectionArgumentCompositionStrategy {}
 
-impl ArgumentCompositionStrategyImpl for IntersectionArgumentCompositionStrategyImpl {
+impl ArgumentComposition for IntersectionArgumentCompositionStrategy {
     fn name(&self) -> &str {
         "INTERSECTION"
     }
@@ -247,6 +255,8 @@ impl ArgumentCompositionStrategyImpl for IntersectionArgumentCompositionStrategy
         support_any_non_null_array(ty)
     }
 
+    // TODO: check if this neeeds to be an Result<Value> to avoid the panic!()
+    // https://apollographql.atlassian.net/browse/FED-170
     fn merge_values(&self, values: &[Value]) -> Value {
         // Each item in `values` must be a Value::List(...).
         values
@@ -267,9 +277,9 @@ impl ArgumentCompositionStrategyImpl for IntersectionArgumentCompositionStrategy
 
 // UNION
 #[derive(Clone)]
-pub(crate) struct UnionArgumentCompositionStrategyImpl {}
+pub(crate) struct UnionArgumentCompositionStrategy {}
 
-impl ArgumentCompositionStrategyImpl for UnionArgumentCompositionStrategyImpl {
+impl ArgumentComposition for UnionArgumentCompositionStrategy {
     fn name(&self) -> &str {
         "UNION"
     }
@@ -278,6 +288,8 @@ impl ArgumentCompositionStrategyImpl for UnionArgumentCompositionStrategyImpl {
         support_any_non_null_array(ty)
     }
 
+    // TODO: check if this neeeds to be an Result<Value> to avoid the panic!()
+    // https://apollographql.atlassian.net/browse/FED-170
     fn merge_values(&self, values: &[Value]) -> Value {
         // Each item in `values` must be a Value::List(...).
         // Not a super efficient implementation, but we don't expect large problem sizes.
