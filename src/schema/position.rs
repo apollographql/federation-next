@@ -201,6 +201,24 @@ pub(crate) enum CompositeTypeDefinitionPosition {
     Union(UnionTypeDefinitionPosition),
 }
 
+impl From<FieldDefinitionPosition> for CompositeTypeDefinitionPosition {
+    fn from(value: FieldDefinitionPosition) -> Self {
+        match value {
+            FieldDefinitionPosition::Object(ty) => Self::Object(ObjectTypeDefinitionPosition {
+                type_name: ty.type_name,
+            }),
+            FieldDefinitionPosition::Interface(ty) => {
+                Self::Interface(InterfaceTypeDefinitionPosition {
+                    type_name: ty.type_name,
+                })
+            }
+            FieldDefinitionPosition::Union(ty) => Self::Union(UnionTypeDefinitionPosition {
+                type_name: ty.type_name,
+            }),
+        }
+    }
+}
+
 impl Debug for CompositeTypeDefinitionPosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

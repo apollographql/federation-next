@@ -972,13 +972,8 @@ pub(crate) mod normalized_field_selection {
                 return Ok(Some(digest));
             }
             if data.name() == parent_type.type_name() {
-                todo!()
+                return Ok(Some(parent_type.introspection_typename_field().into()));
             }
-            /*
-            if (this.name === typenameFieldName) {
-                return parentType.typenameField()?.type;
-            }
-            */
             if self.can_rebase_on(parent_type, schema) {
                 // parent_type.field(self.data.name())?
                 todo!()
