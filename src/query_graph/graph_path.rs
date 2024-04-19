@@ -360,9 +360,9 @@ pub(crate) struct SimultaneousPathsWithLazyIndirectPaths {
 #[derive(Debug, Clone)]
 pub(crate) struct ExcludedDestinations(Arc<Vec<Name>>);
 
-impl ExcludedDestinations {
+impl PartialEq for ExcludedDestinations {
     /// See if two `ExcludedDestinations` have the same set of values, regardless of their ordering.
-    pub(crate) fn is_equivalent(&self, other: &ExcludedDestinations) -> bool {
+    fn eq(&self, other: &ExcludedDestinations) -> bool {
         self.0.len() == other.0.len() && self.0.iter().all(|x| other.0.contains(x))
     }
 }
@@ -379,6 +379,13 @@ pub(crate) struct ExcludedConditions(Arc<Vec<Arc<NormalizedSelectionSet>>>);
 impl ExcludedConditions {
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Immutable version of `push`.
+    pub(crate) fn add_item(&self, value: &NormalizedSelectionSet) -> ExcludedConditions {
+        let mut result = self.0.as_ref().clone();
+        result.push(value.clone().into());
+        ExcludedConditions(Arc::new(result))
     }
 }
 

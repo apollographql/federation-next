@@ -133,7 +133,7 @@ impl ConditionResolverCache {
         {
             // Cache hit.
             // Ensure we have the same excluded destinations as when we cached the value.
-            if cached_excluded_destinations.is_equivalent(excluded_destinations) {
+            if cached_excluded_destinations == excluded_destinations {
                 return ConditionResolutionCacheResult::Hit(cached_resolution.clone());
             }
             // Otherwise, fall back to non-cached computation

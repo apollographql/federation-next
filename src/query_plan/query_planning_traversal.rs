@@ -130,6 +130,8 @@ impl<'a> QueryPlanningTraversal<'a> {
         has_defers: bool,
         root_kind: SchemaRootDefinitionKind,
         cost_processor: FetchDependencyGraphToCostProcessor,
+        _excluded_destinations: &ExcludedDestinations, // To be used by `createInitialOptions` call (FED-147)
+        _excluded_conditions: &ExcludedConditions,
     ) -> Self {
         // FIXME(@goto-bus-stop): Is this correct?
         let is_top_level = parameters.head_must_be_root;
@@ -664,16 +666,18 @@ impl<'a> QueryPlanningTraversal<'a> {
         edge: EdgeIndex,
         // PORT_NOTE: The following parameters are not currently used.
         _context: &OpGraphPathContext,
-        _excluded_destinations: &ExcludedDestinations,
-        _excluded_conditions: &ExcludedConditions,
+        excluded_destinations: &ExcludedDestinations,
+        excluded_conditions: &ExcludedConditions,
     ) -> Result<ConditionResolution, FederationError> {
         let graph = &self.parameters.federated_query_graph;
         let head = graph.edge_endpoints(edge)?.0;
+        // Note: `QueryPlanningTraversal::resolve` method asserts that the edge has conditions before
+        //       calling this method.
         let edge_conditions = graph
             .edge_weight(edge)?
             .conditions
             .as_ref()
-            .unwrap() // Note: `resolve` method checks that the edge has conditions
+            .unwrap()
             .as_ref();
         let parameters = QueryPlanningParameters {
             head,
@@ -697,9 +701,8 @@ impl<'a> QueryPlanningTraversal<'a> {
             self.has_defers,
             self.root_kind,
             self.cost_processor,
-            // TODO: pass the following arguments
-            //excluded_destinations,
-            //excluded_conditions & edge_conditions,
+            excluded_destinations,
+            &excluded_conditions.add_item(edge_conditions),
         )
         .find_best_plan()?;
         match best_plan_opt {
