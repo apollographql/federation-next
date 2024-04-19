@@ -575,13 +575,31 @@ impl NormalizedSelection {
         match self {
             NormalizedSelection::Field(field_selection) => {
                 // @defer cannot be on a field at the moment
-                field_selection.has_defer()
+                field_selection.field.data().directives.has("defer")
+                    || field_selection
+                        .selection_set
+                        .as_ref()
+                        .is_some_and(|s| s.has_defer())
             }
             NormalizedSelection::FragmentSpread(fragment_spread_selection) => {
-                fragment_spread_selection.has_defer()
+                fragment_spread_selection
+                    .spread
+                    .data
+                    .directives
+                    .has("defer")
+                    || fragment_spread_selection.selection_set.has_defer()
             }
             NormalizedSelection::InlineFragment(inline_fragment_selection) => {
-                inline_fragment_selection.has_defer()
+                inline_fragment_selection
+                    .inline_fragment
+                    .data()
+                    .directives
+                    .has("defer")
+                    || inline_fragment_selection
+                        .selection_set
+                        .selections
+                        .values()
+                        .any(|s| s.has_defer())
             }
         }
     }
@@ -744,13 +762,6 @@ pub(crate) mod normalized_field_selection {
         pub(crate) selection_set: Option<NormalizedSelectionSet>,
     }
 
-    impl NormalizedFieldSelection {
-        pub(crate) fn has_defer(&self) -> bool {
-            self.field.data().directives.has("defer")
-                || self.selection_set.as_ref().is_some_and(|s| s.has_defer())
-        }
-    }
-
     impl HasNormalizedSelectionKey for NormalizedFieldSelection {
         fn key(&self) -> NormalizedSelectionKey {
             self.field.key()
@@ -847,12 +858,6 @@ pub(crate) mod normalized_fragment_spread_selection {
     pub(crate) struct NormalizedFragmentSpreadSelection {
         pub(crate) spread: NormalizedFragmentSpread,
         pub(crate) selection_set: NormalizedSelectionSet,
-    }
-
-    impl NormalizedFragmentSpreadSelection {
-        pub(crate) fn has_defer(&self) -> bool {
-            self.spread.data.directives.has("defer") || self.selection_set.has_defer()
-        }
     }
 
     impl HasNormalizedSelectionKey for NormalizedFragmentSpreadSelection {
@@ -1069,17 +1074,6 @@ pub(crate) mod normalized_inline_fragment_selection {
     pub(crate) struct NormalizedInlineFragmentSelection {
         pub(crate) inline_fragment: NormalizedInlineFragment,
         pub(crate) selection_set: NormalizedSelectionSet,
-    }
-
-    impl NormalizedInlineFragmentSelection {
-        pub(crate) fn has_defer(&self) -> bool {
-            self.inline_fragment.data().directives.has("defer")
-                || self
-                    .selection_set
-                    .selections
-                    .values()
-                    .any(|s| s.has_defer())
-        }
     }
 
     impl HasNormalizedSelectionKey for NormalizedInlineFragmentSelection {
