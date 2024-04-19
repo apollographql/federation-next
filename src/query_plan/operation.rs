@@ -851,7 +851,7 @@ pub(crate) mod normalized_fragment_spread_selection {
 
     impl NormalizedFragmentSpreadSelection {
         pub(crate) fn has_defer(&self) -> bool {
-            self.spread.data.directives.has("defer")
+            self.spread.data.directives.has("defer") || self.selection_set.has_defer()
         }
     }
 
