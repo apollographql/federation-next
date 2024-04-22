@@ -826,21 +826,6 @@ pub(crate) mod normalized_field_selection {
             OpPathElement::Field(self.field.clone())
         }
 
-        pub(crate) fn with_updated_components(
-            &self,
-            field: NormalizedField,
-            selection_set: Option<NormalizedSelectionSet>,
-        ) -> Result<NormalizedFieldSelection, FederationError> {
-            if self.field == field && self.selection_set == selection_set {
-                Ok(self.clone())
-            } else {
-                Ok(NormalizedFieldSelection {
-                    field,
-                    selection_set,
-                })
-            }
-        }
-
         pub(crate) fn with_updated_alias(&self, alias: Name) -> NormalizedField {
             let mut data = self.field.data().clone();
             data.alias = Some(alias);
@@ -2201,13 +2186,13 @@ impl NormalizedSelectionSet {
                         if alias.is_none() && selection_set == updated_selection_set.as_ref() {
                             Ok((key.clone(), selection.clone()))
                         } else {
-                            let sel = field.with_updated_components(
-                                match alias {
+                            let sel = NormalizedFieldSelection {
+                                field: match alias {
                                     Some(alias) => field.with_updated_alias(alias.alias.clone()),
                                     None => field.field.clone(),
                                 },
-                                updated_selection_set,
-                            )?;
+                                selection_set: updated_selection_set,
+                            };
                             let key = sel.key();
                             Ok((key, NormalizedSelection::Field(Arc::new(sel))))
                         }
