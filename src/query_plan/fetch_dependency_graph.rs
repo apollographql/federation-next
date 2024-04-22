@@ -21,7 +21,7 @@ use crate::schema::position::{
 };
 use crate::schema::ValidFederationSchema;
 use crate::subgraph::spec::{ANY_SCALAR_NAME, ENTITIES_QUERY};
-use apollo_compiler::ast::{NamedType, OperationType, Type};
+use apollo_compiler::ast::{OperationType, Type};
 use apollo_compiler::executable::{self, VariableDefinition};
 use apollo_compiler::schema::{self, Name};
 use apollo_compiler::{Node, NodeStr};
@@ -32,6 +32,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::operation::normalized_selection_map::NormalizedSelectionMap;
+use crate::query_graph::extract_subgraphs_from_supergraph::FEDERATION_REPRESENTATIONS_ARGUMENTS_NAME;
+use crate::query_graph::extract_subgraphs_from_supergraph::FEDERATION_REPRESENTATIONS_VAR_NAME;
 
 /// Represents a subgraph fetch of a query plan.
 // PORT_NOTE: The JS codebase called this `FetchGroup`, but this naming didn't make it apparent that
@@ -799,7 +801,11 @@ fn operation_for_entities_fetch(
             schema: subgraph_schema.clone(),
             field_position: entities,
             alias: None,
-            arguments: Default::default(),
+            arguments: Arc::new(vec![executable::Argument {
+                name: FEDERATION_REPRESENTATIONS_ARGUMENTS_NAME,
+                value: executable::Value::Variable(FEDERATION_REPRESENTATIONS_VAR_NAME).into(),
+            }
+            .into()]),
             directives: Default::default(),
             sibling_typename: None,
         })),
@@ -867,16 +873,9 @@ fn representations_variable_definition(
 
     let any_name = schema.federation_type_name_in_schema(&ANY_SCALAR_NAME)?;
 
-    let ty = Type::non_null(Type::list(Type::non_null(Type::Named(
-        NamedType::new(any_name)
-            .map_err(|_| FederationError::internal("invalid name".to_string()))?,
-    ))))
-    .into();
     Ok(VariableDefinition {
-        name: NodeStr::new("representations")
-            .try_into()
-            .map_err(|_| FederationError::internal("invalid name".to_string()))?,
-        ty,
+        name: FEDERATION_REPRESENTATIONS_VAR_NAME,
+        ty: Type::Named(any_name).non_null().list().non_null().into(),
         default_value: None,
         directives: Default::default(),
     }
