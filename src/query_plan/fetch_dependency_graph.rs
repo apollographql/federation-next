@@ -871,7 +871,7 @@ fn representations_variable_definition(
         .metadata()
         .ok_or_else(|| FederationError::internal("Expected schema to be a federation subgraph"))?;
 
-    let any_name = schema.federation_type_name_in_schema(&ANY_SCALAR_NAME)?;
+    let any_name = schema.federation_type_name_in_schema(ANY_SCALAR_NAME)?;
 
     Ok(VariableDefinition {
         name: FEDERATION_REPRESENTATIONS_VAR_NAME,

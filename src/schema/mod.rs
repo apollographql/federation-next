@@ -12,7 +12,7 @@ use crate::schema::position::{
 use crate::schema::subgraph_metadata::SubgraphMetadata;
 use apollo_compiler::schema::{ExtendedType, Name};
 use apollo_compiler::validation::Valid;
-use apollo_compiler::{NodeStr, Schema};
+use apollo_compiler::Schema;
 use indexmap::IndexSet;
 use referencer::Referencers;
 use std::hash::{Hash, Hasher};
@@ -262,7 +262,7 @@ impl ValidFederationSchema {
 
     pub(crate) fn federation_type_name_in_schema(
         &self,
-        name: &str,
+        name: Name,
     ) -> Result<Name, FederationError> {
         // Currently, the types used to define the federation operations, that is _Any, _Entity and _Service,
         // are not considered part of the federation spec, and are instead hardcoded to the names above.
@@ -271,9 +271,7 @@ impl ValidFederationSchema {
         // and that wouldn't be a good user experience (because most users don't really know what those types
         // are/do). And so we special case it.
         if name.starts_with('_') {
-            return NodeStr::new(name)
-                .try_into()
-                .map_err(|_| FederationError::internal("invalid name".to_string()));
+            return Ok(name);
         }
 
         todo!()
