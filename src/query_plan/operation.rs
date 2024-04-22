@@ -1874,60 +1874,40 @@ impl NormalizedSelectionSet {
         parent_type_if_abstract: Option<AbstractType>,
         fragments: &Option<&mut RebasedFragments>,
     ) -> Result<NormalizedSelectionSet, FederationError> {
-        let handle_selection =
-            |selection: &NormalizedSelection| -> Result<NormalizedSelection, FederationError> {
-                let Some(selection_set) = selection.selection_set()? else {
-                    return Ok(selection.clone());
+        let mut selection_map = NormalizedSelectionMap::new();
+        if let Some(parent) = parent_type_if_abstract {
+            if !self.has_top_level_typename_field() {
+                let field_position = parent.introspection_typename_field();
+                let typename_selection = NormalizedFieldSelection {
+                    field: NormalizedField::new(NormalizedFieldData {
+                        schema: self.schema.clone(),
+                        field_position,
+                        alias: None,
+                        arguments: Default::default(),
+                        directives: Default::default(),
+                        sibling_typename: None,
+                    }),
+                    selection_set: None,
                 };
-
+                selection_map.insert(NormalizedSelection::Field(Arc::new(typename_selection)));
+            }
+        }
+        for selection in self.selections.values() {
+            selection_map.insert(if let Some(selection_set) = selection.selection_set()? {
                 let type_if_abstract =
                     subselection_type_if_abstract(selection, &self.schema, fragments);
                 let updated_selection_set = selection_set
                     .add_typename_field_for_abstract_types(type_if_abstract, fragments)?;
 
                 if updated_selection_set == *selection_set {
-                    Ok(selection.clone())
+                    selection.clone()
                 } else {
-                    Ok(selection.with_updated_selection_set(Some(updated_selection_set)))
+                    selection.with_updated_selection_set(Some(updated_selection_set))
                 }
-            };
-
-        if parent_type_if_abstract.is_none() || self.has_top_level_typename_field() {
-            let mut selection_map = NormalizedSelectionMap::new();
-            for selection in self.selections.values() {
-                selection_map.insert(handle_selection(selection)?);
-            }
-
-            return Ok(NormalizedSelectionSet {
-                schema: self.schema.clone(),
-                type_position: self.type_position.clone(),
-                selections: Arc::new(selection_map),
+            } else {
+                selection.clone()
             });
         }
-
-        let mut selection_map = (*self.selections).clone();
-        let field_position = match parent_type_if_abstract.expect("already checked") {
-            AbstractType::Interface(interface) => {
-                crate::schema::position::FieldDefinitionPosition::Interface(
-                    interface.introspection_typename_field(),
-                )
-            }
-            AbstractType::Union(union) => crate::schema::position::FieldDefinitionPosition::Union(
-                union.introspection_typename_field(),
-            ),
-        };
-        let typename_selection = NormalizedFieldSelection {
-            field: NormalizedField::new(NormalizedFieldData {
-                schema: self.schema.clone(),
-                field_position,
-                alias: None,
-                arguments: Default::default(),
-                directives: Default::default(),
-                sibling_typename: None,
-            }),
-            selection_set: None,
-        };
-        selection_map.insert(NormalizedSelection::Field(Arc::new(typename_selection)));
 
         Ok(NormalizedSelectionSet {
             schema: self.schema.clone(),

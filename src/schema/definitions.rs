@@ -1,17 +1,28 @@
-use apollo_compiler::{
-    ast::{NamedType, Type},
-    Schema,
-};
+use apollo_compiler::ast::{NamedType, Type};
+use apollo_compiler::Schema;
 
 use crate::error::{FederationError, SingleFederationError};
-
-use super::position::{
-    InterfaceTypeDefinitionPosition, TypeDefinitionPosition, UnionTypeDefinitionPosition,
+use crate::schema::position::{
+    FieldDefinitionPosition, InterfaceTypeDefinitionPosition, TypeDefinitionPosition,
+    UnionTypeDefinitionPosition,
 };
 
 pub(crate) enum AbstractType {
     Interface(InterfaceTypeDefinitionPosition),
     Union(UnionTypeDefinitionPosition),
+}
+
+impl AbstractType {
+    pub(crate) fn introspection_typename_field(&self) -> FieldDefinitionPosition {
+        match self {
+            AbstractType::Interface(interface) => {
+                FieldDefinitionPosition::Interface(interface.introspection_typename_field())
+            }
+            AbstractType::Union(union) => {
+                FieldDefinitionPosition::Union(union.introspection_typename_field())
+            }
+        }
+    }
 }
 
 pub(crate) fn is_abstract_type(ty: TypeDefinitionPosition) -> bool {
