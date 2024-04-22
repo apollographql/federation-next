@@ -237,11 +237,15 @@ fn matches_condition_for_kind(
 
     let value = directive.argument_by_name("if");
 
+    let matches_if_negated = match kind {
+        ConditionKind::Include => false,
+        ConditionKind::Skip => true,
+    };
     match value {
         None => false,
         Some(v) => match v.as_variable() {
-            Some(var) => conditions.0.iter().any(|cond| {
-                cond.0.as_str() == var.as_str() && cond.1 == &(kind == ConditionKind::Skip)
+            Some(directive_var) => conditions.0.iter().any(|(cond_name, cond_is_negated)| {
+                cond_name == directive_var && *cond_is_negated == matches_if_negated
             }),
             None => true,
         },
