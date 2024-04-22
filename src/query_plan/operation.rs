@@ -153,9 +153,7 @@ pub(crate) mod normalized_selection_map {
     /// module to prevent code from accidentally mutating the underlying map outside the mutation
     /// API.
     #[derive(Debug, Clone, PartialEq, Eq, Default)]
-    pub(crate) struct NormalizedSelectionMap(
-        pub(crate) IndexMap<NormalizedSelectionKey, NormalizedSelection>,
-    );
+    pub(crate) struct NormalizedSelectionMap(IndexMap<NormalizedSelectionKey, NormalizedSelection>);
 
     impl Deref for NormalizedSelectionMap {
         type Target = IndexMap<NormalizedSelectionKey, NormalizedSelection>;
@@ -1877,10 +1875,9 @@ impl NormalizedSelectionSet {
         fragments: &Option<&mut RebasedFragments>,
     ) -> Result<NormalizedSelectionSet, FederationError> {
         let handle_selection =
-            |(selection_key, selection): (&NormalizedSelectionKey, &NormalizedSelection)| {
-                let selection_set = match selection.selection_set()? {
-                    None => return Ok((selection_key.clone(), selection.clone())),
-                    Some(s) => s,
+            |selection: &NormalizedSelection| -> Result<NormalizedSelection, FederationError> {
+                let Some(selection_set) = selection.selection_set()? else {
+                    return Ok(selection.clone());
                 };
 
                 let type_if_abstract =
@@ -1889,29 +1886,22 @@ impl NormalizedSelectionSet {
                     .add_typename_field_for_abstract_types(type_if_abstract, fragments)?;
 
                 if updated_selection_set == *selection_set {
-                    Ok((selection_key.clone(), selection.clone()))
+                    Ok(selection.clone())
                 } else {
-                    Ok((
-                        selection_key.clone(),
-                        selection.with_updated_selection_set(Some(updated_selection_set)),
-                    ))
+                    Ok(selection.with_updated_selection_set(Some(updated_selection_set)))
                 }
             };
 
         if parent_type_if_abstract.is_none() || self.has_top_level_typename_field() {
-            let selection_map =
-                self.selections
-                    .iter()
-                    .map(handle_selection)
-                    .collect::<Result<
-                        IndexMap<NormalizedSelectionKey, NormalizedSelection>,
-                        FederationError,
-                    >>()?;
+            let mut selection_map = NormalizedSelectionMap::new();
+            for selection in self.selections.values() {
+                selection_map.insert(handle_selection(selection)?);
+            }
 
             return Ok(NormalizedSelectionSet {
                 schema: self.schema.clone(),
                 type_position: self.type_position.clone(),
-                selections: Arc::new(NormalizedSelectionMap(selection_map)),
+                selections: Arc::new(selection_map),
             });
         }
 
@@ -2156,66 +2146,60 @@ impl NormalizedSelectionSet {
             }
         }
 
-        let selection_map: IndexMap<_, _> = self
-            .selections
-            .iter()
-            .map(|(key, selection)| {
-                let path_element = selection.element()?.as_path_element();
-                let subselection_aliases = remaining
-                    .iter()
-                    .filter_map(|alias| {
-                        if alias.path.first() == path_element.as_ref() {
-                            Some(FieldToAlias {
-                                path: alias.path[1..].to_vec(),
-                                response_name: alias.response_name.clone(),
-                                alias: alias.alias.clone(),
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let selection_set = selection.selection_set()?;
-                let updated_selection_set = selection_set
-                    .map(|selection_set| selection_set.with_field_aliased(&subselection_aliases))
-                    .transpose()?;
+        let mut selection_map = NormalizedSelectionMap::new();
+        for selection in self.selections.values() {
+            let path_element = selection.element()?.as_path_element();
+            let subselection_aliases = remaining
+                .iter()
+                .filter_map(|alias| {
+                    if alias.path.first() == path_element.as_ref() {
+                        Some(FieldToAlias {
+                            path: alias.path[1..].to_vec(),
+                            response_name: alias.response_name.clone(),
+                            alias: alias.alias.clone(),
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            let selection_set = selection.selection_set()?;
+            let updated_selection_set = selection_set
+                .map(|selection_set| selection_set.with_field_aliased(&subselection_aliases))
+                .transpose()?;
 
-                match selection {
-                    NormalizedSelection::Field(field) => {
-                        let alias = path_element.and_then(|elem| at_current_level.get(&elem));
-                        if alias.is_none() && selection_set == updated_selection_set.as_ref() {
-                            Ok((key.clone(), selection.clone()))
-                        } else {
-                            let sel = NormalizedFieldSelection {
-                                field: match alias {
-                                    Some(alias) => field.with_updated_alias(alias.alias.clone()),
-                                    None => field.field.clone(),
-                                },
-                                selection_set: updated_selection_set,
-                            };
-                            let key = sel.key();
-                            Ok((key, NormalizedSelection::Field(Arc::new(sel))))
-                        }
+            match selection {
+                NormalizedSelection::Field(field) => {
+                    let alias = path_element.and_then(|elem| at_current_level.get(&elem));
+                    if alias.is_none() && selection_set == updated_selection_set.as_ref() {
+                        selection_map.insert(selection.clone());
+                    } else {
+                        let sel = NormalizedFieldSelection {
+                            field: match alias {
+                                Some(alias) => field.with_updated_alias(alias.alias.clone()),
+                                None => field.field.clone(),
+                            },
+                            selection_set: updated_selection_set,
+                        };
+                        selection_map.insert(NormalizedSelection::Field(Arc::new(sel)));
                     }
-                    NormalizedSelection::InlineFragment(_) => {
-                        if selection_set == updated_selection_set.as_ref() {
-                            Ok((key.clone(), selection.clone()))
-                        } else {
-                            Ok((
-                                key.clone(),
-                                selection.with_updated_selection_set(updated_selection_set),
-                            ))
-                        }
-                    }
-                    NormalizedSelection::FragmentSpread(_) => unimplemented!("unsupported"),
                 }
-            })
-            .collect::<Result<IndexMap<_, _>, FederationError>>()?;
+                NormalizedSelection::InlineFragment(_) => {
+                    if selection_set == updated_selection_set.as_ref() {
+                        selection_map.insert(selection.clone());
+                    } else {
+                        selection_map
+                            .insert(selection.with_updated_selection_set(updated_selection_set));
+                    }
+                }
+                NormalizedSelection::FragmentSpread(_) => unimplemented!("unsupported"),
+            }
+        }
 
         Ok(NormalizedSelectionSet {
             schema: self.schema.clone(),
             type_position: self.type_position.clone(),
-            selections: Arc::new(NormalizedSelectionMap(selection_map)),
+            selections: Arc::new(selection_map),
         })
     }
 

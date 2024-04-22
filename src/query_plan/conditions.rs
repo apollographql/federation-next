@@ -141,52 +141,37 @@ pub(crate) fn remove_conditions_from_selection_set(
             Ok(selection_set.clone())
         }
         Conditions::Variables(variable_conditions) => {
-            let mut selection_map = IndexMap::new();
+            let mut selection_map = NormalizedSelectionMap::new();
 
-            for selection in selection_set.selections.iter() {
-                let (key, selection) = if let Ok(element) = selection.1.element() {
-                    // We remove any of the conditions on the element and recurse.
-                    let updated_element =
-                        remove_conditions_of_element(element.clone(), variable_conditions);
-                    if let Ok(Some(selection_set)) = selection.1.selection_set() {
-                        let updated_selection_set =
-                            remove_conditions_from_selection_set(selection_set, conditions)?;
-                        if updated_element == element {
-                            if *selection_set == updated_selection_set {
-                                (selection.0.clone(), selection.1.clone())
-                            } else {
-                                (
-                                    selection.0.clone(),
-                                    selection
-                                        .1
-                                        .with_updated_selection_set(Some(updated_selection_set)),
-                                )
-                            }
+            for selection in selection_set.selections.values() {
+                let element = selection.element()?;
+                // We remove any of the conditions on the element and recurse.
+                let updated_element =
+                    remove_conditions_of_element(element.clone(), variable_conditions);
+                let new_selection = if let Ok(Some(selection_set)) = selection.selection_set() {
+                    let updated_selection_set =
+                        remove_conditions_from_selection_set(selection_set, conditions)?;
+                    if updated_element == element {
+                        if *selection_set == updated_selection_set {
+                            selection.clone()
                         } else {
-                            (
-                                selection.0.clone(),
-                                selection_of_element(updated_element, Some(updated_selection_set))?,
-                            )
+                            selection.with_updated_selection_set(Some(updated_selection_set))
                         }
-                    } else if updated_element == element {
-                        (selection.0.clone(), selection.1.clone())
                     } else {
-                        (
-                            selection.0.clone(),
-                            selection_of_element(updated_element, None)?,
-                        )
+                        selection_of_element(updated_element, Some(updated_selection_set))?
                     }
+                } else if updated_element == element {
+                    selection.clone()
                 } else {
-                    //FIXME: what is the expected behaviour here if element() returns an error?
-                    todo!()
+                    selection_of_element(updated_element, None)?
                 };
-                selection_map.insert(key, selection);
+                selection_map.insert(new_selection);
             }
 
             Ok(NormalizedSelectionSet {
                 schema: selection_set.schema.clone(),
                 type_position: selection_set.type_position.clone(),
-                selections: Arc::new(NormalizedSelectionMap(selection_map)),
+                selections: Arc::new(selection_map),
             })
         }
     }

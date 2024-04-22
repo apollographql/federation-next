@@ -956,33 +956,18 @@ impl FetchInputs {
         handled_conditions: &Conditions,
         type_position: &CompositeTypeDefinitionPosition,
     ) -> Result<NormalizedSelectionSet, FederationError> {
-        let selection_sets = self
-            .selection_sets_per_parent_type
-            .values()
-            .map(|selection_set| {
-                remove_conditions_from_selection_set(selection_set, handled_conditions)
-            })
-            .collect::<Result<Vec<_>, FederationError>>()?;
-        // Making sure we're not generating something invalid.
-        selection_sets
-            .iter()
-            .try_for_each(|s| s.validate(variable_definitions))?;
-        let selections = Arc::new(NormalizedSelectionMap(
-            selection_sets
-                .iter()
-                .flat_map(|selection_set| {
-                    selection_set
-                        .selections
-                        .iter()
-                        .map(|(key, selection)| (key.clone(), selection.clone()))
-                })
-                .collect(),
-        ));
-
+        let mut selections = NormalizedSelectionMap::new();
+        for selection_set in self.selection_sets_per_parent_type.values() {
+            let selection_set =
+                remove_conditions_from_selection_set(selection_set, handled_conditions)?;
+            // Making sure we're not generating something invalid.
+            selection_set.validate(variable_definitions)?;
+            selections.extend_ref(&selection_set.selections)
+        }
         Ok(NormalizedSelectionSet {
             schema: self.supergraph_schema.clone(),
             type_position: type_position.clone(),
-            selections,
+            selections: Arc::new(selections),
         })
     }
 }
