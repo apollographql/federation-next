@@ -60,19 +60,10 @@ impl Display for QueryGraphNode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::IsVariant)]
 pub(crate) enum QueryGraphNodeType {
     SchemaType(OutputTypeDefinitionPosition),
     FederatedRootType(SchemaRootDefinitionKind),
-}
-
-impl QueryGraphNodeType {
-    pub fn is_schema_type(&self) -> bool {
-        matches!(self, Self::SchemaType(_))
-    }
-    pub fn is_federated_root_type(&self) -> bool {
-        matches!(self, Self::FederatedRootType(_))
-    }
 }
 
 impl Display for QueryGraphNodeType {
@@ -80,7 +71,7 @@ impl Display for QueryGraphNodeType {
         match self {
             QueryGraphNodeType::SchemaType(pos) => pos.fmt(f),
             QueryGraphNodeType::FederatedRootType(root_kind) => {
-                write!(f, "[{}]", root_kind)
+                write!(f, "[{root_kind}]")
             }
         }
     }
