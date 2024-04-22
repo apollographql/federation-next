@@ -968,9 +968,9 @@ impl FetchInputs {
             })
             .collect::<Result<Vec<_>, FederationError>>()?;
         // Making sure we're not generating something invalid.
-        let _: Result<(), FederationError> = selection_sets
+        selection_sets
             .iter()
-            .try_for_each(|s| s.validate(variable_definitions));
+            .try_for_each(|s| s.validate(variable_definitions))?;
         let selections = Arc::new(NormalizedSelectionMap(
             selection_sets
                 .iter()
