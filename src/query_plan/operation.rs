@@ -136,7 +136,6 @@ pub(crate) mod normalized_selection_map {
         NormalizedSelectionSet,
     };
     use apollo_compiler::ast::Name;
-    use derive_more::DerefMut;
     use indexmap::IndexMap;
     use std::borrow::{Borrow, Cow};
     use std::hash::Hash;
@@ -154,7 +153,7 @@ pub(crate) mod normalized_selection_map {
     /// `IndexSet` since key computation is expensive (it involves sorting). This type is in its own
     /// module to prevent code from accidentally mutating the underlying map outside the mutation
     /// API.
-    #[derive(Debug, Clone, PartialEq, Eq, Default, DerefMut)]
+    #[derive(Debug, Clone, PartialEq, Eq, Default)]
     pub(crate) struct NormalizedSelectionMap(
         pub(crate) IndexMap<NormalizedSelectionKey, NormalizedSelection>,
     );
@@ -189,6 +188,13 @@ pub(crate) mod normalized_selection_map {
             self.0.shift_remove(key)
         }
 
+        pub(crate) fn retain(
+            &mut self,
+            mut predicate: impl FnMut(&NormalizedSelectionKey, &NormalizedSelection) -> bool,
+        ) {
+            self.0.retain(|k, v| predicate(k, v))
+        }
+
         pub(crate) fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<NormalizedSelectionValue>
         where
             NormalizedSelectionKey: Borrow<Q>,
@@ -208,6 +214,15 @@ pub(crate) mod normalized_selection_map {
                 indexmap::map::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry(entry)),
                 indexmap::map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(entry)),
             }
+        }
+
+        pub(crate) fn extend(&mut self, other: NormalizedSelectionMap) {
+            self.0.extend(other.0)
+        }
+
+        pub(crate) fn extend_ref(&mut self, other: &NormalizedSelectionMap) {
+            self.0
+                .extend(other.iter().map(|(k, v)| (k.clone(), v.clone())))
         }
 
         /// Returns the selection set resulting from "recursively" filtering any selection
@@ -2086,12 +2101,7 @@ impl NormalizedSelectionSet {
                         normalized_selection_map.insert(normalized_selection);
                     }
                     NormalizedSelectionOrSet::SelectionSet(normalized_set) => {
-                        normalized_selection_map.extend(
-                            normalized_set
-                                .selections
-                                .iter()
-                                .map(|(k, v)| (k.clone(), v.clone())),
-                        );
+                        normalized_selection_map.extend_ref(&normalized_set.selections);
                     }
                 }
             }
