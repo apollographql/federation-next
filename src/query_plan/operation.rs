@@ -573,33 +573,12 @@ impl NormalizedSelection {
 
     pub(crate) fn has_defer(&self) -> bool {
         match self {
-            NormalizedSelection::Field(field_selection) => {
-                // @defer cannot be on a field at the moment
-                field_selection.field.data().directives.has("defer")
-                    || field_selection
-                        .selection_set
-                        .as_ref()
-                        .is_some_and(|s| s.has_defer())
-            }
+            NormalizedSelection::Field(field_selection) => field_selection.has_defer(),
             NormalizedSelection::FragmentSpread(fragment_spread_selection) => {
-                fragment_spread_selection
-                    .spread
-                    .data
-                    .directives
-                    .has("defer")
-                    || fragment_spread_selection.selection_set.has_defer()
+                fragment_spread_selection.has_defer()
             }
             NormalizedSelection::InlineFragment(inline_fragment_selection) => {
-                inline_fragment_selection
-                    .inline_fragment
-                    .data()
-                    .directives
-                    .has("defer")
-                    || inline_fragment_selection
-                        .selection_set
-                        .selections
-                        .values()
-                        .any(|s| s.has_defer())
+                inline_fragment_selection.has_defer()
             }
         }
     }
@@ -1031,6 +1010,10 @@ impl NormalizedFragmentSpreadSelection {
                 selection_set: named_fragment.selection_set.clone(),
             },
         ))))
+    }
+
+    pub(crate) fn has_defer(&self) -> bool {
+        self.spread.data.directives.has("defer") || self.selection_set.has_defer()
     }
 }
 
@@ -2050,6 +2033,10 @@ impl NormalizedFieldSelection {
             ))))
         }
     }
+
+    pub(crate) fn has_defer(&self) -> bool {
+        self.field.has_defer() || self.selection_set.as_ref().is_some_and(|s| s.has_defer())
+    }
 }
 
 impl<'a> NormalizedFieldSelectionValue<'a> {
@@ -2189,6 +2176,11 @@ impl NormalizedField {
                 Err(_) => false,
             };
         field_parent_type.is_interface_type() || is_interface_object_type
+    }
+
+    pub(crate) fn has_defer(&self) -> bool {
+        // @defer cannot be on field at the moment
+        false
     }
 }
 
@@ -2627,6 +2619,15 @@ impl NormalizedInlineFragmentSelection {
         data.type_condition_position
             .as_ref()
             .unwrap_or(&data.parent_type_position)
+    }
+
+    pub(crate) fn has_defer(&self) -> bool {
+        self.inline_fragment.data().directives.has("defer")
+            || self
+                .selection_set
+                .selections
+                .values()
+                .any(|s| s.has_defer())
     }
 }
 
