@@ -202,7 +202,7 @@ fn remove_conditions_of_element(
             .iter()
             .filter(|d| {
                 !matches_condition_for_kind(d, conditions, ConditionKind::Include)
-                    && matches_condition_for_kind(d, conditions, ConditionKind::Skip)
+                    && !matches_condition_for_kind(d, conditions, ConditionKind::Skip)
             })
             .cloned()
             .collect(),
