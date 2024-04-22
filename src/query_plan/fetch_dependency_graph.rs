@@ -94,7 +94,7 @@ impl FetchIdGenerator {
 
     /// Generate a new ID for a fetch dependency node.
     pub fn next_id(&self) -> u64 {
-        self.next.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 }
 
