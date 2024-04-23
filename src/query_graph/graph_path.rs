@@ -25,7 +25,7 @@ use crate::schema::position::{
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::Value;
 use apollo_compiler::executable::DirectiveList;
-use apollo_compiler::schema::{ExtendedType, Name};
+use apollo_compiler::schema::{ExtendedType, Name, NamedType};
 use apollo_compiler::NodeStr;
 use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{EdgeIndex, NodeIndex};
@@ -2066,14 +2066,12 @@ impl OpGraphPath {
         _source: &NodeStr,
         itf: InterfaceFieldDefinitionPosition,
     ) -> Result<bool, FederationError> {
-        if self.graph.schema()?.metadata().is_none() {
-            return Err(FederationError::internal(
-                "Interface should have come from a federation subgraph",
-            ));
-        };
-        let comp_type_pos = CompositeTypeDefinitionPosition::Interface(itf.parent());
         let valid_schema = self.graph.schema()?;
         let schema = valid_schema.schema();
+        let fed_spec = get_federation_spec_definition_from_subgraph(valid_schema)?;
+        let key_directive = fed_spec.key_directive_definition(valid_schema)?;
+        let shareable_directive = fed_spec.shareable_directive(valid_schema)?;
+        let comp_type_pos = CompositeTypeDefinitionPosition::Interface(itf.parent());
         for implem in valid_schema.possible_runtime_types(comp_type_pos)? {
             let field = schema
                 .get_interface(&implem.type_name)
@@ -2086,71 +2084,77 @@ impl OpGraphPath {
             let ty = valid_schema
                 .get_type(implem.type_name.clone())?
                 .get(schema)?;
-            if !ty.directives().has("key") {
+            if !ty.directives().has(&key_directive.name) {
                 continue;
             }
-            if !field.directives.has("shareable") {
+            if !field.directives.has(&shareable_directive.name) {
                 continue;
             }
             let base_ty_name = field.ty.inner_named_type();
             if is_leaf_type(schema, base_ty_name) {
                 continue;
             }
-            match schema.get_object(base_ty_name) {
-                Some(ty)
-                    if ty
-                        .fields
-                        .values()
-                        .all(|f| is_leaf_type(schema, f.ty.inner_named_type())) =>
-                {
-                    for node in self.graph.nodes_for_type(&ty.name) {
-                        let node = self.graph.node_weight(node)?;
-                        let tail = self.graph.node_weight(self.tail)?;
-                        if node.source == tail.source {
-                            continue;
-                        }
-                        let node_ty = match &node.type_ {
-                            QueryGraphNodeType::SchemaType(ty) => ty,
-                            QueryGraphNodeType::FederatedRootType(_) => {
-                                return Err(FederationError::internal(format!(
-                                    "{implem} is an object in {} but a {} in {}",
-                                    tail.source, node.type_, node.source
-                                )))
-                            }
-                        };
-                        let node_ty_name = node_ty.type_name();
-                        let node_ty = valid_schema.get_type(node_ty_name.clone())?.get(schema)?;
-                        let fields = match node_ty {
-                            ExtendedType::Object(obj) => obj.fields.iter(),
-                            ExtendedType::Interface(int) => int.fields.iter(),
-                            _ => {
-                                return Err(FederationError::internal(format!(
-                                    "{implem} is an object in {} but a {} in {}",
-                                    tail.source, node.type_, node.source
-                                )))
-                            }
-                        };
-                        let Some((_, field)) = fields.clone().find(|f| f.0 == &itf.field_name)
-                        else {
-                            continue;
-                        };
-                        if field.directives.iter().any(|d| d.name == "shareable") {
-                            continue;
-                        }
-                        if node_ty_name != base_ty_name {
-                            // We have a genuine difference here, so we should explore type explosion.
-                            return Ok(true);
-                        }
-                        let names: HashSet<_> = fields.map(|f| f.0).collect();
-                        if !ty.fields.iter().all(|f| names.contains(&f.0)) {
-                            // Same, we have a genuine difference.
-                            return Ok(true);
-                        }
-                    }
-                    return Ok(false);
-                }
-                _ => return Ok(true),
+            let Some(ty) = schema.get_object(base_ty_name) else {
+                return Ok(true);
+            };
+            if ty
+                .fields
+                .values()
+                .any(|f| !is_leaf_type(schema, f.ty.inner_named_type()))
+            {
+                return Ok(true);
             }
+            for node in self.graph.nodes_for_type(&ty.name) {
+                let node = self.graph.node_weight(node)?;
+                let tail = self.graph.node_weight(self.tail)?;
+                if node.source == tail.source {
+                    continue;
+                }
+                // PORT_NOTE: The JS code pulls out `otherMetadata` from each node here. This does
+                // not seem to be needed in the RS code?
+                let build_err = || {
+                    Err(FederationError::internal(format!(
+                        "{implem} is an object in {} but a {} in {}",
+                        tail.source, node.type_, node.source
+                    )))
+                };
+                let QueryGraphNodeType::SchemaType(node_ty) = &node.type_ else {
+                    return build_err();
+                };
+                let node_ty_name = node_ty.type_name();
+                let node_ty = valid_schema.get_type(node_ty_name.clone())?.get(schema)?;
+                let fields_iter = match node_ty {
+                    ExtendedType::Object(obj) => obj.fields.iter(),
+                    ExtendedType::Interface(int) => int.fields.iter(),
+                    _ => return build_err(),
+                };
+                let Some((_, field)) = fields_iter.clone().find(|f| f.0 == &itf.field_name) else {
+                    continue;
+                };
+                if field
+                    .directives
+                    .iter()
+                    .any(|d| d.name == shareable_directive.name)
+                {
+                    continue;
+                }
+                let field_ty = field.ty.inner_named_type();
+                if field_ty != base_ty_name
+                    || schema
+                        .get_object(field_ty)
+                        .or_else(|| schema.get_interface(field_ty))
+                        .is_none()
+                {
+                    // We have a genuine difference here, so we should explore type explosion.
+                    return Ok(true);
+                }
+                let names: HashSet<_> = fields_iter.map(|f| f.0).collect();
+                if !ty.fields.iter().all(|f| names.contains(&f.0)) {
+                    // Same, we have a genuine difference.
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
         }
         Ok(false)
     }
