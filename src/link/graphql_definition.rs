@@ -4,6 +4,7 @@ use crate::error::FederationError;
 use crate::link::argument::{
     directive_optional_string_argument, directive_optional_variable_boolean_argument,
 };
+use apollo_compiler::ast::Value;
 use apollo_compiler::executable::{Directive, Name};
 use apollo_compiler::{name, Node, NodeStr};
 
@@ -56,6 +57,12 @@ pub(crate) enum OperationConditionalKind {
     Skip,
 }
 
+impl OperationConditionalKind {
+    pub(crate) fn to_name(&self) -> Name {
+        Name::new_unchecked(NodeStr::new(&self.to_string()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum BooleanOrVariable {
     Boolean(bool),
@@ -67,6 +74,15 @@ impl Display for BooleanOrVariable {
         match self {
             BooleanOrVariable::Boolean(b) => b.fmt(f),
             BooleanOrVariable::Variable(name) => name.fmt(f),
+        }
+    }
+}
+
+impl BooleanOrVariable {
+    pub(crate) fn to_ast_value(&self) -> Value {
+        match self {
+            BooleanOrVariable::Boolean(b) => Value::Boolean(*b),
+            BooleanOrVariable::Variable(name) => Value::Variable(name.clone()),
         }
     }
 }
