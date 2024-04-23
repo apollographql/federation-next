@@ -466,8 +466,7 @@ impl<'a> QueryPlanningTraversal<'a> {
             return Ok(false);
         }
         for node in nodes {
-            let qg = self.parameters.federated_query_graph.graph();
-            let n = &qg[*node];
+            let n = self.parameters.federated_query_graph.node_weight(*node)?;
             let parent_ty = match &n.type_ {
                 QueryGraphNodeType::SchemaType(ty) => match ty {
                     OutputTypeDefinitionPosition::Object(ty) => {
