@@ -155,7 +155,7 @@ pub(crate) fn remove_conditions_from_selection_set(
                         if *selection_set == updated_selection_set {
                             selection.clone()
                         } else {
-                            selection.with_updated_selection_set(Some(updated_selection_set))
+                            selection.with_updated_selection_set(Some(updated_selection_set))?
                         }
                     } else {
                         selection_of_element(updated_element, Some(updated_selection_set))?

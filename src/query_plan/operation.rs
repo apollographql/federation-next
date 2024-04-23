@@ -598,13 +598,15 @@ impl NormalizedSelection {
     pub(crate) fn collect_variables<'selection>(
         &'selection self,
         variables: &mut HashSet<&'selection Name>,
-    ) {
+    ) -> Result<(), FederationError> {
         match self {
             NormalizedSelection::Field(field) => field.collect_variables(variables),
             NormalizedSelection::InlineFragment(inline_fragment) => {
                 inline_fragment.collect_variables(variables)
             }
-            NormalizedSelection::FragmentSpread(_) => unimplemented!("unsupported"),
+            NormalizedSelection::FragmentSpread(_) => {
+                Err(FederationError::internal("unexpected fragment spread"))
+            }
         }
     }
 
@@ -682,21 +684,18 @@ impl NormalizedSelection {
     pub(crate) fn with_updated_selection_set(
         &self,
         selection_set: Option<NormalizedSelectionSet>,
-    ) -> Self {
+    ) -> Result<Self, FederationError> {
         match self {
-            NormalizedSelection::Field(field) => NormalizedSelection::Field(Arc::new(
+            NormalizedSelection::Field(field) => Ok(NormalizedSelection::Field(Arc::new(
                 field.with_updated_selection_set(selection_set),
-            )),
-            NormalizedSelection::FragmentSpread(fragment_spread) => {
-                NormalizedSelection::FragmentSpread(Arc::new(
-                    fragment_spread.with_updated_selection_set(selection_set),
-                ))
-            }
-
+            ))),
             NormalizedSelection::InlineFragment(inline_fragment) => {
-                NormalizedSelection::InlineFragment(Arc::new(
+                Ok(NormalizedSelection::InlineFragment(Arc::new(
                     inline_fragment.with_updated_selection_set(selection_set),
-                ))
+                )))
+            }
+            NormalizedSelection::FragmentSpread(_) => {
+                Err(FederationError::internal("unexpected fragment spread"))
             }
         }
     }
@@ -838,11 +837,12 @@ pub(crate) mod normalized_field_selection {
         pub(crate) fn collect_variables<'selection>(
             &'selection self,
             variables: &mut HashSet<&'selection Name>,
-        ) {
+        ) -> Result<(), FederationError> {
             self.field.collect_variables(variables);
             if let Some(set) = &self.selection_set {
-                set.collect_variables(variables)
+                set.collect_variables(variables)?
             }
+            Ok(())
         }
     }
 
@@ -1182,13 +1182,6 @@ impl NormalizedFragmentSpreadSelection {
         })
     }
 
-    pub(crate) fn with_updated_selection_set(
-        &self,
-        _selection_set: Option<NormalizedSelectionSet>,
-    ) -> Self {
-        unimplemented!("unsupported")
-    }
-
     pub(crate) fn normalize(
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
@@ -1290,7 +1283,7 @@ pub(crate) mod normalized_inline_fragment_selection {
         pub(crate) fn collect_variables<'selection>(
             &'selection self,
             variables: &mut HashSet<&'selection Name>,
-        ) {
+        ) -> Result<(), FederationError> {
             self.inline_fragment.collect_variables(variables);
             self.selection_set.collect_variables(variables)
         }
@@ -1975,7 +1968,7 @@ impl NormalizedSelectionSet {
                 if updated_selection_set == *selection_set {
                     selection.clone()
                 } else {
-                    selection.with_updated_selection_set(Some(updated_selection_set))
+                    selection.with_updated_selection_set(Some(updated_selection_set))?
                 }
             } else {
                 selection.clone()
@@ -2242,10 +2235,12 @@ impl NormalizedSelectionSet {
                         selection_map.insert(selection.clone());
                     } else {
                         selection_map
-                            .insert(selection.with_updated_selection_set(updated_selection_set));
+                            .insert(selection.with_updated_selection_set(updated_selection_set)?);
                     }
                 }
-                NormalizedSelection::FragmentSpread(_) => unimplemented!("unsupported"),
+                NormalizedSelection::FragmentSpread(_) => {
+                    return Err(FederationError::internal("unexpected fragment spread"))
+                }
             }
         }
 
@@ -2296,21 +2291,22 @@ impl NormalizedSelectionSet {
         fields
     }
 
-    pub(crate) fn used_variables(&self) -> Vec<Name> {
+    pub(crate) fn used_variables(&self) -> Result<Vec<Name>, FederationError> {
         let mut variables = HashSet::new();
-        self.collect_variables(&mut variables);
+        self.collect_variables(&mut variables)?;
         let mut res: Vec<Name> = variables.into_iter().cloned().collect();
         res.sort();
-        res
+        Ok(res)
     }
 
     pub(crate) fn collect_variables<'selection>(
         &'selection self,
         variables: &mut HashSet<&'selection Name>,
-    ) {
+    ) -> Result<(), FederationError> {
         for selection in self.selections.values() {
-            selection.collect_variables(variables)
+            selection.collect_variables(variables)?
         }
+        Ok(())
     }
 
     pub(crate) fn validate(
