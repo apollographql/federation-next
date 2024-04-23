@@ -855,7 +855,11 @@ impl FetchDependencyGraph {
         let conditions = handled_conditions.update_with(&node.selection_set.conditions);
         let new_handled_conditions = conditions.clone().merge(handled_conditions);
 
-        let processed = processor.on_node(Arc::make_mut(node), &new_handled_conditions)?;
+        let processed = processor.on_node(
+            &self.federated_query_graph,
+            Arc::make_mut(node),
+            &new_handled_conditions,
+        )?;
         if children.is_empty() {
             return Ok((
                 processor.on_conditions(&conditions, processed),
@@ -1164,7 +1168,7 @@ impl FetchDependencyGraphNode {
 
         let node = super::PlanNode::Fetch(Box::new(super::FetchNode {
             subgraph_name: self.subgraph_name.clone(),
-            id: self.id,
+            id: self.id.get().copied(),
             variable_usages,
             requires: input_nodes.map(|sel| executable::SelectionSet::from(sel).selections),
             operation_document,
