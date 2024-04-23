@@ -827,11 +827,6 @@ pub(crate) mod normalized_field_selection {
             let mut data = self.field.data().clone();
             data.alias = Some(alias);
             NormalizedField::new(data)
-            // FIXME: what is copyAttachments?
-            // let field = NormalizedField::new(data);
-
-            // this.copyAttachementsTo(newField);
-            //field
         }
 
         pub(crate) fn collect_variables<'selection>(
