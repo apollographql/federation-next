@@ -55,10 +55,8 @@ impl VariableConditions {
 
     /// Returns a variable condition by name.
     pub fn get(&self, name: &str) -> Option<VariableCondition> {
-        self.0.get(name).map(|&negated| {
-            // The name string existing in the map implies that it exists as a
-            // `Name` instance, and thus that it's a valid name.
-            let variable = Name::new_unchecked(name.into());
+        self.0.get_key_value(name).map(|(variable, &negated)| {
+            let variable = variable.clone();
             VariableCondition { variable, negated }
         })
     }
