@@ -19,7 +19,7 @@ use crate::query_plan::operation::{
     SelectionId, TYPENAME_FIELD,
 };
 use crate::query_plan::FetchDataPathElement;
-use crate::query_plan::{FetchDataRewrite, QueryPlanCost};
+use crate::query_plan::{FetchDataRewrite, FetchDataValueSetter, QueryPlanCost};
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, FieldDefinitionPosition, ObjectTypeDefinitionPosition,
     SchemaRootDefinitionKind,
@@ -1960,9 +1960,13 @@ fn compute_nodes_for_key_resolution<'a>(
             input_selections,
             new_context,
         ),
-        compute_input_rewrites_on_key_fetch(input_type.type_name(), &dest_type)
-            .into_iter()
-            .flatten(),
+        compute_input_rewrites_on_key_fetch(
+            &dependency_graph.supergraph_schema,
+            input_type.type_name(),
+            &dest_type,
+        )
+        .into_iter()
+        .flatten(),
     );
 
     // We also ensure to get the __typename of the current type in the "original" node.
@@ -2406,10 +2410,30 @@ fn create_fetch_initial_path(
 }
 
 fn compute_input_rewrites_on_key_fetch(
-    _input_type_name: &str,
-    _dest_type: &CompositeTypeDefinitionPosition,
+    supergraph_schema: &ValidFederationSchema,
+    input_type_name: &NodeStr,
+    dest_type: &CompositeTypeDefinitionPosition,
 ) -> Option<Vec<Arc<FetchDataRewrite>>> {
-    todo!() // Port `computeInputRewritesOnKeyFetch`
+    // When we send a fetch to a subgraph, the inputs __typename must essentially match `dest_type`
+    // so the proper __resolveReference is called. If `dest_type` is a "normal" object type, that's
+    // going to be fine by default, but if `dest_type` is an interface in the supergraph (meaning
+    // that it is either an interface or an interface object), then the underlying object might
+    // have a __typename that is the concrete implementation type of the object, and we need to
+    // rewrite it.
+    if dest_type.is_interface_type()
+        || dest_type.is_interface_object_type(supergraph_schema.schema())
+    {
+        // rewrite path: [ ... on <input_type_name>, __typename ]
+        let type_cond = FetchDataPathElement::TypenameEquals(input_type_name.clone());
+        let typename_field_elem = FetchDataPathElement::Key(TYPENAME_FIELD.into());
+        let rewrite = FetchDataRewrite::ValueSetter(FetchDataValueSetter {
+            path: vec![type_cond, typename_field_elem],
+            set_value_to: dest_type.type_name().to_string().into(),
+        });
+        Some(vec![Arc::new(rewrite)])
+    } else {
+        None
+    }
 }
 
 fn extract_defer_from_operation(
@@ -2432,5 +2456,5 @@ fn handle_requires(
 ) -> Result<(NodeIndex, FetchDependencyGraphNodePath), FederationError> {
     // PORT_NOTE: instead of returing IDs of created nodes they should be inserted directly
     // in the `created_nodes` set passed by mutable reference.
-    todo!() // Port `handleRequires`
+    todo!() // Port `handleRequires` (FED-25)
 }
