@@ -1,7 +1,7 @@
 use crate::error::FederationError;
+use crate::query_graph::QueryGraph;
 use crate::query_plan::conditions::Conditions;
 use crate::query_plan::fetch_dependency_graph::DeferredInfo;
-use crate::query_plan::fetch_dependency_graph::FetchDependencyGraph;
 use crate::query_plan::fetch_dependency_graph::FetchDependencyGraphNode;
 use crate::query_plan::operation::{NormalizedSelectionSet, RebasedFragments};
 use crate::query_plan::ConditionNode;
@@ -87,7 +87,7 @@ pub(crate) struct FetchDependencyGraphToCostProcessor;
 pub(crate) trait FetchDependencyGraphProcessor<TProcessed, TDeferred> {
     fn on_node(
         &mut self,
-        graph: &FetchDependencyGraph,
+        query_graph: &QueryGraph,
         node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<TProcessed, FederationError>;
@@ -114,11 +114,11 @@ where
 {
     fn on_node(
         &mut self,
-        graph: &FetchDependencyGraph,
+        query_graph: &QueryGraph,
         node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<TProcessed, FederationError> {
-        (*self).on_node(graph, node, handled_conditions)
+        (*self).on_node(query_graph, node, handled_conditions)
     }
     fn on_conditions(&mut self, conditions: &Conditions, value: TProcessed) -> TProcessed {
         (*self).on_conditions(conditions, value)
@@ -155,7 +155,7 @@ impl FetchDependencyGraphProcessor<QueryPlanCost, QueryPlanCost>
     /// (and that fetch cost often dwarfted the actual cost of fields resolution).
     fn on_node(
         &mut self,
-        _graph: &FetchDependencyGraph,
+        _query_graph: &QueryGraph,
         node: &mut FetchDependencyGraphNode,
         _handled_conditions: &Conditions,
     ) -> Result<QueryPlanCost, FederationError> {
@@ -260,7 +260,7 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
 {
     fn on_node(
         &mut self,
-        graph: &FetchDependencyGraph,
+        query_graph: &QueryGraph,
         node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<Option<PlanNode>, FederationError> {
@@ -271,7 +271,7 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
             format!("{name}__{subgraph}__{counter}").into()
         });
         node.to_plan_node(
-            graph,
+            query_graph,
             handled_conditions,
             &self.variable_definitions,
             self.fragments.as_mut(),

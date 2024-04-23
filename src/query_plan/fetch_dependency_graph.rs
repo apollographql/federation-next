@@ -639,7 +639,7 @@ impl FetchDependencyGraphNode {
 
     pub(crate) fn to_plan_node(
         &self,
-        dependency_graph: &FetchDependencyGraph,
+        query_graph: &QueryGraph,
         handled_conditions: &Conditions,
         variable_definitions: &[Node<VariableDefinition>],
         fragments: Option<&mut RebasedFragments>,
@@ -661,9 +661,7 @@ impl FetchDependencyGraphNode {
                 )
             })
             .transpose()?;
-        let subgraph_schema = dependency_graph
-            .federated_query_graph
-            .schema_by_source(&self.subgraph_name)?;
+        let subgraph_schema = query_graph.schema_by_source(&self.subgraph_name)?;
         let variable_usages = selection.used_variables()?;
         let mut operation = if self.is_entity_fetch {
             operation_for_entities_fetch(
