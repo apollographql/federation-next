@@ -52,6 +52,12 @@ pub(crate) struct QueryGraphNode {
     pub(crate) root_kind: Option<SchemaRootDefinitionKind>,
 }
 
+impl QueryGraphNode {
+    pub fn is_root_node(&self) -> bool {
+        matches!(self.type_, QueryGraphNodeType::FederatedRootType(_))
+    }
+}
+
 impl Display for QueryGraphNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}({})", self.type_, self.source)?;
@@ -65,7 +71,7 @@ impl Display for QueryGraphNode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::IsVariant)]
 pub(crate) enum QueryGraphNodeType {
     SchemaType(OutputTypeDefinitionPosition),
     FederatedRootType(SchemaRootDefinitionKind),
@@ -76,7 +82,7 @@ impl Display for QueryGraphNodeType {
         match self {
             QueryGraphNodeType::SchemaType(pos) => pos.fmt(f),
             QueryGraphNodeType::FederatedRootType(root_kind) => {
-                write!(f, "[{}]", root_kind)
+                write!(f, "[{root_kind}]")
             }
         }
     }

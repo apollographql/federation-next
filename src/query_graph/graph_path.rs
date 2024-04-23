@@ -9,13 +9,13 @@ use crate::query_graph::condition_resolver::{
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::{QueryGraph, QueryGraphEdgeTransition, QueryGraphNodeType};
 use crate::query_plan::operation::normalized_field_selection::{
-    NormalizedField, NormalizedFieldData,
+    NormalizedField, NormalizedFieldData, NormalizedFieldSelection,
 };
 use crate::query_plan::operation::normalized_inline_fragment_selection::{
-    NormalizedInlineFragment, NormalizedInlineFragmentData,
+    NormalizedInlineFragment, NormalizedInlineFragmentData, NormalizedInlineFragmentSelection,
 };
-use crate::query_plan::operation::{NormalizedSelectionSet, SelectionId};
-use crate::query_plan::{QueryPathElement, QueryPlanCost};
+use crate::query_plan::operation::{NormalizedSelection, NormalizedSelectionSet, SelectionId};
+use crate::query_plan::{FetchDataPathElement, QueryPathElement, QueryPlanCost};
 use crate::schema::position::{
     AbstractTypeDefinitionPosition, CompositeTypeDefinitionPosition,
     InterfaceFieldDefinitionPosition, ObjectTypeDefinitionPosition, OutputTypeDefinitionPosition,
@@ -263,6 +263,47 @@ impl OpPathElement {
         }
         Ok(conditionals)
     }
+
+    pub(crate) fn with_updated_directives(&self, directives: DirectiveList) -> OpPathElement {
+        match self {
+            OpPathElement::Field(field) => {
+                OpPathElement::Field(field.with_updated_directives(directives))
+            }
+            OpPathElement::InlineFragment(inline_fragment) => {
+                OpPathElement::InlineFragment(inline_fragment.with_updated_directives(directives))
+            }
+        }
+    }
+
+    pub(crate) fn as_path_element(&self) -> Option<FetchDataPathElement> {
+        match self {
+            OpPathElement::Field(field) => Some(field.as_path_element()),
+            OpPathElement::InlineFragment(inline_fragment) => inline_fragment.as_path_element(),
+        }
+    }
+}
+
+pub(crate) fn selection_of_element(
+    element: OpPathElement,
+    sub_selection: Option<NormalizedSelectionSet>,
+) -> Result<NormalizedSelection, FederationError> {
+    // TODO: validate that the subSelection is ok for the element
+    Ok(match element {
+        OpPathElement::Field(field) => {
+            NormalizedSelection::Field(Arc::new(NormalizedFieldSelection {
+                field,
+                selection_set: sub_selection,
+            }))
+        }
+        OpPathElement::InlineFragment(inline_fragment) => {
+            NormalizedSelection::InlineFragment(Arc::new(NormalizedInlineFragmentSelection {
+                inline_fragment,
+                selection_set: sub_selection.ok_or_else(|| {
+                    FederationError::internal("Expected a selection set for an inline fragment")
+                })?,
+            }))
+        }
+    })
 }
 
 impl Display for OpPathElement {
@@ -313,6 +354,10 @@ impl OpGraphPathContext {
         }
         Ok(new_context)
     }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.conditionals.is_empty()
+    }
 }
 
 impl Display for OpGraphPathContext {
@@ -333,6 +378,7 @@ impl Display for OpGraphPathContext {
 /// for this by splitting a path into multiple paths (one for each possible outcome). The common
 /// example is abstract types, where we may end up taking a different edge depending on the runtime
 /// type (e.g. during type explosion).
+#[derive(Clone)]
 pub(crate) struct SimultaneousPaths(pub(crate) Vec<Arc<OpGraphPath>>);
 
 /// One of the options for an `OpenBranch` (see the documentation of that struct for details). This
@@ -341,6 +387,7 @@ pub(crate) struct SimultaneousPaths(pub(crate) Vec<Arc<OpGraphPath>>);
 // PORT_NOTE: The JS codebase stored a `ConditionResolver` callback here, but it was the same for
 // a given traversal (and cached resolution across the traversal), so we accordingly store it in
 // `QueryPlanTraversal` and pass it down when needed instead.
+#[derive(Clone)]
 pub(crate) struct SimultaneousPathsWithLazyIndirectPaths {
     pub(crate) paths: SimultaneousPaths,
     pub(crate) context: OpGraphPathContext,
@@ -371,6 +418,13 @@ impl ExcludedDestinations {
     }
 }
 
+impl PartialEq for ExcludedDestinations {
+    /// See if two `ExcludedDestinations` have the same set of values, regardless of their ordering.
+    fn eq(&self, other: &ExcludedDestinations) -> bool {
+        self.0.len() == other.0.len() && self.0.iter().all(|x| other.0.contains(x))
+    }
+}
+
 impl Default for ExcludedDestinations {
     fn default() -> Self {
         ExcludedDestinations(Arc::new(vec![]))
@@ -381,11 +435,22 @@ impl Default for ExcludedDestinations {
 pub(crate) struct ExcludedConditions(Arc<Vec<Arc<NormalizedSelectionSet>>>);
 
 impl ExcludedConditions {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     fn is_excluded(&self, condition: Option<&Arc<NormalizedSelectionSet>>) -> bool {
         let Some(condition) = condition else {
             return false;
         };
         self.0.contains(condition)
+    }
+
+    /// Immutable version of `push`.
+    pub(crate) fn add_item(&self, value: &NormalizedSelectionSet) -> ExcludedConditions {
+        let mut result = self.0.as_ref().clone();
+        result.push(value.clone().into());
+        ExcludedConditions(Arc::new(result))
     }
 }
 
@@ -2729,9 +2794,15 @@ impl SimultaneousPaths {
     }
 }
 
+impl From<Arc<OpGraphPath>> for SimultaneousPaths {
+    fn from(value: Arc<OpGraphPath>) -> Self {
+        Self(vec![value])
+    }
+}
+
 impl From<OpGraphPath> for SimultaneousPaths {
     fn from(value: OpGraphPath) -> Self {
-        Self(vec![Arc::new(value)])
+        Self::from(Arc::new(value))
     }
 }
 
@@ -2995,6 +3066,42 @@ impl SimultaneousPathsWithLazyIndirectPaths {
 
         let all_options = SimultaneousPaths::flat_cartesian_product(options_for_each_path);
         Ok(Some(self.create_lazy_options(all_options, updated_context)))
+    }
+}
+
+// PORT_NOTE: JS passes a ConditionResolver here, we do not: see port note for
+// `SimultaneousPathsWithLazyIndirectPaths`
+// TODO(@goto-bus-stop): JS passes `override_conditions` here and maintains stores
+// references to it in the created paths. AFAICT override conditions
+// are shared mutable state among different query graphs, so having references to
+// it in many structures would require synchronization. We should likely pass it as
+// an argument to exactly the functionality that uses it.
+pub fn create_initial_options(
+    initial_path: GraphPath<OpGraphPathTrigger, Option<EdgeIndex>>,
+    initial_type: &QueryGraphNodeType,
+    initial_context: OpGraphPathContext,
+    excluded_edges: ExcludedDestinations,
+    excluded_conditions: ExcludedConditions,
+) -> Result<Vec<SimultaneousPathsWithLazyIndirectPaths>, FederationError> {
+    let initial_paths = SimultaneousPaths::from(initial_path);
+    let mut lazy_initial_path = SimultaneousPathsWithLazyIndirectPaths::new(
+        initial_paths,
+        initial_context.clone(),
+        excluded_edges,
+        excluded_conditions,
+    );
+
+    if initial_type.is_federated_root_type() {
+        let initial_options = lazy_initial_path.indirect_options(&initial_context, 0)?;
+        let options = initial_options
+            .paths
+            .iter()
+            .cloned()
+            .map(SimultaneousPaths::from)
+            .collect();
+        Ok(lazy_initial_path.create_lazy_options(options, initial_context))
+    } else {
+        Ok(vec![lazy_initial_path])
     }
 }
 

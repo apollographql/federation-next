@@ -1,9 +1,9 @@
 use crate::error::FederationError;
+use crate::query_graph::QueryGraph;
 use crate::query_plan::conditions::Conditions;
 use crate::query_plan::fetch_dependency_graph::DeferredInfo;
 use crate::query_plan::fetch_dependency_graph::FetchDependencyGraphNode;
 use crate::query_plan::operation::{NormalizedSelectionSet, RebasedFragments};
-use crate::query_plan::query_planner::QueryPlannerConfig;
 use crate::query_plan::ConditionNode;
 use crate::query_plan::DeferNode;
 use crate::query_plan::DeferredDeferBlock;
@@ -18,7 +18,6 @@ use apollo_compiler::executable::VariableDefinition;
 use apollo_compiler::Node;
 use apollo_compiler::NodeStr;
 use std::collections::HashSet;
-use std::sync::Arc;
 
 /// Constant used during query plan cost computation to account for the base cost of doing a fetch,
 /// that is the fact any fetch imply some networking cost, request serialization/deserialization,
@@ -42,8 +41,8 @@ const FETCH_COST: QueryPlanCost = 1000;
 /// The exact number is a tad  arbitrary however.
 const PIPELINING_COST: QueryPlanCost = 100;
 
+#[derive(Clone)]
 pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
-    config: Arc<QueryPlannerConfig>,
     variable_definitions: Vec<Node<VariableDefinition>>,
     fragments: Option<RebasedFragments>,
     operation_name: Option<Name>,
@@ -73,6 +72,7 @@ pub(crate) struct FetchDependencyGraphToQueryPlanProcessor {
 ///    it assumes that the networking and other query processing costs are much higher than
 ///    the cost of resolving a single field. Or to put it more concretely, it assumes that
 ///    a fetch of 5 fields is probably not too different from than of 2 fields.
+#[derive(Clone, Copy)]
 pub(crate) struct FetchDependencyGraphToCostProcessor;
 
 /// Generic interface for "processing" a (reduced) dependency graph of fetch dependency nodes
@@ -87,6 +87,7 @@ pub(crate) struct FetchDependencyGraphToCostProcessor;
 pub(crate) trait FetchDependencyGraphProcessor<TProcessed, TDeferred> {
     fn on_node(
         &mut self,
+        query_graph: &QueryGraph,
         node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<TProcessed, FederationError>;
@@ -113,10 +114,11 @@ where
 {
     fn on_node(
         &mut self,
+        query_graph: &QueryGraph,
         node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<TProcessed, FederationError> {
-        (*self).on_node(node, handled_conditions)
+        (*self).on_node(query_graph, node, handled_conditions)
     }
     fn on_conditions(&mut self, conditions: &Conditions, value: TProcessed) -> TProcessed {
         (*self).on_conditions(conditions, value)
@@ -153,6 +155,7 @@ impl FetchDependencyGraphProcessor<QueryPlanCost, QueryPlanCost>
     /// (and that fetch cost often dwarfted the actual cost of fields resolution).
     fn on_node(
         &mut self,
+        _query_graph: &QueryGraph,
         node: &mut FetchDependencyGraphNode,
         _handled_conditions: &Conditions,
     ) -> Result<QueryPlanCost, FederationError> {
@@ -237,14 +240,12 @@ fn sequence_cost(values: impl IntoIterator<Item = QueryPlanCost>) -> QueryPlanCo
 
 impl FetchDependencyGraphToQueryPlanProcessor {
     pub(crate) fn new(
-        config: Arc<QueryPlannerConfig>,
         variable_definitions: Vec<Node<VariableDefinition>>,
         fragments: Option<RebasedFragments>,
         operation_name: Option<Name>,
         assigned_defer_labels: Option<HashSet<NodeStr>>,
     ) -> Self {
         Self {
-            config,
             variable_definitions,
             fragments,
             operation_name,
@@ -259,6 +260,7 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
 {
     fn on_node(
         &mut self,
+        query_graph: &QueryGraph,
         node: &mut FetchDependencyGraphNode,
         handled_conditions: &Conditions,
     ) -> Result<Option<PlanNode>, FederationError> {
@@ -266,15 +268,15 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
             let counter = self.counter;
             self.counter += 1;
             let subgraph = to_valid_graphql_name(&node.subgraph_name).unwrap_or("".into());
-            format!("{name}__{subgraph}__{counter}")
+            format!("{name}__{subgraph}__{counter}").into()
         });
-        Ok(node.to_plan_node(
-            &self.config,
+        node.to_plan_node(
+            query_graph,
             handled_conditions,
             &self.variable_definitions,
-            self.fragments.as_ref(),
+            self.fragments.as_mut(),
             op_name,
-        ))
+        )
     }
 
     fn on_conditions(
@@ -292,8 +294,8 @@ impl FetchDependencyGraphProcessor<Option<PlanNode>, DeferredDeferBlock>
                 condition.then_some(value)
             }
             Conditions::Variables(variables) => {
-                for (name, negated) in variables.0.iter() {
-                    let (if_clause, else_clause) = if *negated {
+                for (name, negated) in variables.iter() {
+                    let (if_clause, else_clause) = if negated {
                         (None, Some(Box::new(value)))
                     } else {
                         (Some(Box::new(value)), None)
