@@ -3080,6 +3080,7 @@ pub fn create_initial_options(
     initial_path: GraphPath<OpGraphPathTrigger, Option<EdgeIndex>>,
     initial_type: &QueryGraphNodeType,
     initial_context: OpGraphPathContext,
+    condition_resolver: &mut impl ConditionResolver,
     excluded_edges: ExcludedDestinations,
     excluded_conditions: ExcludedConditions,
 ) -> Result<Vec<SimultaneousPathsWithLazyIndirectPaths>, FederationError> {
@@ -3092,7 +3093,8 @@ pub fn create_initial_options(
     );
 
     if initial_type.is_federated_root_type() {
-        let initial_options = lazy_initial_path.indirect_options(&initial_context, 0)?;
+        let initial_options =
+            lazy_initial_path.indirect_options(&initial_context, 0, condition_resolver)?;
         let options = initial_options
             .paths
             .iter()
