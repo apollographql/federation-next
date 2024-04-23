@@ -25,7 +25,7 @@ use crate::schema::position::{
 use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::Value;
 use apollo_compiler::executable::DirectiveList;
-use apollo_compiler::schema::{ExtendedType, Name, NamedType};
+use apollo_compiler::schema::{ExtendedType, Name};
 use apollo_compiler::NodeStr;
 use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{EdgeIndex, NodeIndex};
@@ -2140,10 +2140,8 @@ impl OpGraphPath {
                 }
                 let field_ty = field.ty.inner_named_type();
                 if field_ty != base_ty_name
-                    || schema
-                        .get_object(field_ty)
-                        .or_else(|| schema.get_interface(field_ty))
-                        .is_none()
+                    || !(schema.get_object(field_ty).is_some()
+                        || schema.get_interface(field_ty).is_some())
                 {
                     // We have a genuine difference here, so we should explore type explosion.
                     return Ok(true);
