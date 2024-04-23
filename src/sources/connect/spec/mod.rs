@@ -1,2 +1,2 @@
 mod directives;
-mod schema;
+pub(crate) mod schema;
