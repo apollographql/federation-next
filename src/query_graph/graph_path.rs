@@ -410,11 +410,13 @@ impl ExcludedDestinations {
     }
 
     fn add_excluded(&self, destination: NodeStr) -> Self {
-        let mut new = self.clone();
         if !self.is_excluded(&destination) {
-            Arc::make_mut(&mut new.0).push(destination)
+            let mut new = self.0.as_ref().clone();
+            new.push(destination);
+            Self(Arc::new(new))
+        } else {
+            self.clone()
         }
-        new
     }
 }
 
@@ -1160,7 +1162,7 @@ where
     // PORT_NOTE: In the JS codebase, this was named
     // `advancePathWithNonCollectingAndTypePreservingTransitions`.
     fn advance_with_non_collecting_and_type_preserving_transitions(
-        &self,
+        self: &Arc<Self>,
         context: &OpGraphPathContext,
         condition_resolver: &mut impl ConditionResolver,
         excluded_destinations: &ExcludedDestinations,
@@ -1207,6 +1209,7 @@ where
         // have path A -> B and A -> C -> B, and we can do B -> D, then we want to keep A -> B -> D,
         // not A -> C -> B -> D.
         let mut heap: BinaryHeap<HeapElement<TTrigger, TEdge>> = BinaryHeap::new();
+        heap.push(HeapElement(self.clone()));
         while let Some(HeapElement(to_advance)) = heap.pop() {
             for edge in to_advance.next_edges()? {
                 let edge_weight = self.graph.edge_weight(edge)?;
