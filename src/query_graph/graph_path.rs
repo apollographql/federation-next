@@ -135,6 +135,7 @@ where
     Arc<TTrigger>: Into<GraphPathTrigger>,
     TEdge: Copy + Into<Option<EdgeIndex>>,
     EdgeIndex: Into<TEdge>,
+    // In addition to the bounds of the GraphPath struct, also require Debug:
     TTrigger: std::fmt::Debug,
     TEdge: std::fmt::Debug,
 {
