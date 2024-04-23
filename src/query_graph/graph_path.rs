@@ -1550,6 +1550,8 @@ where
     }
 }
 
+/// `BinaryHeap::pop` returns the "greatest" element. We want the one with the fewest edges.
+/// This wrapper compares by *reverse* comparison of edge count.
 struct HeapElement<TTrigger, TEdge>(Arc<GraphPath<TTrigger, TEdge>>)
 where
     TTrigger: Eq + Hash,
@@ -1565,7 +1567,7 @@ where
     EdgeIndex: Into<TEdge>,
 {
     fn eq(&self, other: &HeapElement<TTrigger, TEdge>) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        self.0.edges.len() == other.0.edges.len()
     }
 }
 
