@@ -974,17 +974,9 @@ pub(crate) mod normalized_field_selection {
             if data.name() == parent_type.type_name() {
                 return Ok(Some(parent_type.introspection_typename_field().into()));
             }
-            if self.can_rebase_on(parent_type, schema) {
-                // parent_type.field(self.data.name())?
-                todo!()
-            } else {
-                Ok(None)
-            }
-            /*
-            return this.canRebaseOn(parentType)
-                ? parentType.field(this.name)?.type
-                : undefined;
-            */
+            Ok(self
+                .can_rebase_on(parent_type, schema)
+                .then(|| data.field_position.parent()))
         }
         pub(crate) fn with_updated_directives(&self, directives: DirectiveList) -> NormalizedField {
             let mut data = self.data.clone();
