@@ -98,33 +98,34 @@ impl SubscriptionNode {
 }
 
 impl FetchNode {
-    fn write_indented(&self, state: &mut State<'_, '_>) -> fmt::Result {
-        let Self {
-            subgraph_name,
-            id,
-            variable_usages: _,
-            requires,
-            operation_document,
-            operation_name: _,
-            operation_kind: _,
-            input_rewrites: _,
-            output_rewrites: _,
-        } = self;
-        state.write(format_args!("Fetch(service: {subgraph_name:?}"))?;
-        if let Some(id) = id {
-            state.write(format_args!(", id: {id:?}"))?;
-        }
-        state.write(") {")?;
-        state.indent()?;
-
-        if !requires.is_empty() {
-            write_selections(state, requires)?;
-            state.write(" => ")?;
-        }
-        write_operation(state, operation_document)?;
-
-        state.dedent()?;
-        state.write("}")
+    fn write_indented(&self, _state: &mut State<'_, '_>) -> fmt::Result {
+        todo!()
+        // let Self {
+        //     subgraph_name,
+        //     id,
+        //     variable_usages: _,
+        //     requires,
+        //     operation_document,
+        //     operation_name: _,
+        //     operation_kind: _,
+        //     input_rewrites: _,
+        //     output_rewrites: _,
+        // } = self;
+        // state.write(format_args!("Fetch(service: {subgraph_name:?}"))?;
+        // if let Some(id) = id {
+        //     state.write(format_args!(", id: {id:?}"))?;
+        // }
+        // state.write(") {")?;
+        // state.indent()?;
+        //
+        // if !requires.is_empty() {
+        //     write_selections(state, requires)?;
+        //     state.write(" => ")?;
+        // }
+        // write_operation(state, operation_document)?;
+        //
+        // state.dedent()?;
+        // state.write("}")
     }
 }
 

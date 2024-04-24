@@ -3,14 +3,9 @@ use crate::query_graph::graph_path::{
     OpGraphPathContext, OpGraphPathTrigger, OpPath, OpPathElement,
 };
 use crate::query_graph::path_tree::{OpPathTree, PathTreeChild};
-use crate::query_graph::{QueryGraph, QueryGraphEdgeTransition};
+use crate::query_graph::FederatedQueryGraph;
 use crate::query_plan::conditions::Conditions;
-use crate::query_plan::operation::normalized_field_selection::{
-    NormalizedField, NormalizedFieldData,
-};
-use crate::query_plan::operation::{
-    NormalizedSelection, NormalizedSelectionSet, RebasedFragments, TYPENAME_FIELD,
-};
+use crate::query_plan::operation::{NormalizedSelection, NormalizedSelectionSet, RebasedFragments};
 use crate::query_plan::query_planner::QueryPlannerConfig;
 use crate::query_plan::FetchDataPathElement;
 use crate::query_plan::{FetchDataRewrite, QueryPlanCost};
@@ -118,7 +113,7 @@ pub(crate) struct FetchDependencyGraph {
     supergraph_schema: ValidFederationSchema,
     /// The federated query graph that generated the fetches. (This also contains the subgraph
     /// schemas.)
-    federated_query_graph: Arc<QueryGraph>,
+    federated_query_graph: Arc<FederatedQueryGraph>,
     /// The nodes/edges of the fetch dependency graph. Note that this must be a stable graph since
     /// we remove nodes/edges during optimizations.
     graph: FetchDependencyGraphPetgraph,
@@ -259,7 +254,7 @@ impl FetchDependencyGraphNodePath {
 impl FetchDependencyGraph {
     pub(crate) fn new(
         supergraph_schema: ValidFederationSchema,
-        federated_query_graph: Arc<QueryGraph>,
+        federated_query_graph: Arc<FederatedQueryGraph>,
         root_type_for_defer: Option<CompositeTypeDefinitionPosition>,
         starting_id_generation: u64,
     ) -> Self {
@@ -722,526 +717,530 @@ struct ComputeNodesStackItem<'a> {
 }
 
 pub(crate) fn compute_nodes_for_tree(
-    dependency_graph: &mut FetchDependencyGraph,
-    initial_tree: &OpPathTree,
-    initial_node_id: NodeIndex,
-    initial_node_path: FetchDependencyGraphNodePath,
-    initial_defer_context: DeferContext,
-    initial_conditions: &OpGraphPathContext,
+    _dependency_graph: &mut FetchDependencyGraph,
+    _initial_tree: &OpPathTree,
+    _initial_node_id: NodeIndex,
+    _initial_node_path: FetchDependencyGraphNodePath,
+    _initial_defer_context: DeferContext,
+    _initial_conditions: &OpGraphPathContext,
 ) -> Result<IndexSet<NodeIndex>, FederationError> {
-    let mut stack = vec![ComputeNodesStackItem {
-        tree: initial_tree,
-        node_id: initial_node_id,
-        node_path: initial_node_path,
-        context: initial_conditions,
-        defer_context: initial_defer_context,
-    }];
-    let mut created_nodes = IndexSet::new();
-    while let Some(stack_item) = stack.pop() {
-        let node =
-            FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
-        for selection_set in &stack_item.tree.local_selection_sets {
-            node.selection_set_mut()
-                .add_at_path(&stack_item.node_path.path_in_node, Some(selection_set))?;
-            dependency_graph
-                .defer_tracking
-                .update_subselection(&stack_item.defer_context, Some(selection_set));
-        }
-        if stack_item.tree.is_leaf() {
-            node.selection_set_mut()
-                .add_at_path(&stack_item.node_path.path_in_node, None)?;
-            dependency_graph
-                .defer_tracking
-                .update_subselection(&stack_item.defer_context, None);
-            continue;
-        }
-        // We want to preserve the order of the elements in the child,
-        // but the stack will reverse everything,
-        // so we iterate in reverse order to counter-balance it.
-        for child in stack_item.tree.childs.iter().rev() {
-            match &*child.trigger {
-                OpGraphPathTrigger::Context(new_context) => {
-                    // The only 3 cases where we can take edge not "driven" by an operation is either:
-                    // * when we resolve a key
-                    // * resolve a query (switch subgraphs because the query root type is the type of a field)
-                    // * or at the root of subgraph graph.
-                    // The latter case has already be handled the beginning of
-                    // `QueryPlanningTraversal::updated_dependency_graph` so only the 2 former remains.
-                    let Some(edge_id) = child.edge else {
-                        return Err(FederationError::internal(format!(
-                            "Unexpected 'null' edge with no trigger at {:?}",
-                            stack_item.node_path
-                        )));
-                    };
-                    let edge = stack_item.tree.graph.edge_weight(edge_id)?;
-                    match edge.transition {
-                        QueryGraphEdgeTransition::KeyResolution => {
-                            stack.push(compute_nodes_for_key_resolution(
-                                dependency_graph,
-                                &stack_item,
-                                child,
-                                edge_id,
-                                new_context,
-                                &mut created_nodes,
-                            )?);
-                        }
-                        QueryGraphEdgeTransition::RootTypeResolution { root_kind } => {
-                            stack.push(compute_nodes_for_root_type_resolution(
-                                dependency_graph,
-                                &stack_item,
-                                child,
-                                edge_id,
-                                edge,
-                                root_kind,
-                                new_context,
-                            )?);
-                        }
-                        _ => {
-                            return Err(FederationError::internal(format!(
-                                "Unexpected non-collecting edge {edge}"
-                            )))
-                        }
-                    }
-                }
-                OpGraphPathTrigger::OpPathElement(operation) => {
-                    stack.push(compute_nodes_for_op_path_element(
-                        dependency_graph,
-                        &stack_item,
-                        child,
-                        operation,
-                        &mut created_nodes,
-                    )?);
-                }
-            }
-        }
-    }
-    Ok(created_nodes)
+    todo!()
+    // let mut stack = vec![ComputeNodesStackItem {
+    //     tree: initial_tree,
+    //     node_id: initial_node_id,
+    //     node_path: initial_node_path,
+    //     context: initial_conditions,
+    //     defer_context: initial_defer_context,
+    // }];
+    // let mut created_nodes = IndexSet::new();
+    // while let Some(stack_item) = stack.pop() {
+    //     let node =
+    //         FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
+    //     for selection_set in &stack_item.tree.local_selection_sets {
+    //         node.selection_set_mut()
+    //             .add_at_path(&stack_item.node_path.path_in_node, Some(selection_set))?;
+    //         dependency_graph
+    //             .defer_tracking
+    //             .update_subselection(&stack_item.defer_context, Some(selection_set));
+    //     }
+    //     if stack_item.tree.is_leaf() {
+    //         node.selection_set_mut()
+    //             .add_at_path(&stack_item.node_path.path_in_node, None)?;
+    //         dependency_graph
+    //             .defer_tracking
+    //             .update_subselection(&stack_item.defer_context, None);
+    //         continue;
+    //     }
+    //     // We want to preserve the order of the elements in the child,
+    //     // but the stack will reverse everything,
+    //     // so we iterate in reverse order to counter-balance it.
+    //     for child in stack_item.tree.childs.iter().rev() {
+    //         match &*child.trigger {
+    //             OpGraphPathTrigger::Context(new_context) => {
+    //                 // The only 3 cases where we can take edge not "driven" by an operation is either:
+    //                 // * when we resolve a key
+    //                 // * resolve a query (switch subgraphs because the query root type is the type of a field)
+    //                 // * or at the root of subgraph graph.
+    //                 // The latter case has already be handled the beginning of
+    //                 // `QueryPlanningTraversal::updated_dependency_graph` so only the 2 former remains.
+    //                 let Some(edge_id) = child.edge else {
+    //                     return Err(FederationError::internal(format!(
+    //                         "Unexpected 'null' edge with no trigger at {:?}",
+    //                         stack_item.node_path
+    //                     )));
+    //                 };
+    //                 let edge = stack_item.tree.graph.edge_weight(edge_id)?;
+    //                 match edge.transition {
+    //                     QueryGraphEdgeTransition::KeyResolution => {
+    //                         stack.push(compute_nodes_for_key_resolution(
+    //                             dependency_graph,
+    //                             &stack_item,
+    //                             child,
+    //                             edge_id,
+    //                             new_context,
+    //                             &mut created_nodes,
+    //                         )?);
+    //                     }
+    //                     QueryGraphEdgeTransition::RootTypeResolution { root_kind } => {
+    //                         stack.push(compute_nodes_for_root_type_resolution(
+    //                             dependency_graph,
+    //                             &stack_item,
+    //                             child,
+    //                             edge_id,
+    //                             edge,
+    //                             root_kind,
+    //                             new_context,
+    //                         )?);
+    //                     }
+    //                     _ => {
+    //                         return Err(FederationError::internal(format!(
+    //                             "Unexpected non-collecting edge {edge}"
+    //                         )))
+    //                     }
+    //                 }
+    //             }
+    //             OpGraphPathTrigger::OpPathElement(operation) => {
+    //                 stack.push(compute_nodes_for_op_path_element(
+    //                     dependency_graph,
+    //                     &stack_item,
+    //                     child,
+    //                     operation,
+    //                     &mut created_nodes,
+    //                 )?);
+    //             }
+    //         }
+    //     }
+    // }
+    // Ok(created_nodes)
 }
 
 fn compute_nodes_for_key_resolution<'a>(
-    dependency_graph: &mut FetchDependencyGraph,
-    stack_item: &ComputeNodesStackItem<'a>,
-    child: &'a PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>,
-    edge_id: EdgeIndex,
-    new_context: &'a OpGraphPathContext,
-    created_nodes: &mut IndexSet<NodeIndex>,
+    _dependency_graph: &mut FetchDependencyGraph,
+    _stack_item: &ComputeNodesStackItem<'a>,
+    _child: &'a PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>,
+    _edge_id: EdgeIndex,
+    _new_context: &'a OpGraphPathContext,
+    _created_nodes: &mut IndexSet<NodeIndex>,
 ) -> Result<ComputeNodesStackItem<'a>, FederationError> {
-    let edge = stack_item.tree.graph.edge_weight(edge_id)?;
-    let Some(conditions) = &child.conditions else {
-        return Err(FederationError::internal(format!(
-            "Key edge {edge:?} should have some conditions paths",
-        )));
-    };
-    // First, we need to ensure we fetch the conditions from the current node.
-    let conditions_nodes = compute_nodes_for_tree(
-        dependency_graph,
-        conditions,
-        stack_item.node_id,
-        stack_item.node_path.clone(),
-        stack_item.defer_context.clone(),
-        &Default::default(),
-    )?;
-    created_nodes.extend(conditions_nodes.iter().copied());
-    // Then we can "take the edge", creating a new node.
-    // That node depends on the condition ones.
-    let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
-    let source = stack_item.tree.graph.node_weight(source_id)?;
-    let dest = stack_item.tree.graph.node_weight(dest_id)?;
-    // We shouldn't have a key on a non-composite type
-    let source_type: CompositeTypeDefinitionPosition = source.type_.clone().try_into()?;
-    let dest_type: CompositeTypeDefinitionPosition = dest.type_.clone().try_into()?;
-    let path_in_parent = &stack_item.node_path.path_in_node;
-    let updated_defer_context = stack_item.defer_context.after_subgraph_jump();
-    // Note that we use the name of `dest_type` for the inputs parent type, which can seem strange,
-    // but the reason is that we have 2 kind of cases:
-    //  - either source_type == dest_type, which is the case for an object entity key,
-    //    or for a key from an @interfaceObject to an interface key.
-    //  - or source_type !== dest_type,
-    //    and that means the source is an implementation type X of some interface I,
-    //    and dest_type is an @interfaceObject corresponding to I.
-    //    But in that case, using I as base for the inputs is a bit more flexible
-    //    as it ensure that if the query uses multiple such key for multiple implementations
-    //    (so, key from X to I, and then Y to I), then the same fetch is properly reused.
-    //    Note that it is ok to do so since
-    //    1) inputs are based on the supergraph schema, so I is going to exist there and
-    //    2) we wrap the input selection properly against `source_type` below anyway.
-    let new_node_id = dependency_graph.get_or_create_key_node(
-        &dest.source,
-        &stack_item.node_path.response_path,
-        &dest_type,
-        ParentRelation {
-            parent_node_id: stack_item.node_id,
-            path_in_parent: Some(path_in_parent),
-        },
-        &conditions_nodes,
-        updated_defer_context.active_defer_ref.as_ref(),
-    )?;
-    created_nodes.insert(new_node_id);
-    for condition_node in conditions_nodes {
-        // If `condition_node` parent is `node_id`,
-        // that is the same as `new_node_id` current parent,
-        // then we can infer the path of `new_node_id` into that condition node
-        // by looking at the paths of each to their common parent.
-        // But otherwise, we cannot have a proper "path in parent".
-        let mut path = None;
-        let mut iter = dependency_graph.parents_relations_of(condition_node);
-        if let (Some(condition_node_parent), None) = (iter.next(), iter.next()) {
-            // There is exactly one parent
-            if condition_node_parent.parent_node_id == stack_item.node_id {
-                if let Some(condition_path) = condition_node_parent.path_in_parent {
-                    path = condition_path.strip_prefix(path_in_parent).map(Arc::new)
-                }
-            }
-        }
-        drop(iter);
-        dependency_graph.add_parent(
-            new_node_id,
-            ParentRelation {
-                parent_node_id: condition_node,
-                path_in_parent: path.as_ref(),
-            },
-        )
-    }
-    // Note that inputs must be based on the supergraph schema, not any particular subgraph,
-    // since sometimes key conditions are fetched from multiple subgraphs
-    // (and so no one subgraph has a type definition with all the proper fields,
-    // only the supergraph does).
-    let input_type = dependency_graph.type_for_fetch_inputs(source_type.type_name())?;
-    let mut input_selections = NormalizedSelectionSet::empty(
-        dependency_graph.supergraph_schema.clone(),
-        input_type.clone(),
-    );
-    let Some(edge_conditions) = &edge.conditions else {
-        // PORT_NOTE: TypeScript `computeGroupsForTree()` has a non-null assertion here
-        return Err(FederationError::internal(
-            "missing expected edge conditions",
-        ));
-    };
-    input_selections.add(edge_conditions);
-    let new_node =
-        &mut FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, new_node_id)?;
-    new_node.add_inputs(
-        &dependency_graph.supergraph_schema,
-        &wrap_input_selections(&input_type, &input_selections, new_context),
-        compute_input_rewrites_on_key_fetch(input_type.type_name(), &dest_type)
-            .into_iter()
-            .flatten(),
-    );
-
-    // We also ensure to get the __typename of the current type in the "original" node.
-    let node =
-        FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
-    let typename_field = Arc::new(OpPathElement::Field(NormalizedField::new(
-        NormalizedFieldData {
-            schema: dependency_graph.supergraph_schema.clone(),
-            field_position: source_type.introspection_typename_field(),
-            alias: None,
-            arguments: Default::default(),
-            directives: Default::default(),
-            sibling_typename: None,
-        },
-    )));
-    let typename_path = stack_item
-        .node_path
-        .path_in_node
-        .with_pushed(typename_field);
-    node.selection_set_mut().add_at_path(&typename_path, None)?;
-    Ok(ComputeNodesStackItem {
-        tree: &child.tree,
-        node_id: new_node_id,
-        node_path: stack_item
-            .node_path
-            .for_new_key_fetch(create_fetch_initial_path(
-                &dependency_graph.supergraph_schema,
-                &dest_type,
-                new_context,
-            )),
-        context: new_context,
-        defer_context: updated_defer_context,
-    })
+    todo!()
+    // let edge = stack_item.tree.graph.edge_weight(edge_id)?;
+    // let Some(conditions) = &child.conditions else {
+    //     return Err(FederationError::internal(format!(
+    //         "Key edge {edge:?} should have some conditions paths",
+    //     )));
+    // };
+    // // First, we need to ensure we fetch the conditions from the current node.
+    // let conditions_nodes = compute_nodes_for_tree(
+    //     dependency_graph,
+    //     conditions,
+    //     stack_item.node_id,
+    //     stack_item.node_path.clone(),
+    //     stack_item.defer_context.clone(),
+    //     &Default::default(),
+    // )?;
+    // created_nodes.extend(conditions_nodes.iter().copied());
+    // // Then we can "take the edge", creating a new node.
+    // // That node depends on the condition ones.
+    // let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
+    // let source = stack_item.tree.graph.node_weight(source_id)?;
+    // let dest = stack_item.tree.graph.node_weight(dest_id)?;
+    // // We shouldn't have a key on a non-composite type
+    // let source_type: CompositeTypeDefinitionPosition = source.type_.clone().try_into()?;
+    // let dest_type: CompositeTypeDefinitionPosition = dest.type_.clone().try_into()?;
+    // let path_in_parent = &stack_item.node_path.path_in_node;
+    // let updated_defer_context = stack_item.defer_context.after_subgraph_jump();
+    // // Note that we use the name of `dest_type` for the inputs parent type, which can seem strange,
+    // // but the reason is that we have 2 kind of cases:
+    // //  - either source_type == dest_type, which is the case for an object entity key,
+    // //    or for a key from an @interfaceObject to an interface key.
+    // //  - or source_type !== dest_type,
+    // //    and that means the source is an implementation type X of some interface I,
+    // //    and dest_type is an @interfaceObject corresponding to I.
+    // //    But in that case, using I as base for the inputs is a bit more flexible
+    // //    as it ensure that if the query uses multiple such key for multiple implementations
+    // //    (so, key from X to I, and then Y to I), then the same fetch is properly reused.
+    // //    Note that it is ok to do so since
+    // //    1) inputs are based on the supergraph schema, so I is going to exist there and
+    // //    2) we wrap the input selection properly against `source_type` below anyway.
+    // let new_node_id = dependency_graph.get_or_create_key_node(
+    //     &dest.source,
+    //     &stack_item.node_path.response_path,
+    //     &dest_type,
+    //     ParentRelation {
+    //         parent_node_id: stack_item.node_id,
+    //         path_in_parent: Some(path_in_parent),
+    //     },
+    //     &conditions_nodes,
+    //     updated_defer_context.active_defer_ref.as_ref(),
+    // )?;
+    // created_nodes.insert(new_node_id);
+    // for condition_node in conditions_nodes {
+    //     // If `condition_node` parent is `node_id`,
+    //     // that is the same as `new_node_id` current parent,
+    //     // then we can infer the path of `new_node_id` into that condition node
+    //     // by looking at the paths of each to their common parent.
+    //     // But otherwise, we cannot have a proper "path in parent".
+    //     let mut path = None;
+    //     let mut iter = dependency_graph.parents_relations_of(condition_node);
+    //     if let (Some(condition_node_parent), None) = (iter.next(), iter.next()) {
+    //         // There is exactly one parent
+    //         if condition_node_parent.parent_node_id == stack_item.node_id {
+    //             if let Some(condition_path) = condition_node_parent.path_in_parent {
+    //                 path = condition_path.strip_prefix(path_in_parent).map(Arc::new)
+    //             }
+    //         }
+    //     }
+    //     drop(iter);
+    //     dependency_graph.add_parent(
+    //         new_node_id,
+    //         ParentRelation {
+    //             parent_node_id: condition_node,
+    //             path_in_parent: path.as_ref(),
+    //         },
+    //     )
+    // }
+    // // Note that inputs must be based on the supergraph schema, not any particular subgraph,
+    // // since sometimes key conditions are fetched from multiple subgraphs
+    // // (and so no one subgraph has a type definition with all the proper fields,
+    // // only the supergraph does).
+    // let input_type = dependency_graph.type_for_fetch_inputs(source_type.type_name())?;
+    // let mut input_selections = NormalizedSelectionSet::empty(
+    //     dependency_graph.supergraph_schema.clone(),
+    //     input_type.clone(),
+    // );
+    // let Some(edge_conditions) = &edge.conditions else {
+    //     // PORT_NOTE: TypeScript `computeGroupsForTree()` has a non-null assertion here
+    //     return Err(FederationError::internal(
+    //         "missing expected edge conditions",
+    //     ));
+    // };
+    // input_selections.add(edge_conditions);
+    // let new_node =
+    //     &mut FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, new_node_id)?;
+    // new_node.add_inputs(
+    //     &dependency_graph.supergraph_schema,
+    //     &wrap_input_selections(&input_type, &input_selections, new_context),
+    //     compute_input_rewrites_on_key_fetch(input_type.type_name(), &dest_type)
+    //         .into_iter()
+    //         .flatten(),
+    // );
+    //
+    // // We also ensure to get the __typename of the current type in the "original" node.
+    // let node =
+    //     FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
+    // let typename_field = Arc::new(OpPathElement::Field(NormalizedField::new(
+    //     NormalizedFieldData {
+    //         schema: dependency_graph.supergraph_schema.clone(),
+    //         field_position: source_type.introspection_typename_field(),
+    //         alias: None,
+    //         arguments: Default::default(),
+    //         directives: Default::default(),
+    //         sibling_typename: None,
+    //     },
+    // )));
+    // let typename_path = stack_item
+    //     .node_path
+    //     .path_in_node
+    //     .with_pushed(typename_field);
+    // node.selection_set_mut().add_at_path(&typename_path, None)?;
+    // Ok(ComputeNodesStackItem {
+    //     tree: &child.tree,
+    //     node_id: new_node_id,
+    //     node_path: stack_item
+    //         .node_path
+    //         .for_new_key_fetch(create_fetch_initial_path(
+    //             &dependency_graph.supergraph_schema,
+    //             &dest_type,
+    //             new_context,
+    //         )),
+    //     context: new_context,
+    //     defer_context: updated_defer_context,
+    // })
 }
 
 fn compute_nodes_for_root_type_resolution<'a>(
-    dependency_graph: &mut FetchDependencyGraph,
-    stack_item: &ComputeNodesStackItem<'_>,
-    child: &'a Arc<PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>>,
-    edge_id: EdgeIndex,
-    edge: &crate::query_graph::QueryGraphEdge,
-    root_kind: SchemaRootDefinitionKind,
-    new_context: &'a OpGraphPathContext,
+    _dependency_graph: &mut FetchDependencyGraph,
+    _stack_item: &ComputeNodesStackItem<'_>,
+    _child: &'a Arc<PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>>,
+    _edge_id: EdgeIndex,
+    _edge: &crate::query_graph::FederatedQueryGraphEdge,
+    _root_kind: SchemaRootDefinitionKind,
+    _new_context: &'a OpGraphPathContext,
 ) -> Result<ComputeNodesStackItem<'a>, FederationError> {
-    if child.conditions.is_some() {
-        return Err(FederationError::internal(format!(
-            "Root type resolution edge {edge} should not have conditions"
-        )));
-    }
-    let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
-    let source = stack_item.tree.graph.node_weight(source_id)?;
-    let dest = stack_item.tree.graph.node_weight(dest_id)?;
-    let source_type: ObjectTypeDefinitionPosition = source.type_.clone().try_into()?;
-    let dest_type: ObjectTypeDefinitionPosition = dest.type_.clone().try_into()?;
-    let root_operation_type = dependency_graph
-        .federated_query_graph
-        .schema_by_source(&dest.source)?
-        .schema()
-        .root_operation(root_kind.into());
-    if root_operation_type != Some(&dest_type.type_name) {
-        return Err(FederationError::internal(format!(
-            "Expected {dest_type} to be the root {root_kind} type, \
-             but that is {root_operation_type:?}"
-        )));
-    }
-
-    // Usually, we get here because a field (say `q`) has query root type as type,
-    // and the field queried for that root type is on another subgraph.
-    // When that happens, it means that on the original subgraph
-    // we may not have added _any_ subselection for type `q`
-    // and that would make the query to the original subgraph invalid.
-    // To avoid this, we request the __typename field.
-    // One exception however is if we're at the "top" of the current node
-    // (`path_in_node.is_empty()`, which is a corner case but can happen with @defer
-    // when everything in a query is deferred):
-    // in that case, there is no point in adding __typename
-    // because if we don't add any other selection, the node will be empty
-    // and we've rather detect that and remove the node entirely later.
-    let node =
-        FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
-    if !stack_item.node_path.path_in_node.is_empty() {
-        let typename_field = Arc::new(OpPathElement::Field(NormalizedField::new(
-            NormalizedFieldData {
-                schema: dependency_graph.supergraph_schema.clone(),
-                field_position: source_type.introspection_typename_field().into(),
-                alias: None,
-                arguments: Default::default(),
-                directives: Default::default(),
-                sibling_typename: None,
-            },
-        )));
-        let typename_path = stack_item
-            .node_path
-            .path_in_node
-            .with_pushed(typename_field);
-        node.selection_set_mut().add_at_path(&typename_path, None)?;
-    }
-
-    // We take the edge, creating a new node.
-    // Note that we always create a new node because this corresponds to jumping subgraph
-    // after a field returned the query root type,
-    // and we want to preserve this ordering somewhat (debatable, possibly).
-    let updated_defer_context = stack_item.defer_context.after_subgraph_jump();
-    let new_node_id = dependency_graph.new_root_type_node(
-        dest.source.clone(),
-        root_kind,
-        &dest_type,
-        Some(stack_item.node_path.response_path.clone()),
-        updated_defer_context.active_defer_ref.clone(),
-    )?;
-    dependency_graph.add_parent(
-        new_node_id,
-        ParentRelation {
-            parent_node_id: stack_item.node_id,
-            path_in_parent: Some(&stack_item.node_path.path_in_node),
-        },
-    );
-    Ok(ComputeNodesStackItem {
-        tree: &child.tree,
-        node_id: new_node_id,
-        node_path: stack_item
-            .node_path
-            .for_new_key_fetch(create_fetch_initial_path(
-                &dependency_graph.supergraph_schema,
-                &dest_type.into(),
-                new_context,
-            )),
-
-        context: new_context,
-        defer_context: updated_defer_context,
-    })
+    todo!()
+    // if child.conditions.is_some() {
+    //     return Err(FederationError::internal(format!(
+    //         "Root type resolution edge {edge} should not have conditions"
+    //     )));
+    // }
+    // let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
+    // let source = stack_item.tree.graph.node_weight(source_id)?;
+    // let dest = stack_item.tree.graph.node_weight(dest_id)?;
+    // let source_type: ObjectTypeDefinitionPosition = source.type_.clone().try_into()?;
+    // let dest_type: ObjectTypeDefinitionPosition = dest.type_.clone().try_into()?;
+    // let root_operation_type = dependency_graph
+    //     .federated_query_graph
+    //     .schema_by_source(&dest.source)?
+    //     .schema()
+    //     .root_operation(root_kind.into());
+    // if root_operation_type != Some(&dest_type.type_name) {
+    //     return Err(FederationError::internal(format!(
+    //         "Expected {dest_type} to be the root {root_kind} type, \
+    //          but that is {root_operation_type:?}"
+    //     )));
+    // }
+    //
+    // // Usually, we get here because a field (say `q`) has query root type as type,
+    // // and the field queried for that root type is on another subgraph.
+    // // When that happens, it means that on the original subgraph
+    // // we may not have added _any_ subselection for type `q`
+    // // and that would make the query to the original subgraph invalid.
+    // // To avoid this, we request the __typename field.
+    // // One exception however is if we're at the "top" of the current node
+    // // (`path_in_node.is_empty()`, which is a corner case but can happen with @defer
+    // // when everything in a query is deferred):
+    // // in that case, there is no point in adding __typename
+    // // because if we don't add any other selection, the node will be empty
+    // // and we've rather detect that and remove the node entirely later.
+    // let node =
+    //     FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
+    // if !stack_item.node_path.path_in_node.is_empty() {
+    //     let typename_field = Arc::new(OpPathElement::Field(NormalizedField::new(
+    //         NormalizedFieldData {
+    //             schema: dependency_graph.supergraph_schema.clone(),
+    //             field_position: source_type.introspection_typename_field().into(),
+    //             alias: None,
+    //             arguments: Default::default(),
+    //             directives: Default::default(),
+    //             sibling_typename: None,
+    //         },
+    //     )));
+    //     let typename_path = stack_item
+    //         .node_path
+    //         .path_in_node
+    //         .with_pushed(typename_field);
+    //     node.selection_set_mut().add_at_path(&typename_path, None)?;
+    // }
+    //
+    // // We take the edge, creating a new node.
+    // // Note that we always create a new node because this corresponds to jumping subgraph
+    // // after a field returned the query root type,
+    // // and we want to preserve this ordering somewhat (debatable, possibly).
+    // let updated_defer_context = stack_item.defer_context.after_subgraph_jump();
+    // let new_node_id = dependency_graph.new_root_type_node(
+    //     dest.source.clone(),
+    //     root_kind,
+    //     &dest_type,
+    //     Some(stack_item.node_path.response_path.clone()),
+    //     updated_defer_context.active_defer_ref.clone(),
+    // )?;
+    // dependency_graph.add_parent(
+    //     new_node_id,
+    //     ParentRelation {
+    //         parent_node_id: stack_item.node_id,
+    //         path_in_parent: Some(&stack_item.node_path.path_in_node),
+    //     },
+    // );
+    // Ok(ComputeNodesStackItem {
+    //     tree: &child.tree,
+    //     node_id: new_node_id,
+    //     node_path: stack_item
+    //         .node_path
+    //         .for_new_key_fetch(create_fetch_initial_path(
+    //             &dependency_graph.supergraph_schema,
+    //             &dest_type.into(),
+    //             new_context,
+    //         )),
+    //
+    //     context: new_context,
+    //     defer_context: updated_defer_context,
+    // })
 }
 
 fn compute_nodes_for_op_path_element<'a>(
-    dependency_graph: &mut FetchDependencyGraph,
-    stack_item: &ComputeNodesStackItem<'a>,
-    child: &'a Arc<PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>>,
-    operation: &OpPathElement,
-    created_nodes: &mut IndexSet<NodeIndex>,
+    _dependency_graph: &mut FetchDependencyGraph,
+    _stack_item: &ComputeNodesStackItem<'a>,
+    _child: &'a Arc<PathTreeChild<OpGraphPathTrigger, Option<EdgeIndex>>>,
+    _operation: &OpPathElement,
+    _created_nodes: &mut IndexSet<NodeIndex>,
 ) -> Result<ComputeNodesStackItem<'a>, FederationError> {
-    let Some(edge_id) = child.edge else {
-        // A null edge means that the operation does nothing
-        // but may contain directives to preserve.
-        // If it does contains directives, we look for @defer in particular.
-        // If we find it, this means that we should change our current node
-        // to one for the defer in question.
-        let (updated_operation, updated_defer_context) = extract_defer_from_operation(
-            dependency_graph,
-            operation,
-            &stack_item.defer_context,
-            &stack_item.node_path,
-        );
-        // We've now removed any @defer.
-        // If the operation contains other directives or a non-trivial type condition,
-        // we need to preserve it and so we add operation.
-        // Otherwise, we just skip it as a minor optimization (it makes the subgraph query
-        // slighly smaller and on complex queries, it might also deduplicate similar selections).
-        return Ok(ComputeNodesStackItem {
-            tree: &child.tree,
-            node_id: stack_item.node_id,
-            node_path: match updated_operation {
-                Some(op) if !op.directives().is_empty() => {
-                    stack_item.node_path.add(Arc::new(op))?
-                }
-                _ => stack_item.node_path.clone(),
-            },
-            context: stack_item.context,
-            defer_context: updated_defer_context,
-        });
-    };
-    let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
-    let source = stack_item.tree.graph.node_weight(source_id)?;
-    let dest = stack_item.tree.graph.node_weight(dest_id)?;
-    if source.source != dest.source {
-        return Err(FederationError::internal(format!(
-            "Collecting edge {edge_id:?} for {operation:?} \
-                                 should not change the underlying subgraph"
-        )));
-    }
-
-    // We have a operation element, field or inline fragment.
-    // We first check if it's been "tagged" to remember that __typename must be queried.
-    // See the comment on the `optimize_sibling_typenames()` method to see why this exists.
-    if let Some(name) = operation.sibling_typename() {
-        // We need to add the query __typename for the current type in the current node.
-        // Note that `name` is the alias or '' if there is no alias
-        let alias = if name.is_empty() {
-            None
-        } else {
-            Some(name.clone())
-        };
-        let typename_field = Arc::new(OpPathElement::Field(NormalizedField::new(
-            NormalizedFieldData {
-                schema: dependency_graph.supergraph_schema.clone(),
-                field_position: operation
-                    .parent_type_position()
-                    .introspection_typename_field(),
-                alias,
-                arguments: Default::default(),
-                directives: Default::default(),
-                sibling_typename: None,
-            },
-        )));
-        let typename_path = stack_item
-            .node_path
-            .path_in_node
-            .with_pushed(typename_field.clone());
-        let node =
-            FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
-        node.selection_set_mut().add_at_path(&typename_path, None)?;
-        dependency_graph.defer_tracking.update_subselection(
-            &DeferContext {
-                path_to_defer_parent: Arc::new(
-                    stack_item
-                        .defer_context
-                        .path_to_defer_parent
-                        .with_pushed(typename_field),
-                ),
-                ..stack_item.defer_context.clone()
-            },
-            None,
-        )
-    }
-    let (Some(updated_operation), updated_defer_context) = extract_defer_from_operation(
-        dependency_graph,
-        operation,
-        &stack_item.defer_context,
-        &stack_item.node_path,
-    ) else {
-        return Err(FederationError::internal(format!(
-            "Extracting @defer from {operation:?} should not have resulted in no operation"
-        )));
-    };
-    let mut updated = ComputeNodesStackItem {
-        tree: &child.tree,
-        node_id: stack_item.node_id,
-        node_path: stack_item.node_path.clone(),
-        context: stack_item.context,
-        defer_context: updated_defer_context,
-    };
-    if let Some(conditions) = &child.conditions {
-        // We have @requires or some other dependency to create nodes for.
-        let (required_node_id, require_path) = handle_requires(
-            dependency_graph,
-            edge_id,
-            conditions,
-            (stack_item.node_id, &stack_item.node_path),
-            stack_item.context,
-            &updated.defer_context,
-            created_nodes,
-        )?;
-        updated.node_id = required_node_id;
-        updated.node_path = require_path;
-    }
-    if let OpPathElement::Field(field) = &updated_operation {
-        if *field.data().name() == TYPENAME_FIELD {
-            // Because of the optimization done in `QueryPlanner.optimizeSiblingTypenames`,
-            // we will rarely get an explicit `__typename` edge here.
-            // But one case where it can happen is where an @interfaceObject was involved,
-            // and we had to force jumping to another subgraph for getting the "true" `__typename`.
-            // However, this case can sometimes lead to fetch dependency node
-            // that only exists for that `__typename` resolution and that "looks" useless.
-            // That is, we could have a fetch dependency node that looks like:
-            // ```
-            //   Fetch(service: "Subgraph2") {
-            //     {
-            //       ... on I {
-            //         __typename
-            //         id
-            //       }
-            //     } =>
-            //     {
-            //       ... on I {
-            //         __typename
-            //       }
-            //     }
-            //   }
-            // ```
-            // but the trick is that the `__typename` in the input
-            // will be the name of the interface itself (`I` in this case)
-            // but the one return after the fetch will the name of the actual implementation
-            // (some implementation of `I`).
-            // *But* we later have optimizations that would remove such a node,
-            // on the node that the output is included in the input,
-            // which is in general the right thing to do
-            // (and genuinely ensure that some useless nodes created when handling
-            // complex @require gets eliminated).
-            // So we "protect" the node in this case to ensure
-            // that later optimization doesn't kick in in this case.
-            let updated_node = FetchDependencyGraph::node_weight_mut(
-                &mut dependency_graph.graph,
-                updated.node_id,
-            )?;
-            updated_node.must_preserve_selection_set = true
-        }
-    }
-    let edge = child.tree.graph.edge_weight(edge_id)?;
-    if let QueryGraphEdgeTransition::InterfaceObjectFakeDownCast { .. } = &edge.transition {
-        // We shouldn't add the operation "as is" as it's a down-cast but we're "faking it".
-        // However, if the operation has directives, we should preserve that.
-        let OpPathElement::InlineFragment(inline) = updated_operation else {
-            return Err(FederationError::internal(format!(
-                "Unexpected operation {updated_operation} for edge {edge}"
-            )));
-        };
-        if !inline.data().directives.is_empty() {
-            // We want to keep the directives, but we clear the condition
-            // since it's to a type that doesn't exists in the subgraph we're currently in.
-            updated.node_path = updated
-                .node_path
-                .add(Arc::new(inline.with_updated_type_condition(None).into()))?;
-        }
-    } else {
-        updated.node_path = updated.node_path.add(Arc::new(updated_operation))?;
-    }
-    Ok(updated)
+    todo!()
+    // let Some(edge_id) = child.edge else {
+    //     // A null edge means that the operation does nothing
+    //     // but may contain directives to preserve.
+    //     // If it does contains directives, we look for @defer in particular.
+    //     // If we find it, this means that we should change our current node
+    //     // to one for the defer in question.
+    //     let (updated_operation, updated_defer_context) = extract_defer_from_operation(
+    //         dependency_graph,
+    //         operation,
+    //         &stack_item.defer_context,
+    //         &stack_item.node_path,
+    //     );
+    //     // We've now removed any @defer.
+    //     // If the operation contains other directives or a non-trivial type condition,
+    //     // we need to preserve it and so we add operation.
+    //     // Otherwise, we just skip it as a minor optimization (it makes the subgraph query
+    //     // slighly smaller and on complex queries, it might also deduplicate similar selections).
+    //     return Ok(ComputeNodesStackItem {
+    //         tree: &child.tree,
+    //         node_id: stack_item.node_id,
+    //         node_path: match updated_operation {
+    //             Some(op) if !op.directives().is_empty() => {
+    //                 stack_item.node_path.add(Arc::new(op))?
+    //             }
+    //             _ => stack_item.node_path.clone(),
+    //         },
+    //         context: stack_item.context,
+    //         defer_context: updated_defer_context,
+    //     });
+    // };
+    // let (source_id, dest_id) = stack_item.tree.graph.edge_endpoints(edge_id)?;
+    // let source = stack_item.tree.graph.node_weight(source_id)?;
+    // let dest = stack_item.tree.graph.node_weight(dest_id)?;
+    // if source.source != dest.source {
+    //     return Err(FederationError::internal(format!(
+    //         "Collecting edge {edge_id:?} for {operation:?} \
+    //                              should not change the underlying subgraph"
+    //     )));
+    // }
+    //
+    // // We have a operation element, field or inline fragment.
+    // // We first check if it's been "tagged" to remember that __typename must be queried.
+    // // See the comment on the `optimize_sibling_typenames()` method to see why this exists.
+    // if let Some(name) = operation.sibling_typename() {
+    //     // We need to add the query __typename for the current type in the current node.
+    //     // Note that `name` is the alias or '' if there is no alias
+    //     let alias = if name.is_empty() {
+    //         None
+    //     } else {
+    //         Some(name.clone())
+    //     };
+    //     let typename_field = Arc::new(OpPathElement::Field(NormalizedField::new(
+    //         NormalizedFieldData {
+    //             schema: dependency_graph.supergraph_schema.clone(),
+    //             field_position: operation
+    //                 .parent_type_position()
+    //                 .introspection_typename_field(),
+    //             alias,
+    //             arguments: Default::default(),
+    //             directives: Default::default(),
+    //             sibling_typename: None,
+    //         },
+    //     )));
+    //     let typename_path = stack_item
+    //         .node_path
+    //         .path_in_node
+    //         .with_pushed(typename_field.clone());
+    //     let node =
+    //         FetchDependencyGraph::node_weight_mut(&mut dependency_graph.graph, stack_item.node_id)?;
+    //     node.selection_set_mut().add_at_path(&typename_path, None)?;
+    //     dependency_graph.defer_tracking.update_subselection(
+    //         &DeferContext {
+    //             path_to_defer_parent: Arc::new(
+    //                 stack_item
+    //                     .defer_context
+    //                     .path_to_defer_parent
+    //                     .with_pushed(typename_field),
+    //             ),
+    //             ..stack_item.defer_context.clone()
+    //         },
+    //         None,
+    //     )
+    // }
+    // let (Some(updated_operation), updated_defer_context) = extract_defer_from_operation(
+    //     dependency_graph,
+    //     operation,
+    //     &stack_item.defer_context,
+    //     &stack_item.node_path,
+    // ) else {
+    //     return Err(FederationError::internal(format!(
+    //         "Extracting @defer from {operation:?} should not have resulted in no operation"
+    //     )));
+    // };
+    // let mut updated = ComputeNodesStackItem {
+    //     tree: &child.tree,
+    //     node_id: stack_item.node_id,
+    //     node_path: stack_item.node_path.clone(),
+    //     context: stack_item.context,
+    //     defer_context: updated_defer_context,
+    // };
+    // if let Some(conditions) = &child.conditions {
+    //     // We have @requires or some other dependency to create nodes for.
+    //     let (required_node_id, require_path) = handle_requires(
+    //         dependency_graph,
+    //         edge_id,
+    //         conditions,
+    //         (stack_item.node_id, &stack_item.node_path),
+    //         stack_item.context,
+    //         &updated.defer_context,
+    //         created_nodes,
+    //     )?;
+    //     updated.node_id = required_node_id;
+    //     updated.node_path = require_path;
+    // }
+    // if let OpPathElement::Field(field) = &updated_operation {
+    //     if *field.data().name() == TYPENAME_FIELD {
+    //         // Because of the optimization done in `QueryPlanner.optimizeSiblingTypenames`,
+    //         // we will rarely get an explicit `__typename` edge here.
+    //         // But one case where it can happen is where an @interfaceObject was involved,
+    //         // and we had to force jumping to another subgraph for getting the "true" `__typename`.
+    //         // However, this case can sometimes lead to fetch dependency node
+    //         // that only exists for that `__typename` resolution and that "looks" useless.
+    //         // That is, we could have a fetch dependency node that looks like:
+    //         // ```
+    //         //   Fetch(service: "Subgraph2") {
+    //         //     {
+    //         //       ... on I {
+    //         //         __typename
+    //         //         id
+    //         //       }
+    //         //     } =>
+    //         //     {
+    //         //       ... on I {
+    //         //         __typename
+    //         //       }
+    //         //     }
+    //         //   }
+    //         // ```
+    //         // but the trick is that the `__typename` in the input
+    //         // will be the name of the interface itself (`I` in this case)
+    //         // but the one return after the fetch will the name of the actual implementation
+    //         // (some implementation of `I`).
+    //         // *But* we later have optimizations that would remove such a node,
+    //         // on the node that the output is included in the input,
+    //         // which is in general the right thing to do
+    //         // (and genuinely ensure that some useless nodes created when handling
+    //         // complex @require gets eliminated).
+    //         // So we "protect" the node in this case to ensure
+    //         // that later optimization doesn't kick in in this case.
+    //         let updated_node = FetchDependencyGraph::node_weight_mut(
+    //             &mut dependency_graph.graph,
+    //             updated.node_id,
+    //         )?;
+    //         updated_node.must_preserve_selection_set = true
+    //     }
+    // }
+    // let edge = child.tree.graph.edge_weight(edge_id)?;
+    // if let QueryGraphEdgeTransition::InterfaceObjectFakeDownCast { .. } = &edge.transition {
+    //     // We shouldn't add the operation "as is" as it's a down-cast but we're "faking it".
+    //     // However, if the operation has directives, we should preserve that.
+    //     let OpPathElement::InlineFragment(inline) = updated_operation else {
+    //         return Err(FederationError::internal(format!(
+    //             "Unexpected operation {updated_operation} for edge {edge}"
+    //         )));
+    //     };
+    //     if !inline.data().directives.is_empty() {
+    //         // We want to keep the directives, but we clear the condition
+    //         // since it's to a type that doesn't exists in the subgraph we're currently in.
+    //         updated.node_path = updated
+    //             .node_path
+    //             .add(Arc::new(inline.with_updated_type_condition(None).into()))?;
+    //     }
+    // } else {
+    //     updated.node_path = updated.node_path.add(Arc::new(updated_operation))?;
+    // }
+    // Ok(updated)
 }
 
 fn wrap_input_selections(

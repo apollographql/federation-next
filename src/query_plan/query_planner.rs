@@ -3,7 +3,7 @@ use crate::link::federation_spec_definition::FederationSpecDefinition;
 use crate::link::federation_spec_definition::FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC;
 use crate::link::spec::Identity;
 use crate::query_graph::build_federated_query_graph;
-use crate::query_graph::QueryGraph;
+use crate::query_graph::FederatedQueryGraph;
 use crate::query_plan::operation::normalize_operation;
 use crate::query_plan::QueryPlan;
 use crate::schema::position::AbstractTypeDefinitionPosition;
@@ -132,7 +132,7 @@ impl Default for QueryPlannerDebugConfig {
 
 pub struct QueryPlanner {
     config: QueryPlannerConfig,
-    federated_query_graph: Arc<QueryGraph>,
+    federated_query_graph: Arc<FederatedQueryGraph>,
     supergraph_schema: ValidFederationSchema,
     api_schema: ValidFederationSchema,
     subgraph_federation_spec_definitions: Arc<IndexMap<NodeStr, &'static FederationSpecDefinition>>,
@@ -255,7 +255,8 @@ impl QueryPlanner {
     }
 
     pub fn subgraph_schemas(&self) -> &IndexMap<NodeStr, ValidFederationSchema> {
-        &self.federated_query_graph.sources
+        todo!()
+        // &self.federated_query_graph.sources
     }
 
     // PORT_NOTE: this receives an `Operation` object in JS which is a concept that doesn't exist in apollo-rs.

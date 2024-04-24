@@ -2,7 +2,7 @@ use crate::error::FederationError;
 use crate::query_graph::graph_path::GraphPathItem;
 use crate::query_graph::graph_path::OpGraphPath;
 use crate::query_graph::graph_path::OpGraphPathTrigger;
-use crate::query_graph::{QueryGraph, QueryGraphNode};
+use crate::query_graph::{FederatedQueryGraph, FederatedQueryGraphNode};
 use crate::query_plan::operation::NormalizedSelectionSet;
 use apollo_compiler::NodeStr;
 use indexmap::map::Entry;
@@ -26,7 +26,7 @@ where
     TEdge: Copy + Into<Option<EdgeIndex>>,
 {
     /// The query graph of which this is a path tree.
-    pub(crate) graph: Arc<QueryGraph>,
+    pub(crate) graph: Arc<FederatedQueryGraph>,
     /// The query graph node at which the path tree starts.
     pub(crate) node: NodeIndex,
     /// Note that `ClosedPath`s have an optimization which splits them into paths and a selection
@@ -62,7 +62,7 @@ where
 pub(crate) type OpPathTree = PathTree<OpGraphPathTrigger, Option<EdgeIndex>>;
 
 impl OpPathTree {
-    pub(crate) fn new(graph: Arc<QueryGraph>, node: NodeIndex) -> Self {
+    pub(crate) fn new(graph: Arc<FederatedQueryGraph>, node: NodeIndex) -> Self {
         Self {
             graph,
             node,
@@ -72,7 +72,7 @@ impl OpPathTree {
     }
 
     pub(crate) fn from_op_paths(
-        graph: Arc<QueryGraph>,
+        graph: Arc<FederatedQueryGraph>,
         node: NodeIndex,
         paths: &[(&OpGraphPath, &Arc<NormalizedSelectionSet>)],
     ) -> Result<Self, FederationError> {
@@ -95,21 +95,23 @@ impl OpPathTree {
     }
 
     pub(crate) fn is_all_in_same_subgraph(&self) -> Result<bool, FederationError> {
-        let node_weight = self.graph.node_weight(self.node)?;
-        self.is_all_in_same_subgraph_internal(&node_weight.source)
+        todo!()
+        // let node_weight = self.graph.node_weight(self.node)?;
+        // self.is_all_in_same_subgraph_internal(&node_weight.source)
     }
 
-    fn is_all_in_same_subgraph_internal(&self, target: &NodeStr) -> Result<bool, FederationError> {
-        let node_weight = self.graph.node_weight(self.node)?;
-        if node_weight.source != *target {
-            return Ok(false);
-        }
-        for child in &self.childs {
-            if !child.tree.is_all_in_same_subgraph_internal(target)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
+    fn is_all_in_same_subgraph_internal(&self, _target: &NodeStr) -> Result<bool, FederationError> {
+        todo!()
+        // let node_weight = self.graph.node_weight(self.node)?;
+        // if node_weight.source != *target {
+        //     return Ok(false);
+        // }
+        // for child in &self.childs {
+        //     if !child.tree.is_all_in_same_subgraph_internal(target)? {
+        //         return Ok(false);
+        //     }
+        // }
+        // Ok(true)
     }
 
     fn fmt_internal(
@@ -157,12 +159,12 @@ where
     /// Returns the `QueryGraphNode` represented by `self.node`.
     /// PORT_NOTE: This is named after the JS implementation's `vertex` field.
     ///            But, it may make sense to rename it once porting is over.
-    pub(crate) fn vertex(&self) -> &QueryGraphNode {
+    pub(crate) fn vertex(&self) -> &FederatedQueryGraphNode {
         self.graph.node_weight(self.node).unwrap()
     }
 
     fn from_paths<'inputs>(
-        graph: Arc<QueryGraph>,
+        graph: Arc<FederatedQueryGraph>,
         node: NodeIndex,
         graph_paths_and_selections: Vec<(
             impl Iterator<Item = GraphPathItem<'inputs, TTrigger, TEdge>>,
@@ -358,22 +360,16 @@ fn merge_conditions(
 mod tests {
     use std::sync::Arc;
 
-    use apollo_compiler::{executable::DirectiveList, ExecutableDocument};
-    use petgraph::{stable_graph::NodeIndex, visit::EdgeRef};
+    use apollo_compiler::ExecutableDocument;
+    use petgraph::stable_graph::NodeIndex;
 
     use crate::{
         error::FederationError,
         query_graph::{
-            build_query_graph::build_query_graph,
-            condition_resolver::ConditionResolution,
-            graph_path::{OpGraphPath, OpGraphPathTrigger, OpPathElement},
-            path_tree::OpPathTree,
-            QueryGraph, QueryGraphEdgeTransition,
+            build_query_graph::build_query_graph, condition_resolver::ConditionResolution,
+            graph_path::OpGraphPath, path_tree::OpPathTree, FederatedQueryGraph,
         },
-        query_plan::operation::{
-            normalize_operation,
-            normalized_field_selection::{NormalizedField, NormalizedFieldData},
-        },
+        query_plan::operation::normalize_operation,
         schema::{position::SchemaRootDefinitionKind, ValidFederationSchema},
     };
 
@@ -398,58 +394,59 @@ mod tests {
 
     // A helper function that builds a graph path from a sequence of field names
     fn build_graph_path(
-        query_graph: &Arc<QueryGraph>,
-        op_kind: SchemaRootDefinitionKind,
-        path: &[&str],
+        _query_graph: &Arc<FederatedQueryGraph>,
+        _op_kind: SchemaRootDefinitionKind,
+        _path: &[&str],
     ) -> Result<OpGraphPath, FederationError> {
-        let nodes_by_kind = query_graph.root_kinds_to_nodes()?;
-        let root_node_idx = nodes_by_kind[&op_kind];
-        let mut graph_path = OpGraphPath::new(query_graph.clone(), root_node_idx)?;
-        let mut curr_node_idx = root_node_idx;
-        for field_name in path.iter() {
-            // find the edge that matches `field_name`
-            let (edge_ref, field_def) = query_graph
-                .out_edges(curr_node_idx)
-                .find_map(|e_ref| {
-                    let edge = e_ref.weight();
-                    match &edge.transition {
-                        QueryGraphEdgeTransition::FieldCollection {
-                            field_definition_position,
-                            ..
-                        } => {
-                            if field_definition_position.field_name() == *field_name {
-                                Some((e_ref, field_definition_position))
-                            } else {
-                                None
-                            }
-                        }
-
-                        _ => None,
-                    }
-                })
-                .unwrap();
-
-            // build the trigger for the edge
-            let data = NormalizedFieldData {
-                schema: query_graph.schema().unwrap().clone(),
-                field_position: field_def.clone(),
-                alias: None,
-                arguments: Arc::new(Vec::new()),
-                directives: Arc::new(DirectiveList::new()),
-                sibling_typename: None,
-            };
-            let trigger =
-                OpGraphPathTrigger::OpPathElement(OpPathElement::Field(NormalizedField::new(data)));
-
-            // add the edge to the path
-            graph_path = graph_path
-                .add(trigger, Some(edge_ref.id()), trivial_condition(), None)
-                .unwrap();
-
-            // prepare for the next iteration
-            curr_node_idx = edge_ref.target();
-        }
-        Ok(graph_path)
+        todo!()
+        // let nodes_by_kind = query_graph.root_kinds_to_nodes()?;
+        // let root_node_idx = nodes_by_kind[&op_kind];
+        // let mut graph_path = OpGraphPath::new(query_graph.clone(), root_node_idx)?;
+        // let mut curr_node_idx = root_node_idx;
+        // for field_name in path.iter() {
+        //     // find the edge that matches `field_name`
+        //     let (edge_ref, field_def) = query_graph
+        //         .out_edges(curr_node_idx)
+        //         .find_map(|e_ref| {
+        //             let edge = e_ref.weight();
+        //             match &edge.transition {
+        //                 QueryGraphEdgeTransition::FieldCollection {
+        //                     field_definition_position,
+        //                     ..
+        //                 } => {
+        //                     if field_definition_position.field_name() == *field_name {
+        //                         Some((e_ref, field_definition_position))
+        //                     } else {
+        //                         None
+        //                     }
+        //                 }
+        //
+        //                 _ => None,
+        //             }
+        //         })
+        //         .unwrap();
+        //
+        //     // build the trigger for the edge
+        //     let data = NormalizedFieldData {
+        //         schema: query_graph.schema().unwrap().clone(),
+        //         field_position: field_def.clone(),
+        //         alias: None,
+        //         arguments: Arc::new(Vec::new()),
+        //         directives: Arc::new(DirectiveList::new()),
+        //         sibling_typename: None,
+        //     };
+        //     let trigger =
+        //         OpGraphPathTrigger::OpPathElement(OpPathElement::Field(NormalizedField::new(data)));
+        //
+        //     // add the edge to the path
+        //     graph_path = graph_path
+        //         .add(trigger, Some(edge_ref.id()), trivial_condition(), None)
+        //         .unwrap();
+        //
+        //     // prepare for the next iteration
+        //     curr_node_idx = edge_ref.target();
+        // }
+        // Ok(graph_path)
     }
 
     #[test]

@@ -1,8 +1,7 @@
-use apollo_compiler::executable::{
-    Field, InlineFragment, Name, OperationType, Selection, SelectionSet,
-};
-use apollo_compiler::validation::Valid;
+use crate::sources::SourceFetchNode;
+use apollo_compiler::executable::{Field, InlineFragment, Name, OperationType, SelectionSet};
 use apollo_compiler::{ExecutableDocument, NodeStr};
+use indexmap::IndexSet;
 use std::sync::Arc;
 
 pub(crate) mod conditions;
@@ -50,32 +49,10 @@ pub enum PlanNode {
 
 #[derive(Debug)]
 pub struct FetchNode {
-    pub subgraph_name: NodeStr,
-    /// Optional identifier for the fetch for defer support. All fetches of a given plan will be
-    /// guaranteed to have a unique `id`.
-    pub id: Option<NodeStr>,
-    pub variable_usages: Vec<Name>,
-    /// `Selection`s in apollo-rs _can_ have a `FragmentSpread`, but this `Selection` is
-    /// specifically typing the `requires` key in a built query plan, where there can't be
-    /// `FragmentSpread`.
-    // PORT_NOTE: This was its own type in the JS codebase, but it's likely simpler to just have the
-    // constraint be implicit for router instead of creating a new type.
-    pub requires: Vec<Selection>,
-    // PORT_NOTE: We don't serialize the "operation" string in this struct, as these query plan
-    // nodes are meant for direct consumption by router (without any serdes), so we leave the
-    // question of whether it needs to be serialized to router.
-    pub operation_document: Valid<ExecutableDocument>,
-    pub operation_name: Option<NodeStr>,
-    pub operation_kind: OperationType,
-    /// Optionally describe a number of "rewrites" that query plan executors should apply to the
-    /// data that is sent as the input of this fetch. Note that such rewrites should only impact the
-    /// inputs of the fetch they are applied to (meaning that, as those inputs are collected from
-    /// the current in-memory result, the rewrite should _not_ impact said in-memory results, only
-    /// what is sent in the fetch).
-    pub input_rewrites: Vec<FetchDataRewrite>,
-    /// Similar to `input_rewrites`, but for optional "rewrites" to apply to the data that is
-    /// received from a fetch (and before it is applied to the current in-memory results).
-    pub output_rewrites: Vec<FetchDataRewrite>,
+    pub defer_id: Option<NodeStr>,
+    pub operation_variables: IndexSet<Name>,
+    pub key_and_requires_conditions: SelectionSet,
+    pub source_data: SourceFetchNode,
 }
 
 #[derive(Debug)]
