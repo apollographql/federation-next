@@ -2090,6 +2090,14 @@ impl OpGraphPath {
             if !field.directives.has(&shareable_directive.name) {
                 continue;
             }
+
+            // Returning `true` for this method has a cost: it will make us consider type-explosion for `itf`, and this can
+            // sometime lead to a large number of additional paths to explore, which can have a substantial cost. So we want
+            // to limit it if we can avoid it. As it happens, we should return `true` if it is possible that "something"
+            // (some field) in the type of `field` is reachable in _another_ subgraph but no in the one of the current path.
+            // And while it's not trivial to check this in general, there are some easy cases we can eliminate. For instance,
+            // if the type in the current subgraph has only leaf fields, we can check that all other subgraphs reachable
+            // from the implementation have the same set of leaf fields.
             let base_ty_name = field.ty.inner_named_type();
             if is_leaf_type(schema, base_ty_name) {
                 continue;
@@ -2121,14 +2129,13 @@ impl OpGraphPath {
                 let QueryGraphNodeType::SchemaType(node_ty) = &node.type_ else {
                     return build_err();
                 };
-                let node_ty_name = node_ty.type_name();
-                let node_ty = valid_schema.get_type(node_ty_name.clone())?.get(schema)?;
-                let fields_iter = match node_ty {
-                    ExtendedType::Object(obj) => obj.fields.iter(),
-                    ExtendedType::Interface(int) => int.fields.iter(),
+                let node_ty = node_ty.get(schema)?;
+                let other_fields = match node_ty {
+                    ExtendedType::Object(obj) => &obj.fields,
+                    ExtendedType::Interface(int) => &int.fields,
                     _ => return build_err(),
                 };
-                let Some((_, field)) = fields_iter.clone().find(|f| f.0 == &itf.field_name) else {
+                let Some(field) = other_fields.get(&itf.field_name) else {
                     continue;
                 };
                 if field
@@ -2146,8 +2153,8 @@ impl OpGraphPath {
                     // We have a genuine difference here, so we should explore type explosion.
                     return Ok(true);
                 }
-                let names: HashSet<_> = fields_iter.map(|f| f.0).collect();
-                if !ty.fields.iter().all(|f| names.contains(&f.0)) {
+                let names: HashSet<_> = other_fields.keys().collect();
+                if !ty.fields.keys().all(|f| names.contains(&f)) {
                     // Same, we have a genuine difference.
                     return Ok(true);
                 }
