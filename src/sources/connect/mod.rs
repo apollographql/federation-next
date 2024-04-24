@@ -22,13 +22,13 @@ pub use url_path_template::URLPathTemplate;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct ConnectId {
-    subgraph: NodeStr,
+    subgraph_name: NodeStr,
     directive: ObjectOrInterfaceFieldDirectivePosition,
 }
 
 #[derive(Debug)]
 pub(crate) struct ConnectFederatedQueryGraph {
-    subgraph_schemas_by_name: IndexMap<NodeStr, ValidFederationSubgraph>,
+    subgraphs_by_name: IndexMap<NodeStr, ValidFederationSubgraph>,
     // source_directives_by_name: IndexMap<NodeStr, SourceDirectiveArguments>,
     // connect_directives_by_source: IndexMap<ConnectId, ConnectDirectiveArguments>,
 }

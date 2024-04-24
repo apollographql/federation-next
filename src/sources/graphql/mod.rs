@@ -16,12 +16,12 @@ use indexmap::IndexMap;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) struct GraphqlId {
-    subgraph: NodeStr,
+    subgraph_name: NodeStr,
 }
 
 #[derive(Debug)]
 pub(crate) struct GraphqlFederatedQueryGraph {
-    subgraph_by_source: IndexMap<GraphqlId, ValidFederationSubgraph>,
+    subgraphs_by_source: IndexMap<GraphqlId, ValidFederationSubgraph>,
 }
 
 #[derive(Debug)]
