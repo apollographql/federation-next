@@ -5,16 +5,16 @@ mod url_path_template;
 use crate::error::FederationError;
 use crate::query_graph::build_query_graph::IntraSourceQueryGraphBuilderApi;
 use crate::schema::position::{
-    AbstractTypeDefinitionPosition, EnumTypeDefinitionPosition, ObjectFieldDefinitionPosition,
+    EnumTypeDefinitionPosition, ObjectFieldDefinitionPosition,
     ObjectOrInterfaceFieldDirectivePosition, ObjectOrInterfaceTypeDefinitionPosition,
     ObjectTypeDefinitionPosition, ScalarTypeDefinitionPosition,
 };
-use crate::sources::connect::selection_parser::Property;
+use crate::sources::connect::selection_parser::{PathSelection, Property, SubSelection};
 use crate::sources::{FederatedLookupTailData, SourceFederatedQueryGraphBuilderApi};
 use crate::ValidFederationSubgraph;
 use apollo_compiler::executable::{Name, Value};
 use apollo_compiler::NodeStr;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 pub use selection_parser::ApplyTo;
 pub use selection_parser::ApplyToError;
 pub use selection_parser::Selection;
@@ -34,15 +34,7 @@ pub(crate) struct ConnectFederatedQueryGraph {
 }
 
 #[derive(Debug)]
-pub(crate) enum ConnectFederatedAbstractQueryGraphNode {
-    SelectionRoot {
-        subgraph_type: AbstractTypeDefinitionPosition,
-        path_selection: Vec<Property>,
-    },
-    SelectionChild {
-        subgraph_type: AbstractTypeDefinitionPosition,
-    },
-}
+pub(crate) struct ConnectFederatedAbstractQueryGraphNode;
 
 #[derive(Debug)]
 pub(crate) enum ConnectFederatedConcreteQueryGraphNode {
@@ -51,7 +43,7 @@ pub(crate) enum ConnectFederatedConcreteQueryGraphNode {
     },
     SelectionRoot {
         subgraph_type: ObjectTypeDefinitionPosition,
-        path_selection: Vec<Property>,
+        property_path: Vec<Property>,
     },
     SelectionChild {
         subgraph_type: ObjectTypeDefinitionPosition,
@@ -62,7 +54,7 @@ pub(crate) enum ConnectFederatedConcreteQueryGraphNode {
 pub(crate) enum ConnectFederatedEnumQueryGraphNode {
     SelectionRoot {
         subgraph_type: EnumTypeDefinitionPosition,
-        path_selection: Vec<Property>,
+        property_path: Vec<Property>,
     },
     SelectionChild {
         subgraph_type: EnumTypeDefinitionPosition,
@@ -73,7 +65,11 @@ pub(crate) enum ConnectFederatedEnumQueryGraphNode {
 pub(crate) enum ConnectFederatedScalarQueryGraphNode {
     SelectionRoot {
         subgraph_type: ScalarTypeDefinitionPosition,
-        path_selection: Vec<Property>,
+        property_path: Vec<Property>,
+    },
+    CustomScalarSelectionRoot {
+        subgraph_type: ScalarTypeDefinitionPosition,
+        selection: Selection,
     },
     SelectionChild {
         subgraph_type: ScalarTypeDefinitionPosition,
@@ -91,7 +87,16 @@ pub(crate) enum ConnectFederatedConcreteFieldQueryGraphEdge {
     },
     Selection {
         subgraph_field: ObjectFieldDefinitionPosition,
-        path_selection: Vec<Property>,
+        property_path: Vec<Property>,
+    },
+    CustomScalarPathSelection {
+        subgraph_field: ObjectFieldDefinitionPosition,
+        path_selection: PathSelection,
+    },
+    CustomScalarStarSelection {
+        subgraph_field: ObjectFieldDefinitionPosition,
+        star_subselection: Option<SubSelection>,
+        excluded_properties: IndexSet<Property>,
     },
 }
 
