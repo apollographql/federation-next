@@ -13,7 +13,6 @@ use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{DiGraph, EdgeIndex, EdgeReference, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
-use std::any::type_name;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::sync::Arc;
