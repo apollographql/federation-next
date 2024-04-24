@@ -696,6 +696,9 @@ impl QueryGraph {
         };
     }
 
+    /// Returns a selection set that can be used as a key for the given type, and that can be
+    /// entirely resolved in the same subgraph. Returns None if such a key does not exist for the
+    /// given type.
     pub(crate) fn get_locally_satisfiable_key(
         &self,
         node_index: NodeIndex,
