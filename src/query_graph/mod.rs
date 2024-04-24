@@ -718,7 +718,7 @@ impl QueryGraph {
         let schema = self.schema_by_source(&node.source)?;
         let Some(metadata) = schema.subgraph_metadata() else {
             return Err(FederationError::internal(format!(
-                "Missing metadata on subgraph {}",
+                "Could not find subgraph metadata for source {}",
                 node.source
             )));
         };
