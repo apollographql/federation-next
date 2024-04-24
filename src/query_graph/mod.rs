@@ -13,6 +13,7 @@ use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{DiGraph, EdgeIndex, EdgeReference, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
+use std::any::type_name;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::sync::Arc;
@@ -723,9 +724,44 @@ impl QueryGraph {
 
     pub(crate) fn has_an_implementation_with_provides(
         &self,
-        _source: &NodeStr,
-        _interface_field_definition_position: InterfaceFieldDefinitionPosition,
+        source: &NodeStr,
+        interface_field_definition_position: InterfaceFieldDefinitionPosition,
     ) -> Result<bool, FederationError> {
-        todo!()
+        let schema = self.schema_by_source(source)?;
+        let Some(metadata) = schema.subgraph_metadata() else {
+            return Err(FederationError::internal(format!(
+                "Interface should have come from a federation subgraph {}",
+                source
+            )));
+        };
+
+        let provides_directive_definition = metadata
+            .federation_spec_definition()
+            .provides_directive_definition(schema)?;
+        let type_name = interface_field_definition_position.parent();
+        let interface_type = type_name.get(schema.schema())?;
+
+        if let Some(implements_interface) = interface_type.implements_interfaces.iter().next() {
+            // PORT_NOTE: `itf.possibleRutnimeTypes()` would only look for object
+            // type definitions as implements interfaces. Interface type
+            // definitions are discarded.
+            if schema.schema().get_object(implements_interface).is_none() {
+                return Ok(false);
+            }
+
+            let field = schema.schema().type_field(
+                &implements_interface.name,
+                &interface_field_definition_position.field_name,
+            );
+
+            let has_provides = match field {
+                Ok(f) => f.directives.has(&provides_directive_definition.name),
+                Err(_) => false,
+            };
+
+            return Ok(has_provides);
+        }
+
+        Ok(false)
     }
 }
