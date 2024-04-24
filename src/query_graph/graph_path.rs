@@ -242,7 +242,7 @@ impl Display for OpGraphPathTrigger {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub(crate) struct OpPath(pub(crate) Vec<Arc<OpPathElement>>);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::IsVariant)]
 pub(crate) enum OpPathElement {
     Field(NormalizedField),
     InlineFragment(NormalizedInlineFragment),
@@ -3445,6 +3445,10 @@ impl ClosedBranch {
 }
 
 impl OpPath {
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

@@ -2640,10 +2640,68 @@ impl NormalizedSelectionMap {
     /// (since again, `c` is of type `C`).
     pub(crate) fn add_at_path(
         &mut self,
-        _path: &OpPath,
-        _selection_set: Option<&Arc<NormalizedSelectionSet>>,
-    ) {
+        path: &OpPath,
+        selection_set: Option<&Arc<NormalizedSelectionSet>>,
+    ) -> Result<(), FederationError> {
         // TODO: port a `SelectionSetUpdates` data structure or mutate directly?
+        if !path.is_empty() {
+            if let Some(selections) = &selection_set {
+                self.add_to_keyed_updates()
+            }
+        } else {
+            if path.len() == 1 && selection_set.is_none() {
+                let ele = path.0[0];
+                if ele.is_terminal()? {
+                    // This is a somewhat common case (when we deal with @key "conditions", those are often trivial and end up here),
+                    // so we unpack it directly instead of creating unecessary temporary objects (not that we only do it for leaf
+                    // field; for non-leaf ones, we'd have to create an empty sub-selectionSet, and that may have to get merged
+                    // with other entries of this `SleectionSetUpdates`, so we wouldn't really save work).
+                    todo!()
+                    /*
+                    const selection = selectionOfElement(element);
+                    this.keyedUpdates.add(selection.key(), selection);
+                    return this;
+                    */
+                }
+                todo!()
+            }
+            // We store the provided update "as is" (we don't convert it to a `Selection` just yet) and process everything
+            // when we build the final `SelectionSet`. This is done because multipe different updates can intersect in various
+            // ways, and the work to build a `Selection` now could be largely wasted due to followup updates.
+            todo!()
+            // this.keyedUpdates.add(path[0].key(), { path, selections });
+        }
+        todo!()
+    }
+
+    fn add_to_keyed_updates(&mut self) {
+        if selections.type_position.is_abstract_type() {
+            todo!()
+            // addOneToKeyedUpdates(keyedUpdates, selections);
+        } else {
+            todo!()
+            /*
+            const toAdd = selections instanceof SelectionSet ? selections.selections() : selections;
+            for (const selection of toAdd) {
+                addOneToKeyedUpdates(keyedUpdates, selection);
+            }
+            */
+        }
+    }
+
+    fn add_one_to_keyed_updates(&mut self) {
+        todo!()
+        /*
+        // Keys are such that for a named fragment, only a selection of the same fragment with same directives can have the same key.
+        // But if we end up with multiple spread of the same named fragment, we don't want to try to "merge" the sub-selections of
+        // each, as it would expand the fragments and make things harder. So we essentially special case spreads to avoid having
+        // to deal with multiple time the exact same one.
+        if (selection instanceof FragmentSpreadSelection) {
+            keyedUpdates.set(selection.key(), [selection]);
+        } else {
+            keyedUpdates.add(selection.key(), selection);
+        }
+        */
     }
 }
 
