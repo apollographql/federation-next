@@ -15,7 +15,8 @@ use crate::schema::ValidFederationSchema;
 use crate::sources::{
     SourceFederatedAbstractFieldQueryGraphEdge, SourceFederatedConcreteFieldQueryGraphEdge,
     SourceFederatedEnumQueryGraphNode, SourceFederatedQueryGraphBuilders,
-    SourceFederatedScalarQueryGraphNode, SourceFederatedTypeConditionQueryGraphEdge, SourceId,
+    SourceFederatedQueryGraphs, SourceFederatedScalarQueryGraphNode,
+    SourceFederatedTypeConditionQueryGraphEdge, SourceId,
 };
 use crate::ValidFederationSubgraph;
 use apollo_compiler::schema::{DirectiveList as ComponentDirectiveList, Name, NamedType};
@@ -964,6 +965,8 @@ struct IntraSourceQueryGraphBuilder {
 }
 
 pub(crate) trait IntraSourceQueryGraphBuilderApi {
+    fn source_query_graph(&mut self) -> &mut SourceFederatedQueryGraphs;
+
     fn for_query_planning(&self) -> bool;
 
     fn add_and_set_current_source(&mut self, source: SourceId) -> Result<(), FederationError>;

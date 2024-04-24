@@ -17,7 +17,6 @@ use crate::sources::graphql::{
     GraphqlFederatedScalarQueryGraphNode, GraphqlFederatedTypeConditionQueryGraphEdge,
     GraphqlFetchNode, GraphqlId,
 };
-use crate::sources::root::{RootFederatedConcreteQueryGraphNode, RootId};
 use crate::ValidFederationSubgraph;
 use apollo_compiler::NodeStr;
 use enum_dispatch::enum_dispatch;
@@ -26,7 +25,6 @@ use petgraph::graph::NodeIndex;
 
 pub mod connect;
 pub mod graphql;
-pub mod root;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub(crate) enum SourceKind {
@@ -37,7 +35,7 @@ pub(crate) enum SourceKind {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) enum SourceId {
-    Root(RootId),
+    Root,
     Graphql(GraphqlId),
     Connect(ConnectId),
 }
@@ -62,7 +60,7 @@ pub(crate) enum SourceFederatedAbstractQueryGraphNode {
 
 #[derive(Debug)]
 pub(crate) enum SourceFederatedConcreteQueryGraphNode {
-    Root(RootFederatedConcreteQueryGraphNode),
+    Root,
     Graphql(GraphqlFederatedConcreteQueryGraphNode),
     Connect(ConnectFederatedConcreteQueryGraphNode),
 }
