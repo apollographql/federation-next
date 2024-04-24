@@ -31,7 +31,7 @@ use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::cmp::Ordering;
-use std::collections::{HashSet, BinaryHeap};
+use std::collections::{BinaryHeap, HashSet};
 use std::fmt::{Display, Formatter, Write};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -2073,18 +2073,13 @@ impl OpGraphPath {
         let shareable_directive = fed_spec.shareable_directive(valid_schema)?;
         let comp_type_pos = CompositeTypeDefinitionPosition::Interface(itf.parent());
         for implem in valid_schema.possible_runtime_types(comp_type_pos)? {
-            let field = schema
-                .get_interface(&implem.type_name)
-                .and_then(|n| n.fields.get(&itf.field_name))
-                .ok_or_else(|| {
-                    FederationError::internal(
-                        "Unable to find interface field ({itf}) in schema: {schema}",
-                    )
-                })?;
-            let ty = valid_schema
-                .get_type(implem.type_name.clone())?
-                .get(schema)?;
-            if !ty.directives().has(&key_directive.name) {
+            let ty = implem.get(schema)?;
+            let field = ty.fields.get(&itf.field_name).ok_or_else(|| {
+                FederationError::internal(
+                    "Unable to find interface field ({itf}) in schema: {schema}",
+                )
+            })?;
+            if !ty.directives.has(&key_directive.name) {
                 continue;
             }
             if !field.directives.has(&shareable_directive.name) {
@@ -2118,8 +2113,14 @@ impl OpGraphPath {
                 if node.source == tail.source {
                     continue;
                 }
-                // PORT_NOTE: The JS code pulls out `otherMetadata` from each node here. This does
-                // not seem to be needed in the RS code?
+                let Some(src) = self.graph.sources.get(&node.source) else {
+                    return Err(FederationError::internal(format!(
+                        "{node} has no valid schema in QueryGraph: {:?}",
+                        self.graph
+                    )));
+                };
+                let fed_spec = get_federation_spec_definition_from_subgraph(src)?;
+                let shareable_directive = fed_spec.shareable_directive(src)?;
                 let build_err = || {
                     Err(FederationError::internal(format!(
                         "{implem} is an object in {} but a {} in {}",
