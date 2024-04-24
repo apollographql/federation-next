@@ -737,28 +737,16 @@ impl QueryGraph {
         let provides_directive_definition = metadata
             .federation_spec_definition()
             .provides_directive_definition(schema)?;
-        let type_name = interface_field_definition_position.parent();
-        let interface_type = type_name.get(schema.schema())?;
 
-        if let Some(implements_interface) = interface_type.implements_interfaces.iter().next() {
-            // PORT_NOTE: `itf.possibleRutnimeTypes()` would only look for object
-            // type definitions as implements interfaces. Interface type
-            // definitions are discarded.
-            if schema.schema().get_object(implements_interface).is_none() {
-                return Ok(false);
+        for object_type_definition_position in
+            schema.possible_runtime_types(interface_field_definition_position.parent().into())?
+        {
+            let field_pos = object_type_definition_position
+                .field(interface_field_definition_position.field_name.clone());
+            let field = field_pos.get(schema.schema())?;
+            if field.directives.has(&provides_directive_definition.name) {
+                return Ok(true);
             }
-
-            let field = schema.schema().type_field(
-                &implements_interface.name,
-                &interface_field_definition_position.field_name,
-            );
-
-            let has_provides = match field {
-                Ok(f) => f.directives.has(&provides_directive_definition.name),
-                Err(_) => false,
-            };
-
-            return Ok(has_provides);
         }
 
         Ok(false)
