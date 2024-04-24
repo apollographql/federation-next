@@ -2120,7 +2120,7 @@ fn compute_nodes_for_op_path_element<'a>(
             operation,
             &stack_item.defer_context,
             &stack_item.node_path,
-        );
+        )?;
         // We've now removed any @defer.
         // If the operation contains other directives or a non-trivial type condition,
         // we need to preserve it and so we add operation.
@@ -2192,7 +2192,7 @@ fn compute_nodes_for_op_path_element<'a>(
             None,
         )
     }
-    let (Some(updated_operation), updated_defer_context) = extract_defer_from_operation(
+    let Ok((Some(updated_operation), updated_defer_context)) = extract_defer_from_operation(
         dependency_graph,
         operation,
         &stack_item.defer_context,
@@ -2429,13 +2429,47 @@ fn compute_input_rewrites_on_key_fetch(
     }
 }
 
+/// Returns an updated pair of (`operation`, `defer_context`) after the `defer` directive removed.
+/// - The updated operation can be `None`, if operation is no longer necessary.
 fn extract_defer_from_operation(
     _dependency_graph: &mut FetchDependencyGraph,
-    _operation: &OpPathElement,
-    _defer_context: &DeferContext,
+    operation: &OpPathElement,
+    defer_context: &DeferContext,
     _node_path: &FetchDependencyGraphNodePath,
-) -> (Option<OpPathElement>, DeferContext) {
-    todo!() // Port `extractDeferFromOperation`
+) -> Result<(Option<OpPathElement>, DeferContext), FederationError> {
+    let defer_args = operation.defer_directive_args();
+    let Some(defer_args) = defer_args else {
+        let updated_path_to_defer_parent = defer_context
+            .path_to_defer_parent
+            .with_pushed(operation.clone().into());
+        let updated_context = DeferContext {
+            path_to_defer_parent: updated_path_to_defer_parent.into(),
+            // Following fields are identical to those of `defer_context`.
+            current_defer_ref: defer_context.current_defer_ref.clone(),
+            active_defer_ref: defer_context.active_defer_ref.clone(),
+            is_part_of_query: defer_context.is_part_of_query,
+        };
+        return Ok((Some(operation.clone()), updated_context));
+    };
+    let Some(updated_defer_ref) = defer_args.label else {
+        // PORT_NOTE: The original TypeScript code has an assertion here.
+        return Err(FederationError::internal(
+            "All defers should have a label at this point",
+        ));
+    };
+    let updated_operation = operation.without_defer();
+    let updated_path_to_defer_parent = match updated_operation {
+        None => Default::default(), // empty OpPath
+        Some(ref updated_operation) => OpPath(vec![Arc::new(updated_operation.clone())]),
+    };
+    let updated_context = DeferContext {
+        current_defer_ref: Some(updated_defer_ref.into()),
+        path_to_defer_parent: updated_path_to_defer_parent.into(),
+        // Following fields are identical to those of `defer_context`.
+        active_defer_ref: defer_context.active_defer_ref.clone(),
+        is_part_of_query: defer_context.is_part_of_query,
+    };
+    Ok((updated_operation, updated_context))
 }
 
 fn handle_requires(

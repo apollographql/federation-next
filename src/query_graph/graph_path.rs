@@ -1,5 +1,6 @@
 use crate::error::FederationError;
 use crate::is_leaf_type;
+use crate::link::argument::directive_optional_variable_boolean_argument;
 use crate::link::federation_spec_definition::get_federation_spec_definition_from_subgraph;
 use crate::link::graphql_definition::{
     BooleanOrVariable, DeferDirectiveArguments, OperationConditional, OperationConditionalKind,
@@ -26,7 +27,7 @@ use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::Value;
 use apollo_compiler::executable::DirectiveList;
 use apollo_compiler::schema::{ExtendedType, Name};
-use apollo_compiler::NodeStr;
+use apollo_compiler::{name, NodeStr};
 use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -247,6 +248,11 @@ pub(crate) enum OpPathElement {
     InlineFragment(NormalizedInlineFragment),
 }
 
+pub(crate) struct DeferDirectiveArgs {
+    pub(crate) label: Option<String>,
+    pub(crate) if_arg: Option<BooleanOrVariable>,
+}
+
 impl OpPathElement {
     pub(crate) fn directives(&self) -> &Arc<DirectiveList> {
         match self {
@@ -328,6 +334,55 @@ impl OpPathElement {
         match self {
             OpPathElement::Field(field) => Some(field.as_path_element()),
             OpPathElement::InlineFragment(inline_fragment) => inline_fragment.as_path_element(),
+        }
+    }
+
+    pub(crate) fn defer_directive_args(&self) -> Option<DeferDirectiveArgs> {
+        match self {
+            OpPathElement::Field(_) => None, // @defer cannot be on field at the moment
+            OpPathElement::InlineFragment(inline_fragment) => {
+                // Note: @defer is not repeatable.
+                inline_fragment.data().directives.get("defer").map(|defer| {
+                    let label = defer
+                        .argument_by_name("label")
+                        .map(|label| label.to_string());
+                    let if_arg = directive_optional_variable_boolean_argument(defer, &name!("if"))
+                        .unwrap_or_default();
+                    DeferDirectiveArgs { label, if_arg }
+                })
+            }
+        }
+    }
+
+    /// Returns this fragment element but with any @defer directive on it removed.
+    ///
+    /// This method will return `None` if, upon removing @defer, the fragment has no conditions nor
+    /// any remaining applied directives (meaning that it carries no information whatsoever and can be
+    /// ignored).
+    pub(crate) fn without_defer(&self) -> Option<Self> {
+        match self {
+            Self::Field(_) => Some(self.clone()), // unchanged
+            Self::InlineFragment(inline_fragment) => {
+                let updated_directives: DirectiveList = inline_fragment
+                    .data()
+                    .directives
+                    .get_all("defer")
+                    .cloned()
+                    .collect();
+                if inline_fragment.data().type_condition_position.is_none()
+                    && updated_directives.is_empty()
+                {
+                    return None;
+                }
+                if inline_fragment.data().directives.len() == updated_directives.len() {
+                    Some(self.clone())
+                } else {
+                    // PORT_NOTE: We won't need to port `this.copyAttachementsTo(updated);` line here
+                    // since `with_updated_directives` clones the whole `self` and thus sibling
+                    // type names should be copied as well.
+                    Some(self.with_updated_directives(updated_directives))
+                }
+            }
         }
     }
 }
