@@ -468,19 +468,12 @@ impl<'a> QueryPlanningTraversal<'a> {
         for node in nodes {
             let n = self.parameters.federated_query_graph.node_weight(*node)?;
             let parent_ty = match &n.type_ {
-                QueryGraphNodeType::SchemaType(ty) => match ty {
-                    OutputTypeDefinitionPosition::Object(ty) => {
-                        CompositeTypeDefinitionPosition::Object(ty.clone())
+                QueryGraphNodeType::SchemaType(ty) => {
+                    match CompositeTypeDefinitionPosition::try_from(ty.clone()) {
+                        Ok(ty) => ty,
+                        _ => return Ok(false),
                     }
-                    OutputTypeDefinitionPosition::Interface(ty) => {
-                        CompositeTypeDefinitionPosition::Interface(ty.clone())
-                    }
-                    OutputTypeDefinitionPosition::Union(ty) => {
-                        CompositeTypeDefinitionPosition::Union(ty.clone())
-                    }
-                    OutputTypeDefinitionPosition::Scalar(_)
-                    | OutputTypeDefinitionPosition::Enum(_) => return Ok(false),
-                },
+                }
                 QueryGraphNodeType::FederatedRootType(_) => return Ok(false),
             };
             if n.has_reachable_cross_subgraph_edges || selection.can_rebase_on(&parent_ty)? {
