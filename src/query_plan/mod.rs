@@ -49,7 +49,6 @@ pub enum PlanNode {
 
 #[derive(Debug)]
 pub struct FetchNode {
-    pub defer_id: Option<NodeStr>,
     pub operation_variables: IndexSet<Name>,
     pub key_and_requires_conditions: SelectionSet,
     pub source_data: SourceFetchNode,
