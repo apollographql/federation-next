@@ -430,11 +430,36 @@ impl Display for OpGraphPathContext {
 #[derive(Clone)]
 pub(crate) struct SimultaneousPaths(pub(crate) Vec<Arc<OpGraphPath>>);
 
+impl SimultaneousPaths {
+    pub(crate) fn fmt_indented(&self, f: &mut Formatter<'_>, indent: &str) -> std::fmt::Result {
+        match self.0.as_slice() {
+            [] => write!(f, "<no path>"),
+            [first] => write!(f, "{first}"),
+            _ => {
+                let new_line = format!("\n{indent}");
+                let body = self
+                    .0
+                    .iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(&new_line);
+                write!(f, "{{{new_line}  {body}{new_line}}}")
+            }
+        }
+    }
+}
+
 impl std::fmt::Debug for SimultaneousPaths {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_list()
             .entries(self.0.iter().map(ToString::to_string))
             .finish()
+    }
+}
+
+impl std::fmt::Display for SimultaneousPaths {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.fmt_indented(f, "")
     }
 }
 
@@ -646,9 +671,20 @@ enum UnadvanceableReason {
 /// set, and the `SimultaneousPaths` ends at the node at which that query is made instead of a node
 /// for the leaf field. The selection set gets copied "as-is" into the `FetchNode`, and also avoids
 /// extra `GraphPath` creation and work during `PathTree` merging.
+#[derive(Debug)]
 pub(crate) struct ClosedPath {
     pub(crate) paths: SimultaneousPaths,
     pub(crate) selection_set: Option<Arc<NormalizedSelectionSet>>,
+}
+
+impl std::fmt::Display for ClosedPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref selection_set) = self.selection_set {
+            write!(f, "{} -> {}", self.paths, selection_set)
+        } else {
+            write!(f, "{}", self.paths)
+        }
+    }
 }
 
 /// A list of the options generated during query planning for a specific "closed branch", which is a
