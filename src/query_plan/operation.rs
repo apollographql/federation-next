@@ -3654,24 +3654,6 @@ impl NormalizedInlineFragment {
             (false, None)
         }
     }
-
-    pub(crate) fn can_add_to(
-        &self,
-        parent_type: &CompositeTypeDefinitionPosition,
-    ) -> Result<bool, FederationError> {
-        if &self.data().parent_type_position == parent_type {
-            return Ok(true);
-        }
-        let Some(ty) = self.data().casted_type_if_add_to(parent_type) else {
-            return Ok(false);
-        };
-        if self.data().parent_type_position != ty {
-            todo!()
-            // return this.selectionSet.selections().every((s) => s.canAddTo(type));
-        } else {
-            Ok(true)
-        }
-    }
 }
 
 pub(crate) fn merge_selection_sets(
