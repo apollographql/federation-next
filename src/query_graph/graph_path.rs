@@ -2139,11 +2139,7 @@ impl OpGraphPath {
                 let Some(field) = other_fields.get(&itf.field_name) else {
                     continue;
                 };
-                if field
-                    .directives
-                    .iter()
-                    .any(|d| d.name == shareable_directive.name)
-                {
+                if !field.directives.has(&shareable_directive.name) {
                     continue;
                 }
                 let field_ty = field.ty.inner_named_type();
