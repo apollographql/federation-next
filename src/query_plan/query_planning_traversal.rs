@@ -476,7 +476,7 @@ impl<'a> QueryPlanningTraversal<'a> {
                 }
                 QueryGraphNodeType::FederatedRootType(_) => return Ok(false),
             };
-            if n.has_reachable_cross_subgraph_edges || selection.can_rebase_on(&parent_ty)? {
+            if n.has_reachable_cross_subgraph_edges || selection.can_rebase_on(&parent_ty) {
                 return Ok(false);
             }
         }

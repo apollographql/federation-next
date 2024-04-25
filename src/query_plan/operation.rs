@@ -726,15 +726,11 @@ impl NormalizedSelection {
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
         schema: &ValidFederationSchema,
-    ) -> Result<bool, FederationError> {
+    ) -> bool {
         match self {
             NormalizedSelection::Field(field) => field.can_add_to(parent_type, schema),
-            NormalizedSelection::FragmentSpread(spread) => {
-                spread.spread.can_add_to(parent_type, schema)
-            }
-            NormalizedSelection::InlineFragment(inline) => {
-                inline.inline_fragment.can_add_to(parent_type, schema)
-            }
+            NormalizedSelection::FragmentSpread(_) => true,
+            NormalizedSelection::InlineFragment(inline) => inline.can_add_to(parent_type, schema),
         }
     }
 
@@ -953,7 +949,7 @@ pub(crate) mod normalized_field_selection {
             &self,
             parent_type: &CompositeTypeDefinitionPosition,
             schema: &ValidFederationSchema,
-        ) -> Result<Option<CompositeTypeDefinitionPosition>, FederationError> {
+        ) -> Option<CompositeTypeDefinitionPosition> {
             let data = self.data();
             if &data.field_position == parent_type {
                 let digest = match &self.data.field_position {
@@ -969,14 +965,13 @@ pub(crate) mod normalized_field_selection {
                         UnionTypeDefinitionPosition::new(ty.type_name.clone()),
                     ),
                 };
-                return Ok(Some(digest));
+                return Some(digest);
             }
             if data.name() == parent_type.type_name() {
-                return Ok(Some(parent_type.introspection_typename_field().parent()));
+                return Some(parent_type.introspection_typename_field().parent());
             }
-            Ok(self
-                .can_rebase_on(parent_type, schema)
-                .then(|| data.field_position.parent()))
+            self.can_rebase_on(parent_type, schema)
+                .then(|| data.field_position.parent())
         }
         pub(crate) fn with_updated_directives(&self, directives: DirectiveList) -> NormalizedField {
             let mut data = self.data.clone();
@@ -1067,7 +1062,6 @@ pub(crate) mod normalized_field_selection {
 }
 
 pub(crate) mod normalized_fragment_spread_selection {
-    use crate::error::FederationError;
     use crate::query_plan::operation::{
         directives_with_sorted_arguments, is_deferred_selection, HasNormalizedSelectionKey,
         NormalizedSelectionKey, NormalizedSelectionSet, SelectionId,
@@ -1133,50 +1127,6 @@ pub(crate) mod normalized_fragment_spread_selection {
         pub(crate) selection_id: SelectionId,
     }
 
-    impl NormalizedFragmentSpreadData {
-        pub(crate) fn type_if_added_to(
-            &self,
-            parent_type: &CompositeTypeDefinitionPosition,
-            schema: &ValidFederationSchema,
-        ) -> Result<Option<CompositeTypeDefinitionPosition>, FederationError> {
-            todo!()
-            /*
-            let data = self.data();
-            if &data.field_position == parent_type {
-                let digest = match &self.data.field_position {
-                    FieldDefinitionPosition::Object(ty) => CompositeTypeDefinitionPosition::Object(
-                        ObjectTypeDefinitionPosition::new(ty.type_name.clone()),
-                    ),
-                    FieldDefinitionPosition::Interface(ty) => {
-                        CompositeTypeDefinitionPosition::Interface(
-                            InterfaceTypeDefinitionPosition::new(ty.type_name.clone()),
-                        )
-                    }
-                    FieldDefinitionPosition::Union(ty) => CompositeTypeDefinitionPosition::Union(
-                        UnionTypeDefinitionPosition::new(ty.type_name.clone()),
-                    ),
-                };
-                return Ok(Some(digest));
-            }
-            if data.name() == parent_type.type_name() {
-                todo!()
-            }
-            // if (this.name === typenameFieldName) {
-            //    return parentType.typenameField()?.type;
-            // }
-            if self.can_rebase_on(parent_type, schema) {
-                // parent_type.field(self.data.name())?
-                todo!()
-            } else {
-                Ok(None)
-            }
-            // return this.canRebaseOn(parentType)
-            //    ? parentType.field(this.name)?.type
-            //    : undefined;
-            */
-        }
-    }
-
     impl HasNormalizedSelectionKey for NormalizedFragmentSpreadData {
         fn key(&self) -> NormalizedSelectionKey {
             if is_deferred_selection(&self.directives) {
@@ -1190,43 +1140,6 @@ pub(crate) mod normalized_fragment_spread_selection {
                 }
             }
         }
-    }
-}
-
-impl NormalizedFragmentSpread {
-    pub(crate) fn can_add_to(
-        &self,
-        parent_type: &CompositeTypeDefinitionPosition,
-        schema: &ValidFederationSchema,
-    ) -> Result<bool, FederationError> {
-        if parent_type == &self.data().type_condition_position {
-            return Ok(true);
-        }
-
-        let Some(ty) = self.data().type_if_added_to(parent_type, schema)? else {
-            return Ok(false);
-        };
-
-        todo!()
-
-        /*
-        if let Some(set) = &self.data().selection_set {
-            if set.type_position != ty {
-                if ty.is_object_type() || ty.is_interface_type() {
-                    return Err(FederationError::internal(format!(
-                        "{} should have a selection set as it's type is not a composite",
-                        self.field,
-                    )));
-                }
-                for sel in set.selections.values() {
-                    if !sel.can_add_to(parent_type, schema)? {
-                        return Ok(false);
-                    }
-                }
-            }
-        }
-        Ok(true)
-        */
     }
 }
 
@@ -1428,8 +1341,8 @@ pub(crate) mod normalized_inline_fragment_selection {
     use crate::error::FederationError;
     use crate::link::graphql_definition::{defer_directive_arguments, DeferDirectiveArguments};
     use crate::query_plan::operation::{
-        directives_with_sorted_arguments, is_deferred_selection, HasNormalizedSelectionKey,
-        NormalizedSelectionKey, NormalizedSelectionSet, SelectionId,
+        directives_with_sorted_arguments, is_deferred_selection, runtime_types_intersect,
+        HasNormalizedSelectionKey, NormalizedSelectionKey, NormalizedSelectionSet, SelectionId,
     };
     use crate::query_plan::FetchDataPathElement;
     use crate::schema::position::CompositeTypeDefinitionPosition;
@@ -1562,38 +1475,46 @@ pub(crate) mod normalized_inline_fragment_selection {
             }
         }
 
-        pub(crate) fn can_add_to(
+        pub(super) fn casted_type_if_add_to(
             &self,
             parent_type: &CompositeTypeDefinitionPosition,
-            schema: &ValidFederationSchema,
-        ) -> Result<bool, FederationError> {
-            /*
-            if parent_type == &self.parent_type_position {
-                return Ok(true)
+        ) -> Option<CompositeTypeDefinitionPosition> {
+            if &self.parent_type_position == parent_type {
+                return Some(self.casted_type());
             }
+            match self.can_rebase_on(parent_type) {
+                (false, _) => None,
+                (true, None) => Some(parent_type.clone()),
+                (true, Some(ty)) => Some(ty),
+            }
+        }
 
-            let Some(ty) = self.field.type_if_added_to(parent_type, schema)? else {
-                return Ok(false);
+        fn casted_type(&self) -> CompositeTypeDefinitionPosition {
+            self.type_condition_position
+                .clone()
+                .unwrap_or_else(|| self.parent_type_position.clone())
+        }
+
+        fn can_rebase_on(
+            &self,
+            parent_type: &CompositeTypeDefinitionPosition,
+        ) -> (bool, Option<CompositeTypeDefinitionPosition>) {
+            if self.type_condition_position.is_none() {
+                return (true, None);
+            }
+            let Some(ty) = self.type_condition_position.as_ref() else {
+                return (false, None);
             };
-
-            if let Some(set) = &self.selection_set {
-                if set.type_position != ty {
-                    if ty.is_object_type() || ty.is_interface_type() {
-                        return Err(FederationError::internal(format!(
-                            "{} should have a selection set as it's type is not a composite",
-                            self.field,
-                        )));
-                    }
-                    for sel in set.selections.values() {
-                        if !sel.can_add_to(parent_type, schema)? {
-                            return Ok(false);
-                        }
-                    }
+            match self
+                .schema
+                .get_type(ty.type_name().clone())
+                .and_then(CompositeTypeDefinitionPosition::try_from)
+            {
+                Ok(ty) if runtime_types_intersect(parent_type, &ty, &self.schema) => {
+                    (true, Some(ty))
                 }
+                _ => (false, None),
             }
-            Ok(true)
-            */
-            todo!()
         }
     }
 
@@ -2361,17 +2282,10 @@ impl NormalizedSelectionSet {
         })
     }
 
-    pub(crate) fn can_rebase_on(
-        &self,
-        parent_type: &CompositeTypeDefinitionPosition,
-    ) -> Result<bool, FederationError> {
-        // Ideally, this would use `try_find`, but it is still nightly :(
-        for sel in self.selections.values() {
-            if !sel.can_add_to(parent_type, &self.schema)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
+    pub(crate) fn can_rebase_on(&self, parent_type: &CompositeTypeDefinitionPosition) -> bool {
+        self.selections
+            .values()
+            .all(|sel| sel.can_add_to(parent_type, &self.schema))
     }
 
     fn has_defer(&self) -> bool {
@@ -3028,39 +2942,38 @@ impl NormalizedFieldSelection {
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
         schema: &ValidFederationSchema,
-    ) -> Result<bool, FederationError> {
+    ) -> bool {
         if &self.field.data().schema == schema {
             match (parent_type, &self.field.data().field_position) {
                 (
                     CompositeTypeDefinitionPosition::Object(ty_a),
                     FieldDefinitionPosition::Object(ty_b),
-                ) if ty_a.type_name == ty_b.type_name => return Ok(true),
+                ) if ty_a.type_name == ty_b.type_name => return true,
                 (
                     CompositeTypeDefinitionPosition::Interface(ty_a),
                     FieldDefinitionPosition::Interface(ty_b),
-                ) if ty_a.type_name == ty_b.type_name => return Ok(true),
+                ) if ty_a.type_name == ty_b.type_name => return true,
                 (
                     CompositeTypeDefinitionPosition::Union(ty_a),
                     FieldDefinitionPosition::Union(ty_b),
-                ) if ty_a.type_name == ty_b.type_name => return Ok(true),
+                ) if ty_a.type_name == ty_b.type_name => return true,
                 _ => {}
             }
         }
 
-        let Some(ty) = self.field.type_if_added_to(parent_type, schema)? else {
-            return Ok(false);
+        let Some(ty) = self.field.type_if_added_to(parent_type, schema) else {
+            return false;
         };
 
         if let Some(set) = &self.selection_set {
             if set.type_position != ty {
-                for sel in set.selections.values() {
-                    if !sel.can_add_to(parent_type, schema)? {
-                        return Ok(false);
-                    }
-                }
+                return set
+                    .selections
+                    .values()
+                    .all(|sel| sel.can_add_to(parent_type, schema));
             }
         }
-        Ok(true)
+        true
     }
 }
 
@@ -3571,6 +3484,33 @@ impl NormalizedInlineFragmentSelection {
         }
     }
 
+    pub(crate) fn can_add_to(
+        &self,
+        parent_type: &CompositeTypeDefinitionPosition,
+        schema: &ValidFederationSchema,
+    ) -> bool {
+        if &self.inline_fragment.data().parent_type_position == parent_type {
+            return true;
+        }
+        let Some(ty) = self
+            .inline_fragment
+            .data()
+            .casted_type_if_add_to(parent_type)
+        else {
+            return false;
+        };
+        if self.inline_fragment.data().parent_type_position != ty {
+            for sel in self.selection_set.selections.values() {
+                if !sel.can_add_to(&ty, schema) {
+                    return false;
+                }
+            }
+            true
+        } else {
+            true
+        }
+    }
+
     pub(crate) fn can_rebase_on(
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
@@ -3718,9 +3658,19 @@ impl NormalizedInlineFragment {
     pub(crate) fn can_add_to(
         &self,
         parent_type: &CompositeTypeDefinitionPosition,
-        schema: &ValidFederationSchema,
     ) -> Result<bool, FederationError> {
-        self.data.can_add_to(parent_type, schema)
+        if &self.data().parent_type_position == parent_type {
+            return Ok(true);
+        }
+        let Some(ty) = self.data().casted_type_if_add_to(parent_type) else {
+            return Ok(false);
+        };
+        if self.data().parent_type_position != ty {
+            todo!()
+            // return this.selectionSet.selections().every((s) => s.canAddTo(type));
+        } else {
+            Ok(true)
+        }
     }
 }
 
