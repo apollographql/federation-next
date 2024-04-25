@@ -677,6 +677,16 @@ pub(crate) struct ClosedPath {
     pub(crate) selection_set: Option<Arc<NormalizedSelectionSet>>,
 }
 
+impl ClosedPath {
+    pub(crate) fn flatten(&self) -> Vec<(&OpGraphPath, Option<&Arc<NormalizedSelectionSet>>)> {
+        self.paths
+            .0
+            .iter()
+            .map(|path| (path.as_ref(), self.selection_set.as_ref()))
+            .collect()
+    }
+}
+
 impl std::fmt::Display for ClosedPath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(ref selection_set) = self.selection_set {
