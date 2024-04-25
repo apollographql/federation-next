@@ -2326,7 +2326,7 @@ fn wrap_selection_with_type_and_conditions<T>(
     // TODO: Next major revision may consider changing this as stated above.
     context.iter().fold(initial, |acc, cond| {
         let directive = Directive {
-            name: cond.kind.to_name(),
+            name: cond.kind.name(),
             arguments: vec![Argument {
                 name: name!("if"),
                 value: cond.value.to_ast_value().into(),

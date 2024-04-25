@@ -58,8 +58,11 @@ pub(crate) enum OperationConditionalKind {
 }
 
 impl OperationConditionalKind {
-    pub(crate) fn to_name(&self) -> Name {
-        Name::new_unchecked(NodeStr::new(&self.to_string()))
+    pub(crate) fn name(&self) -> Name {
+        match self {
+            OperationConditionalKind::Include => name!("include"),
+            OperationConditionalKind::Skip => name!("skip"),
+        }
     }
 }
 
