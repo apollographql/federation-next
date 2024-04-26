@@ -1138,16 +1138,17 @@ impl FetchDependencyGraphNode {
         supergraph_schema: &ValidFederationSchema,
         selection: &NormalizedSelectionSet,
         rewrites: impl IntoIterator<Item = Arc<FetchDataRewrite>>,
-    ) {
+    ) -> Result<(), FederationError> {
         let inputs = self.inputs.get_or_insert_with(|| {
             Arc::new(FetchInputs {
                 selection_sets_per_parent_type: Default::default(),
                 supergraph_schema: supergraph_schema.clone(),
             })
         });
-        Arc::make_mut(inputs).add(selection);
+        Arc::make_mut(inputs).add(selection)?;
         self.on_inputs_updated();
         Arc::make_mut(&mut self.input_rewrites).extend(rewrites);
+        Ok(())
     }
 
     // PORT_NOTE: This corresponds to the `GroupInputs.onUpdateCallback` in the JS codebase.
@@ -1551,7 +1552,7 @@ impl FetchInputs {
         }
     }
 
-    fn add(&mut self, selection: &NormalizedSelectionSet) {
+    fn add(&mut self, selection: &NormalizedSelectionSet) -> Result<(), FederationError> {
         assert_eq!(
             selection.schema, self.supergraph_schema,
             "Inputs selections must be based on the supergraph schema"
@@ -1565,14 +1566,15 @@ impl FetchInputs {
                     selection.type_position.clone(),
                 ))
             });
-        Arc::make_mut(type_selections).add(selection);
+        Arc::make_mut(type_selections).merge_into(std::iter::once(selection))
         // PORT_NOTE: `onUpdateCallback` call is moved to `FetchDependencyGraphNode::on_inputs_updated`.
     }
 
-    fn add_all(&mut self, other: &Self) {
+    fn add_all(&mut self, other: &Self) -> Result<(), FederationError> {
         for selections in other.selection_sets_per_parent_type.values() {
-            self.add(selections);
+            self.add(selections)?;
         }
+        Ok(())
     }
 
     fn to_selection_set_nodes(
@@ -1967,7 +1969,7 @@ fn compute_nodes_for_key_resolution<'a>(
         )
         .into_iter()
         .flatten(),
-    );
+    )?;
 
     // We also ensure to get the __typename of the current type in the "original" node.
     let node =
