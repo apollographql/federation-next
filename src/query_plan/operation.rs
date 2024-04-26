@@ -569,20 +569,14 @@ impl NormalizedSelection {
         }
     }
 
-    pub(crate) fn schema(&self) -> ValidFederationSchema {
+    pub(crate) fn schema(&self) -> &ValidFederationSchema {
         match self {
-            NormalizedSelection::Field(field_selection) => {
-                field_selection.field.data().schema.clone()
-            }
+            NormalizedSelection::Field(field_selection) => &field_selection.field.data().schema,
             NormalizedSelection::FragmentSpread(fragment_spread_selection) => {
-                fragment_spread_selection.spread.data().schema.clone()
+                &fragment_spread_selection.spread.data().schema
             }
             NormalizedSelection::InlineFragment(inline_fragment_selection) => {
-                inline_fragment_selection
-                    .inline_fragment
-                    .data()
-                    .schema
-                    .clone()
+                &inline_fragment_selection.inline_fragment.data().schema
             }
         }
     }
@@ -1490,9 +1484,9 @@ impl NormalizedSelectionSet {
     ) -> Self {
         let schema = selection.schema();
         let mut selection_map = NormalizedSelectionMap::new();
-        selection_map.insert(selection);
+        selection_map.insert(selection.clone());
         Self {
-            schema,
+            schema: schema.clone(),
             type_position,
             selections: Arc::new(selection_map),
         }

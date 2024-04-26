@@ -1996,7 +1996,7 @@ fn compute_nodes_for_key_resolution<'a>(
                 &dependency_graph.supergraph_schema,
                 &dest_type,
                 new_context,
-            )),
+            )?),
         context: new_context,
         defer_context: updated_defer_context,
     })
@@ -2093,7 +2093,7 @@ fn compute_nodes_for_root_type_resolution<'a>(
                 &dependency_graph.supergraph_schema,
                 &dest_type.into(),
                 new_context,
-            )),
+            )?),
 
         context: new_context,
         defer_context: updated_defer_context,
@@ -2291,7 +2291,7 @@ fn wrap_selection_with_type_and_conditions<T>(
     wrapping_type: &CompositeTypeDefinitionPosition,
     context: &OpGraphPathContext,
     initial: T,
-    wrap_in_fragment: fn(NormalizedInlineFragment, T) -> T,
+    mut wrap_in_fragment: impl FnMut(NormalizedInlineFragment, T) -> T,
 ) -> T {
     // PORT_NOTE: `unwrap` is used below, but the JS version asserts in `FragmentElement`'s constructor
     // as well. However, there was a comment that we should add some validation, which is restated below.
@@ -2318,18 +2318,18 @@ fn wrap_selection_with_type_and_conditions<T>(
         );
     }
 
-    // We add the first include/skip to the current type-cast and then wrap in additional
-    // type-casts for the next ones if necessary. Note that we use type-casts (... on <type>), but,
-    // outside of the first one, we could well also use fragments with no type-condition. We do the
-    // former mostly to preserve older behavior, but doing the latter would technically produce
-    // slightly small query plans.
+    // We wrap type-casts around `initial` value along with @include/@skip directive.
+    // Note that we use the same type condition on all nested fragments. However,
+    // except for the first one, we could well also use fragments with no type condition.
+    // The reason we do the former is mostly to preserve the older behavior, but the latter
+    // would technically produce slightly smaller query plans.
     // TODO: Next major revision may consider changing this as stated above.
     context.iter().fold(initial, |acc, cond| {
         let directive = Directive {
             name: cond.kind.name(),
             arguments: vec![Argument {
                 name: name!("if"),
-                value: cond.value.to_ast_value().into(),
+                value: cond.value.clone().into(),
             }
             .into()],
         };
@@ -2377,36 +2377,27 @@ fn create_fetch_initial_path(
     supergraph_schema: &ValidFederationSchema,
     dest_type: &CompositeTypeDefinitionPosition,
     context: &OpGraphPathContext,
-) -> Arc<OpPath> {
+) -> Result<Arc<OpPath>, FederationError> {
     // We make sure that all `OperationPath` are based on the supergraph as `OperationPath` is
     // really about path on the input query/overall supergraph data (most other places already do
     // this as the elements added to the operation path are from the input query, but this is
     // an exception when we create an element from an type that may/usually will not be from the
     // supergraph). Doing this make sure we can rely on things like checking subtyping between
     // the types of a given path.
-    // PORT_NOTE: The JS code asserts these panic conditions below as well.
-    let rebased_type: Result<CompositeTypeDefinitionPosition, FederationError> = supergraph_schema
+    let rebased_type: CompositeTypeDefinitionPosition = supergraph_schema
         .get_type(dest_type.type_name().clone())
-        .and_then(|res| res.try_into());
-    match rebased_type {
-        Err(err) => panic!(
-            "{dest_type} should be composite in the supergraph but got error {}",
-            err
-        ),
-        Ok(ref rebased_type) => {
-            Arc::new(wrap_selection_with_type_and_conditions(
-                supergraph_schema,
-                rebased_type,
-                context,
-                Default::default(),
-                |fragment, sub_path| {
-                    // Return an OpPath of the form: [<fragment>, ...<sub_path>]
-                    let front = vec![Arc::new(fragment.into())];
-                    OpPath(front.into_iter().chain(sub_path.0).collect())
-                },
-            ))
-        }
-    }
+        .and_then(|res| res.try_into())?;
+    Ok(Arc::new(wrap_selection_with_type_and_conditions(
+        supergraph_schema,
+        &rebased_type,
+        context,
+        Default::default(),
+        |fragment, sub_path| {
+            // Return an OpPath of the form: [<fragment>, ...<sub_path>]
+            let front = vec![Arc::new(fragment.into())];
+            OpPath(front.into_iter().chain(sub_path.0).collect())
+        },
+    )))
 }
 
 fn compute_input_rewrites_on_key_fetch(

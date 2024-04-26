@@ -89,3 +89,18 @@ impl BooleanOrVariable {
         }
     }
 }
+
+impl From<BooleanOrVariable> for Value {
+    fn from(b: BooleanOrVariable) -> Self {
+        match b {
+            BooleanOrVariable::Boolean(b) => Value::Boolean(b),
+            BooleanOrVariable::Variable(name) => Value::Variable(name),
+        }
+    }
+}
+
+impl From<BooleanOrVariable> for Node<Value> {
+    fn from(b: BooleanOrVariable) -> Self {
+        b.into()
+    }
+}
