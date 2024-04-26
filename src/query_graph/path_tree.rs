@@ -112,10 +112,6 @@ impl OpPathTree {
         Ok(true)
     }
 
-    pub(crate) fn merge_raw(&self, _other: &Self) -> Self {
-        todo!()
-    }
-
     fn fmt_internal(
         &self,
         f: &mut Formatter<'_>,
@@ -284,7 +280,7 @@ where
             })
     }
 
-    fn merge(self: &Arc<Self>, other: &Arc<Self>) -> Arc<Self> {
+    pub(crate) fn merge(self: &Arc<Self>, other: &Arc<Self>) -> Arc<Self> {
         if Arc::ptr_eq(self, other) {
             return self.clone();
         }

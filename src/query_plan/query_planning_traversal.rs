@@ -103,7 +103,7 @@ pub(crate) struct BestQueryPlanInfo {
     /// The fetch dependency graph for this query plan.
     pub fetch_dependency_graph: FetchDependencyGraph,
     /// The path tree for the closed branch options chosen for this query plan.
-    pub path_tree: OpPathTree,
+    pub path_tree: Arc<OpPathTree>,
     /// The cost of this query plan.
     pub cost: QueryPlanCost,
 }
@@ -118,7 +118,8 @@ impl BestQueryPlanInfo {
                 None,
                 0,
             ),
-            path_tree: OpPathTree::new(parameters.federated_query_graph.clone(), parameters.head),
+            path_tree: OpPathTree::new(parameters.federated_query_graph.clone(), parameters.head)
+                .into(),
             cost: Default::default(),
         }
     }
@@ -519,7 +520,7 @@ impl<'a> QueryPlanningTraversal<'a> {
                 let cost = self.cost(&mut initial_dependency_graph)?;
                 self.best_plan = BestQueryPlanInfo {
                     fetch_dependency_graph: initial_dependency_graph,
-                    path_tree: initial_tree,
+                    path_tree: initial_tree.into(),
                     cost,
                 }
                 .into();
@@ -528,7 +529,7 @@ impl<'a> QueryPlanningTraversal<'a> {
         }
 
         // Build trees from the first group
-        let other_trees: Vec<Vec<Option<OpPathTree>>> = first_group
+        let other_trees: Vec<Vec<Option<Arc<OpPathTree>>>> = first_group
             .iter()
             .map(|b| {
                 b.0.iter()
@@ -539,6 +540,7 @@ impl<'a> QueryPlanningTraversal<'a> {
                             &Vec::from_iter(opt.flatten()),
                         )
                         .ok()
+                        .map(Arc::new)
                     })
                     .collect()
             })
@@ -549,20 +551,20 @@ impl<'a> QueryPlanningTraversal<'a> {
             outer_self: &'a mut QueryPlanningTraversal<'b>,
         }
 
-        impl<'a, 'b> GenerateContext<(FetchDependencyGraph, OpPathTree), OpPathTree>
+        impl<'a, 'b> GenerateContext<(FetchDependencyGraph, Arc<OpPathTree>), Arc<OpPathTree>>
             for BestPlanGenerateContext<'a, 'b>
         {
             fn add(
                 &mut self,
-                (plan_graph, plan_tree): &(FetchDependencyGraph, OpPathTree),
-                tree: OpPathTree,
-            ) -> (FetchDependencyGraph, OpPathTree) {
+                (plan_graph, plan_tree): &(FetchDependencyGraph, Arc<OpPathTree>),
+                tree: Arc<OpPathTree>,
+            ) -> (FetchDependencyGraph, Arc<OpPathTree>) {
                 let mut updated_graph = plan_graph.clone();
                 let result = self
                     .outer_self
                     .updated_dependency_graph(&mut updated_graph, &tree);
                 if result.is_ok() {
-                    let updated_tree = plan_tree.merge_raw(&tree);
+                    let updated_tree = plan_tree.merge(&tree);
                     (updated_graph, updated_tree)
                 } else {
                     // Failed to update. Return the original plan.
@@ -572,14 +574,14 @@ impl<'a> QueryPlanningTraversal<'a> {
 
             fn cost(
                 &mut self,
-                (plan_graph, _): &mut (FetchDependencyGraph, OpPathTree),
+                (plan_graph, _): &mut (FetchDependencyGraph, Arc<OpPathTree>),
             ) -> Result<QueryPlanCost, FederationError> {
                 self.outer_self.cost(plan_graph)
             }
 
             fn on_plan(
                 &mut self,
-                (_, _plan_tree): &(FetchDependencyGraph, OpPathTree),
+                (_, _plan_tree): &(FetchDependencyGraph, Arc<OpPathTree>),
                 _cost: QueryPlanCost,
                 _prev_cost: Option<QueryPlanCost>,
             ) {
@@ -605,7 +607,7 @@ impl<'a> QueryPlanningTraversal<'a> {
         }
 
         let (best, cost) = generate_all_plans_and_find_best(
-            (initial_dependency_graph, initial_tree),
+            (initial_dependency_graph, Arc::new(initial_tree)),
             other_trees,
             BestPlanGenerateContext { outer_self: self },
         )?;
@@ -943,7 +945,7 @@ impl<'a> QueryPlanningTraversal<'a> {
         match best_plan_opt {
             Some(best_plan) => Ok(ConditionResolution::Satisfied {
                 cost: best_plan.cost,
-                path_tree: Some(Arc::new(best_plan.path_tree)),
+                path_tree: Some(best_plan.path_tree),
             }),
             None => Ok(ConditionResolution::unsatisfied_conditions()),
         }
