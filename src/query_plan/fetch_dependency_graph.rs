@@ -158,7 +158,7 @@ type FetchDependencyGraphPetgraph =
 ///
 /// In the graph, two fetches are connected if one of them (the parent/head) must be performed
 /// strictly before the other one (the child/tail).
-#[derive(Debug, Clone)] // TODO: review Clone implementation
+#[derive(Debug, Clone)]
 pub(crate) struct FetchDependencyGraph {
     /// The supergraph schema that generated the federated query graph.
     supergraph_schema: ValidFederationSchema,
@@ -2269,13 +2269,22 @@ fn create_fetch_initial_path(
 
 fn extract_defer_from_operation(
     _dependency_graph: &mut FetchDependencyGraph,
-    _operation: &OpPathElement,
-    _defer_context: &DeferContext,
+    operation: &OpPathElement,
+    defer_context: &DeferContext,
     _node_path: &FetchDependencyGraphNodePath,
 ) -> (Option<OpPathElement>, DeferContext) {
-    // temporary (wait for FED-189)
-    (Some(_operation.clone()), _defer_context.clone())
-    //todo!() // Port `extractDeferFromOperation`
+    // PORT_NOTE: temporary straw-man implementation (waiting for FED-189)
+    let updated_path_to_defer_parent = defer_context
+        .path_to_defer_parent
+        .with_pushed(operation.clone().into());
+    let updated_context = DeferContext {
+        path_to_defer_parent: updated_path_to_defer_parent.into(),
+        // Following fields are identical to those of `defer_context`.
+        current_defer_ref: defer_context.current_defer_ref.clone(),
+        active_defer_ref: defer_context.active_defer_ref.clone(),
+        is_part_of_query: defer_context.is_part_of_query,
+    };
+    (Some(operation.clone()), updated_context)
 }
 
 fn handle_requires(
