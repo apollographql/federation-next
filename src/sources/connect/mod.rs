@@ -1,6 +1,7 @@
 mod models;
+mod query_graph;
 mod selection_parser;
-mod spec;
+pub(crate) mod spec;
 mod url_path_template;
 
 use crate::error::FederationError;
@@ -124,17 +125,14 @@ pub(crate) enum ConnectFederatedSourceEnteringQueryGraphEdge {
     },
 }
 
+/// Connect-aware query graph builder
+///
+/// This builder is in charge of setting up nodes / edges in the query graph
+/// that correspond to REST mappings defined through the @source and @connect
+/// directives.
+///
+/// Refer to [SourceSpecDefinition] and [ConnectSpecDefinition] for more info.
 pub(crate) struct ConnectFederatedQueryGraphBuilder;
-
-impl SourceFederatedQueryGraphBuilderApi for ConnectFederatedQueryGraphBuilder {
-    fn process_subgraph_schema(
-        &self,
-        _subgraph: ValidFederationSubgraph,
-        _builder: &mut impl IntraSourceQueryGraphBuilderApi,
-    ) -> Result<(), FederationError> {
-        todo!()
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct ConnectFetchDependencyGraph;

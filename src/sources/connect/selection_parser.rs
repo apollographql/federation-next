@@ -122,7 +122,7 @@ impl NamedSelection {
     }
 
     #[allow(dead_code)]
-    fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         match self {
             Self::Field(alias, name, _) => {
                 if let Some(alias) = alias {
@@ -174,8 +174,8 @@ impl PathSelection {
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct SubSelection {
-    selections: Vec<NamedSelection>,
-    star: Option<StarSelection>,
+    pub(crate) selections: Vec<NamedSelection>,
+    pub(crate) star: Option<StarSelection>,
 }
 
 impl SubSelection {
