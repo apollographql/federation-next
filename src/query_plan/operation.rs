@@ -25,6 +25,7 @@ use crate::schema::definitions::is_composite_type;
 use crate::schema::definitions::types_can_be_merged;
 use crate::schema::definitions::AbstractType;
 use crate::schema::position::FieldDefinitionPosition;
+use crate::schema::position::UnionTypeDefinitionPosition;
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, InterfaceTypeDefinitionPosition, ObjectTypeDefinitionPosition,
     SchemaRootDefinitionKind,
@@ -945,34 +946,6 @@ pub(crate) mod normalized_field_selection {
             &mut self.data.sibling_typename
         }
 
-        pub(crate) fn type_if_added_to(
-            &self,
-            parent_type: &CompositeTypeDefinitionPosition,
-            schema: &ValidFederationSchema,
-        ) -> Option<CompositeTypeDefinitionPosition> {
-            let data = self.data();
-            if &data.field_position == parent_type {
-                let digest = match &self.data.field_position {
-                    FieldDefinitionPosition::Object(ty) => CompositeTypeDefinitionPosition::Object(
-                        ObjectTypeDefinitionPosition::new(ty.type_name.clone()),
-                    ),
-                    FieldDefinitionPosition::Interface(ty) => {
-                        CompositeTypeDefinitionPosition::Interface(
-                            InterfaceTypeDefinitionPosition::new(ty.type_name.clone()),
-                        )
-                    }
-                    FieldDefinitionPosition::Union(ty) => CompositeTypeDefinitionPosition::Union(
-                        UnionTypeDefinitionPosition::new(ty.type_name.clone()),
-                    ),
-                };
-                return Some(digest);
-            }
-            if data.name() == parent_type.type_name() {
-                return Some(parent_type.introspection_typename_field().parent());
-            }
-            self.can_rebase_on(parent_type, schema)
-                .then(|| data.field_position.parent())
-        }
         pub(crate) fn with_updated_directives(&self, directives: DirectiveList) -> NormalizedField {
             let mut data = self.data.clone();
             data.directives = Arc::new(directives);
@@ -1398,7 +1371,7 @@ pub(crate) mod normalized_inline_fragment_selection {
     /// graph paths.
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub(crate) struct NormalizedInlineFragment {
-        pub(super) data: NormalizedInlineFragmentData,
+        data: NormalizedInlineFragmentData,
         key: NormalizedSelectionKey,
     }
 
@@ -1478,8 +1451,9 @@ pub(crate) mod normalized_inline_fragment_selection {
         pub(super) fn casted_type_if_add_to(
             &self,
             parent_type: &CompositeTypeDefinitionPosition,
+            schema: &ValidFederationSchema,
         ) -> Option<CompositeTypeDefinitionPosition> {
-            if &self.parent_type_position == parent_type {
+            if &self.parent_type_position == parent_type && &self.schema == schema {
                 return Some(self.casted_type());
             }
             match self.can_rebase_on(parent_type) {
@@ -2943,22 +2917,10 @@ impl NormalizedFieldSelection {
         parent_type: &CompositeTypeDefinitionPosition,
         schema: &ValidFederationSchema,
     ) -> bool {
-        if &self.field.data().schema == schema {
-            match (parent_type, &self.field.data().field_position) {
-                (
-                    CompositeTypeDefinitionPosition::Object(ty_a),
-                    FieldDefinitionPosition::Object(ty_b),
-                ) if ty_a.type_name == ty_b.type_name => return true,
-                (
-                    CompositeTypeDefinitionPosition::Interface(ty_a),
-                    FieldDefinitionPosition::Interface(ty_b),
-                ) if ty_a.type_name == ty_b.type_name => return true,
-                (
-                    CompositeTypeDefinitionPosition::Union(ty_a),
-                    FieldDefinitionPosition::Union(ty_b),
-                ) if ty_a.type_name == ty_b.type_name => return true,
-                _ => {}
-            }
+        if &self.field.data().schema == schema
+            && parent_type == &self.field.data().field_position.parent()
+        {
+            return true;
         }
 
         let Some(ty) = self.field.type_if_added_to(parent_type, schema) else {
@@ -3119,6 +3081,31 @@ impl NormalizedField {
     pub(crate) fn has_defer(&self) -> bool {
         // @defer cannot be on field at the moment
         false
+    }
+
+    pub(crate) fn type_if_added_to(
+        &self,
+        parent_type: &CompositeTypeDefinitionPosition,
+        schema: &ValidFederationSchema,
+    ) -> Option<CompositeTypeDefinitionPosition> {
+        let data = self.data();
+        if &data.field_position.parent() == parent_type && &data.schema == schema {
+            let base_ty_name = data
+                .field_position
+                .get(schema.schema())
+                .ok()?
+                .ty
+                .inner_named_type();
+            return schema
+                .get_type(base_ty_name.clone())
+                .and_then(CompositeTypeDefinitionPosition::try_from)
+                .ok();
+        }
+        if data.name() == &TYPENAME_FIELD {
+            return Some(parent_type.introspection_typename_field().parent());
+        }
+        self.can_rebase_on(parent_type, schema)
+            .then(|| data.field_position.parent())
     }
 }
 
@@ -3495,7 +3482,7 @@ impl NormalizedInlineFragmentSelection {
         let Some(ty) = self
             .inline_fragment
             .data()
-            .casted_type_if_add_to(parent_type)
+            .casted_type_if_add_to(parent_type, schema)
         else {
             return false;
         };
