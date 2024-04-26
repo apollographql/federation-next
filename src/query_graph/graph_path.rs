@@ -678,12 +678,13 @@ pub(crate) struct ClosedPath {
 }
 
 impl ClosedPath {
-    pub(crate) fn flatten(&self) -> Vec<(&OpGraphPath, Option<&Arc<NormalizedSelectionSet>>)> {
+    pub(crate) fn flatten(
+        &self,
+    ) -> impl Iterator<Item = (&OpGraphPath, Option<&Arc<NormalizedSelectionSet>>)> {
         self.paths
             .0
             .iter()
             .map(|path| (path.as_ref(), self.selection_set.as_ref()))
-            .collect()
     }
 }
 

@@ -536,7 +536,7 @@ impl<'a> QueryPlanningTraversal<'a> {
                         OpPathTree::from_op_paths(
                             federated_query_graph.clone(),
                             *root,
-                            &opt.flatten(),
+                            &Vec::from_iter(opt.flatten()),
                         )
                         .ok()
                     })
