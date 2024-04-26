@@ -101,6 +101,6 @@ impl From<BooleanOrVariable> for Value {
 
 impl From<BooleanOrVariable> for Node<Value> {
     fn from(b: BooleanOrVariable) -> Self {
-        b.into()
+        Node::new(b.into())
     }
 }
