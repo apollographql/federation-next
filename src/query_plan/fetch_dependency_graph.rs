@@ -192,25 +192,18 @@ pub(crate) struct DeferTracking {
 #[derive(Debug, Clone)]
 pub(crate) struct DeferredInfo {
     pub(crate) label: DeferRef,
-    pub(crate) path: FetchDependencyGraphPath,
+    pub(crate) path: FetchDependencyGraphNodePath,
     pub(crate) sub_selection: NormalizedSelectionSet,
     pub(crate) deferred: IndexSet<DeferRef>,
     pub(crate) dependencies: IndexSet<DeferRef>,
 }
 
 // TODO: Write docstrings
-#[derive(Debug, Clone)]
-pub(crate) struct FetchDependencyGraphPath {
-    pub(crate) full_path: OpPath,
-    pub(crate) path_in_node: OpPath,
-    pub(crate) response_path: Vec<FetchDataPathElement>,
-}
-
 #[derive(Debug, Clone, Default)]
 pub(crate) struct FetchDependencyGraphNodePath {
-    full_path: Arc<OpPath>,
-    path_in_node: Arc<OpPath>,
-    response_path: Vec<FetchDataPathElement>,
+    pub(crate) full_path: Arc<OpPath>,
+    pub(crate) path_in_node: Arc<OpPath>,
+    pub(crate) response_path: Vec<FetchDataPathElement>,
 }
 
 #[derive(Debug, Clone)]
@@ -1640,7 +1633,7 @@ impl DeferTracking {
         &mut self,
         defer_context: &DeferContext,
         defer_args: &DeferDirectiveArguments,
-        path: FetchDependencyGraphPath,
+        path: FetchDependencyGraphNodePath,
         parent_type: CompositeTypeDefinitionPosition,
     ) {
         // Having the primary selection undefined means that @defer handling is actually disabled, so there's no need to track anything.
@@ -1734,7 +1727,7 @@ impl DeferredInfo {
     fn empty(
         schema: ValidFederationSchema,
         label: DeferRef,
-        path: FetchDependencyGraphPath,
+        path: FetchDependencyGraphNodePath,
         parent_type: CompositeTypeDefinitionPosition,
     ) -> Self {
         Self {
@@ -2432,10 +2425,10 @@ fn compute_input_rewrites_on_key_fetch(
 /// Returns an updated pair of (`operation`, `defer_context`) after the `defer` directive removed.
 /// - The updated operation can be `None`, if operation is no longer necessary.
 fn extract_defer_from_operation(
-    _dependency_graph: &mut FetchDependencyGraph,
+    dependency_graph: &mut FetchDependencyGraph,
     operation: &OpPathElement,
     defer_context: &DeferContext,
-    _node_path: &FetchDependencyGraphNodePath,
+    node_path: &FetchDependencyGraphNodePath,
 ) -> Result<(Option<OpPathElement>, DeferContext), FederationError> {
     let defer_args = operation.defer_directive_args();
     let Some(defer_args) = defer_args else {
@@ -2451,7 +2444,8 @@ fn extract_defer_from_operation(
         };
         return Ok((Some(operation.clone()), updated_context));
     };
-    let Some(updated_defer_ref) = defer_args.label else {
+
+    let Some(ref updated_defer_ref) = defer_args.label else {
         // PORT_NOTE: The original TypeScript code has an assertion here.
         return Err(FederationError::internal(
             "All defers should have a label at this point",
@@ -2462,6 +2456,14 @@ fn extract_defer_from_operation(
         None => Default::default(), // empty OpPath
         Some(ref updated_operation) => OpPath(vec![Arc::new(updated_operation.clone())]),
     };
+
+    dependency_graph.defer_tracking.register_defer(
+        defer_context,
+        &defer_args,
+        node_path.clone(),
+        operation.parent_type_position(),
+    );
+
     let updated_context = DeferContext {
         current_defer_ref: Some(updated_defer_ref.into()),
         path_to_defer_parent: updated_path_to_defer_parent.into(),

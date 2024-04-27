@@ -248,11 +248,6 @@ pub(crate) enum OpPathElement {
     InlineFragment(NormalizedInlineFragment),
 }
 
-pub(crate) struct DeferDirectiveArgs {
-    pub(crate) label: Option<String>,
-    pub(crate) if_arg: Option<BooleanOrVariable>,
-}
-
 impl OpPathElement {
     pub(crate) fn directives(&self) -> &Arc<DirectiveList> {
         match self {
@@ -337,18 +332,18 @@ impl OpPathElement {
         }
     }
 
-    pub(crate) fn defer_directive_args(&self) -> Option<DeferDirectiveArgs> {
+    pub(crate) fn defer_directive_args(&self) -> Option<DeferDirectiveArguments> {
         match self {
             OpPathElement::Field(_) => None, // @defer cannot be on field at the moment
             OpPathElement::InlineFragment(inline_fragment) => {
                 // Note: @defer is not repeatable.
                 inline_fragment.data().directives.get("defer").map(|defer| {
-                    let label = defer
+                    let label: Option<NodeStr> = defer
                         .argument_by_name("label")
-                        .map(|label| label.to_string());
-                    let if_arg = directive_optional_variable_boolean_argument(defer, &name!("if"))
+                        .and_then(|label| label.as_node_str().cloned());
+                    let if_ = directive_optional_variable_boolean_argument(defer, &name!("if"))
                         .unwrap_or_default();
-                    DeferDirectiveArgs { label, if_arg }
+                    DeferDirectiveArguments { label, if_ }
                 })
             }
         }

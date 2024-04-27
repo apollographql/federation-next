@@ -10,8 +10,8 @@ use apollo_compiler::{name, Node, NodeStr};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct DeferDirectiveArguments {
-    label: Option<NodeStr>,
-    if_: Option<BooleanOrVariable>,
+    pub(crate) label: Option<NodeStr>,
+    pub(crate) if_: Option<BooleanOrVariable>,
 }
 
 impl DeferDirectiveArguments {
