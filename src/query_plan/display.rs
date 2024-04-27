@@ -7,12 +7,23 @@ pub(crate) struct State<'fmt, 'fmt2> {
     output: &'fmt mut fmt::Formatter<'fmt2>,
 }
 
-impl State<'_, '_> {
-    fn write<T: fmt::Display>(&mut self, value: T) -> fmt::Result {
+impl<'a, 'b> State<'a, 'b> {
+    pub(crate) fn new(output: &'a mut fmt::Formatter<'b>) -> State<'a, 'b> {
+        Self {
+            indent_level: 0,
+            output,
+        }
+    }
+
+    pub(crate) fn write<T: fmt::Display>(&mut self, value: T) -> fmt::Result {
         write!(self.output, "{}", value)
     }
 
-    fn new_line(&mut self) -> fmt::Result {
+    pub(crate) fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
+        self.output.write_fmt(args)
+    }
+
+    pub(crate) fn new_line(&mut self) -> fmt::Result {
         self.write("\n")?;
         for _ in 0..self.indent_level {
             self.write("  ")?
@@ -20,16 +31,16 @@ impl State<'_, '_> {
         Ok(())
     }
 
-    fn indent_no_new_line(&mut self) {
+    pub(crate) fn indent_no_new_line(&mut self) {
         self.indent_level += 1;
     }
 
-    fn indent(&mut self) -> fmt::Result {
+    pub(crate) fn indent(&mut self) -> fmt::Result {
         self.indent_no_new_line();
         self.new_line()
     }
 
-    fn dedent(&mut self) -> fmt::Result {
+    pub(crate) fn dedent(&mut self) -> fmt::Result {
         self.indent_level -= 1;
         self.new_line()
     }
@@ -375,7 +386,7 @@ fn write_selections(
     state.write("}")
 }
 
-fn write_indented_lines<T>(
+pub(crate) fn write_indented_lines<T>(
     state: &mut State<'_, '_>,
     values: &[T],
     mut write_line: impl FnMut(&mut State<'_, '_>, &T) -> fmt::Result,

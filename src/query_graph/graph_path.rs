@@ -9,6 +9,7 @@ use crate::query_graph::condition_resolver::{
 };
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::{QueryGraph, QueryGraphEdgeTransition, QueryGraphNodeType};
+use crate::query_plan::display::{write_indented_lines, State as IndentedFormatter};
 use crate::query_plan::operation::normalized_field_selection::{
     NormalizedField, NormalizedFieldData, NormalizedFieldSelection,
 };
@@ -431,19 +432,16 @@ impl Display for OpGraphPathContext {
 pub(crate) struct SimultaneousPaths(pub(crate) Vec<Arc<OpGraphPath>>);
 
 impl SimultaneousPaths {
-    pub(crate) fn fmt_indented(&self, f: &mut Formatter<'_>, indent: &str) -> std::fmt::Result {
+    pub(crate) fn fmt_indented(&self, f: &mut IndentedFormatter) -> std::fmt::Result {
         match self.0.as_slice() {
-            [] => write!(f, "<no path>"),
-            [first] => write!(f, "{first}"),
+            [] => f.write("<no path>"),
+
+            [first] => f.write_fmt(format_args!("{{ {first} }}")),
+
             _ => {
-                let new_line = format!("\n{indent}");
-                let body = self
-                    .0
-                    .iter()
-                    .map(|p| p.to_string())
-                    .collect::<Vec<String>>()
-                    .join(&new_line);
-                write!(f, "{{{new_line}  {body}{new_line}}}")
+                f.write("{")?;
+                write_indented_lines(f, &self.0, |f, elem| f.write(elem))?;
+                f.write("}")
             }
         }
     }
@@ -459,7 +457,7 @@ impl std::fmt::Debug for SimultaneousPaths {
 
 impl std::fmt::Display for SimultaneousPaths {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.fmt_indented(f, "")
+        self.fmt_indented(&mut IndentedFormatter::new(f))
     }
 }
 
