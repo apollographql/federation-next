@@ -19,8 +19,8 @@ use crate::source_aware::federated_query_graph::{FederatedQueryGraph, SelfCondit
 use crate::source_aware::query_plan::{FetchDataPathElement, QueryPlanCost};
 use crate::sources::connect::selection_parser::{PathSelection, Property, SubSelection};
 use crate::sources::{
-    SourceFetchDependencyGraphApi,
-    SourceFetchDependencyGraphNode, SourceFetchNode, SourceId, SourcePath, SourcePathApi,
+    SourceFetchDependencyGraphApi, SourceFetchDependencyGraphNode, SourceFetchNode, SourceId,
+    SourcePath, SourcePathApi,
 };
 use crate::ValidFederationSubgraph;
 use apollo_compiler::executable::{Name, Value};

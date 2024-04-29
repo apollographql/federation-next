@@ -420,7 +420,7 @@ mod tests {
             sources::{
                 SourceFederatedAbstractFieldQueryGraphEdge,
                 SourceFederatedConcreteFieldQueryGraphEdge, SourceFederatedConcreteQueryGraphNode,
-                SourceFederatedEnumQueryGraphNode, SourceFederatedQueryGraphs,
+                SourceFederatedEnumQueryGraphNode, SourceFederatedQueryGraph,
                 SourceFederatedScalarQueryGraphNode, SourceFederatedTypeConditionQueryGraphEdge,
                 SourceId,
             },
@@ -516,7 +516,9 @@ mod tests {
             // -- Everything below is todo!() --
             // ---------------------------------
 
-            fn source_query_graph(&mut self) -> &mut SourceFederatedQueryGraphs {
+            fn source_query_graph(
+                &mut self,
+            ) -> Result<&mut SourceFederatedQueryGraph, FederationError> {
                 todo!()
             }
 
