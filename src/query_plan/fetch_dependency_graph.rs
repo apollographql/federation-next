@@ -202,8 +202,8 @@ pub(crate) struct DeferredInfo {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct FetchDependencyGraphNodePath {
     pub(crate) full_path: Arc<OpPath>,
-    pub(crate) path_in_node: Arc<OpPath>,
-    pub(crate) response_path: Vec<FetchDataPathElement>,
+    path_in_node: Arc<OpPath>,
+    response_path: Vec<FetchDataPathElement>,
 }
 
 #[derive(Debug, Clone)]
@@ -2445,12 +2445,11 @@ fn extract_defer_from_operation(
         return Ok((Some(operation.clone()), updated_context));
     };
 
-    let Some(ref updated_defer_ref) = defer_args.label else {
+    let updated_defer_ref = defer_args.label().ok_or_else(||
         // PORT_NOTE: The original TypeScript code has an assertion here.
-        return Err(FederationError::internal(
-            "All defers should have a label at this point",
-        ));
-    };
+        FederationError::internal(
+                    "All defers should have a label at this point",
+                ))?;
     let updated_operation = operation.without_defer();
     let updated_path_to_defer_parent = match updated_operation {
         None => Default::default(), // empty OpPath

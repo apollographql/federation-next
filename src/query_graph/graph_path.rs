@@ -1,6 +1,5 @@
 use crate::error::FederationError;
 use crate::is_leaf_type;
-use crate::link::argument::directive_optional_variable_boolean_argument;
 use crate::link::federation_spec_definition::get_federation_spec_definition_from_subgraph;
 use crate::link::graphql_definition::{
     BooleanOrVariable, DeferDirectiveArguments, OperationConditional, OperationConditionalKind,
@@ -27,7 +26,7 @@ use crate::schema::ValidFederationSchema;
 use apollo_compiler::ast::Value;
 use apollo_compiler::executable::DirectiveList;
 use apollo_compiler::schema::{ExtendedType, Name};
-use apollo_compiler::{name, NodeStr};
+use apollo_compiler::NodeStr;
 use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -335,17 +334,11 @@ impl OpPathElement {
     pub(crate) fn defer_directive_args(&self) -> Option<DeferDirectiveArguments> {
         match self {
             OpPathElement::Field(_) => None, // @defer cannot be on field at the moment
-            OpPathElement::InlineFragment(inline_fragment) => {
-                // Note: @defer is not repeatable.
-                inline_fragment.data().directives.get("defer").map(|defer| {
-                    let label: Option<NodeStr> = defer
-                        .argument_by_name("label")
-                        .and_then(|label| label.as_node_str().cloned());
-                    let if_ = directive_optional_variable_boolean_argument(defer, &name!("if"))
-                        .unwrap_or_default();
-                    DeferDirectiveArguments { label, if_ }
-                })
-            }
+            OpPathElement::InlineFragment(inline_fragment) => inline_fragment
+                .data()
+                .defer_directive_arguments()
+                .ok()
+                .flatten(),
         }
     }
 
