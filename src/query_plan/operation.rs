@@ -24,8 +24,6 @@ use crate::query_plan::FetchDataRewrite;
 use crate::schema::definitions::is_composite_type;
 use crate::schema::definitions::types_can_be_merged;
 use crate::schema::definitions::AbstractType;
-use crate::schema::position::FieldDefinitionPosition;
-use crate::schema::position::UnionTypeDefinitionPosition;
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, InterfaceTypeDefinitionPosition, ObjectTypeDefinitionPosition,
     SchemaRootDefinitionKind,
@@ -854,10 +852,7 @@ pub(crate) mod normalized_field_selection {
         NormalizedSelectionSet,
     };
     use crate::query_plan::FetchDataPathElement;
-    use crate::schema::position::{
-        CompositeTypeDefinitionPosition, FieldDefinitionPosition, InterfaceTypeDefinitionPosition,
-        ObjectTypeDefinitionPosition, TypeDefinitionPosition, UnionTypeDefinitionPosition,
-    };
+    use crate::schema::position::{FieldDefinitionPosition, TypeDefinitionPosition};
     use crate::schema::ValidFederationSchema;
     use apollo_compiler::ast::{Argument, Directive, DirectiveList, Name};
     use apollo_compiler::Node;
