@@ -5,19 +5,6 @@ use crate::link::federation_spec_definition::get_federation_spec_definition_from
 use crate::query_graph::graph_path::OpPath;
 use crate::query_graph::graph_path::OpPathElement;
 use crate::query_plan::conditions::Conditions;
-use crate::query_plan::operation::normalized_field_selection::{
-    NormalizedField, NormalizedFieldData, NormalizedFieldSelection,
-};
-use crate::query_plan::operation::normalized_fragment_spread_selection::{
-    NormalizedFragmentSpread, NormalizedFragmentSpreadData, NormalizedFragmentSpreadSelection,
-};
-use crate::query_plan::operation::normalized_inline_fragment_selection::{
-    NormalizedInlineFragment, NormalizedInlineFragmentData, NormalizedInlineFragmentSelection,
-};
-use crate::query_plan::operation::normalized_selection_map::{
-    Entry, NormalizedFieldSelectionValue, NormalizedFragmentSpreadSelectionValue,
-    NormalizedInlineFragmentSelectionValue, NormalizedSelectionMap, NormalizedSelectionValue,
-};
 use crate::query_plan::FetchDataKeyRenamer;
 use crate::query_plan::FetchDataPathElement;
 use crate::query_plan::FetchDataRewrite;
@@ -473,6 +460,12 @@ pub(crate) mod normalized_selection_map {
     }
 }
 
+pub(crate) use normalized_selection_map::NormalizedFieldSelectionValue;
+pub(crate) use normalized_selection_map::NormalizedFragmentSpreadSelectionValue;
+pub(crate) use normalized_selection_map::NormalizedInlineFragmentSelectionValue;
+pub(crate) use normalized_selection_map::NormalizedSelectionMap;
+pub(crate) use normalized_selection_map::NormalizedSelectionValue;
+
 /// A selection "key" (unrelated to the federation `@key` directive) is an identifier of a selection
 /// (field, inline fragment, or fragment spread) that is used to determine whether two selections
 /// can be merged.
@@ -826,7 +819,7 @@ impl NormalizedFragment {
     }
 }
 
-pub(crate) mod normalized_field_selection {
+mod normalized_field_selection {
     use crate::error::FederationError;
     use crate::query_graph::graph_path::OpPathElement;
     use crate::query_plan::operation::{
@@ -1011,7 +1004,11 @@ pub(crate) mod normalized_field_selection {
     }
 }
 
-pub(crate) mod normalized_fragment_spread_selection {
+pub(crate) use normalized_field_selection::NormalizedField;
+pub(crate) use normalized_field_selection::NormalizedFieldData;
+pub(crate) use normalized_field_selection::NormalizedFieldSelection;
+
+mod normalized_fragment_spread_selection {
     use crate::query_plan::operation::{
         directives_with_sorted_arguments, is_deferred_selection, HasNormalizedSelectionKey,
         NormalizedSelectionKey, NormalizedSelectionSet, SelectionId,
@@ -1092,6 +1089,10 @@ pub(crate) mod normalized_fragment_spread_selection {
         }
     }
 }
+
+pub(crate) use normalized_fragment_spread_selection::NormalizedFragmentSpread;
+pub(crate) use normalized_fragment_spread_selection::NormalizedFragmentSpreadData;
+pub(crate) use normalized_fragment_spread_selection::NormalizedFragmentSpreadSelection;
 
 impl NormalizedFragmentSpreadSelection {
     pub(crate) fn rebase_on(
@@ -1287,7 +1288,7 @@ impl NormalizedFragmentSpreadData {
     }
 }
 
-pub(crate) mod normalized_inline_fragment_selection {
+mod normalized_inline_fragment_selection {
     use crate::error::FederationError;
     use crate::link::graphql_definition::{defer_directive_arguments, DeferDirectiveArguments};
     use crate::query_plan::operation::{
@@ -1445,6 +1446,10 @@ pub(crate) mod normalized_inline_fragment_selection {
         }
     }
 }
+
+pub(crate) use normalized_inline_fragment_selection::NormalizedInlineFragment;
+pub(crate) use normalized_inline_fragment_selection::NormalizedInlineFragmentData;
+pub(crate) use normalized_inline_fragment_selection::NormalizedInlineFragmentSelection;
 
 impl NormalizedOperation {
     pub(crate) fn optimize(
@@ -1677,7 +1682,7 @@ impl NormalizedSelectionSet {
         for other_selection in others {
             let other_key = other_selection.key();
             match target.entry(other_key.clone()) {
-                Entry::Occupied(existing) => match existing.get() {
+                normalized_selection_map::Entry::Occupied(existing) => match existing.get() {
                     NormalizedSelection::Field(self_field_selection) => {
                         let NormalizedSelection::Field(other_field_selection) = other_selection
                         else {
@@ -1731,7 +1736,7 @@ impl NormalizedSelectionSet {
                             .push(other_inline_fragment_selection);
                     }
                 },
-                Entry::Vacant(vacant) => {
+                normalized_selection_map::Entry::Vacant(vacant) => {
                     vacant.insert(other_selection.clone())?;
                 }
             }

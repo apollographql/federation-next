@@ -370,10 +370,7 @@ mod tests {
             path_tree::OpPathTree,
             QueryGraph, QueryGraphEdgeTransition,
         },
-        query_plan::operation::{
-            normalize_operation,
-            normalized_field_selection::{NormalizedField, NormalizedFieldData},
-        },
+        query_plan::operation::{normalize_operation, NormalizedField, NormalizedFieldData},
         schema::{position::SchemaRootDefinitionKind, ValidFederationSchema},
     };
 
