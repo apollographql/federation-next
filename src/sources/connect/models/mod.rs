@@ -1,7 +1,5 @@
 mod validation;
 
-use std::collections::HashMap;
-
 use apollo_compiler::NodeStr;
 use indexmap::IndexMap;
 
@@ -37,13 +35,13 @@ impl Connector {
     pub(crate) fn from_valid_schema(
         schema: &ValidFederationSchema,
         subgraph_name: NodeStr,
-    ) -> Result<HashMap<ConnectId, Self>, FederationError> {
+    ) -> Result<IndexMap<ConnectId, Self>, FederationError> {
         let Some(metadata) = schema.metadata() else {
-            return Ok(HashMap::new());
+            return Ok(IndexMap::new());
         };
 
         let Some(link) = metadata.for_identity(&ConnectSpecDefinition::identity()) else {
-            return Ok(HashMap::new());
+            return Ok(IndexMap::new());
         };
 
         let source_name = ConnectSpecDefinition::source_directive_name(&link);
