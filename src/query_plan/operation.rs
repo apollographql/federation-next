@@ -123,8 +123,7 @@ pub(crate) mod normalized_selection_map {
     };
     use apollo_compiler::ast::Name;
     use indexmap::IndexMap;
-    use std::borrow::{Borrow, Cow};
-    use std::hash::Hash;
+    use std::borrow::Cow;
     use std::iter::Map;
     use std::ops::Deref;
     use std::sync::Arc;
@@ -163,11 +162,10 @@ pub(crate) mod normalized_selection_map {
             self.0.insert(value.key(), value)
         }
 
-        pub(crate) fn remove<Q>(&mut self, key: &Q) -> Option<NormalizedSelection>
-        where
-            NormalizedSelectionKey: Borrow<Q>,
-            Q: Eq + Hash + ?Sized,
-        {
+        pub(crate) fn remove(
+            &mut self,
+            key: &NormalizedSelectionKey,
+        ) -> Option<NormalizedSelection> {
             // We specifically use shift_remove() instead of swap_remove() to maintain order.
             self.0.shift_remove(key)
         }
@@ -179,11 +177,10 @@ pub(crate) mod normalized_selection_map {
             self.0.retain(|k, v| predicate(k, v))
         }
 
-        pub(crate) fn get_mut<Q>(&mut self, key: &Q) -> Option<NormalizedSelectionValue>
-        where
-            NormalizedSelectionKey: Borrow<Q>,
-            Q: Eq + Hash + ?Sized,
-        {
+        pub(crate) fn get_mut(
+            &mut self,
+            key: &NormalizedSelectionKey,
+        ) -> Option<NormalizedSelectionValue> {
             self.0.get_mut(key).map(NormalizedSelectionValue::new)
         }
 
