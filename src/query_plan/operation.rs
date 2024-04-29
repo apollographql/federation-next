@@ -1032,8 +1032,8 @@ mod normalized_fragment_spread_selection {
     /// - Encloses collection types in `Arc`s to facilitate cheaper cloning.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) struct NormalizedFragmentSpread {
-        pub(crate) data: NormalizedFragmentSpreadData,
-        pub(crate) key: NormalizedSelectionKey,
+        data: NormalizedFragmentSpreadData,
+        key: NormalizedSelectionKey,
     }
 
     impl NormalizedFragmentSpread {
@@ -1108,7 +1108,7 @@ impl NormalizedFragmentSpreadSelection {
         // QP code works on selections with fully expanded fragments, so this code (and that of `can_add_to`
         // on come into play in the code for reusing fragments, and that code calls those methods
         // appropriately.
-        if self.spread.data.schema == *schema
+        if self.spread.data().schema == *schema
             && self.spread.data().type_condition_position == *parent_type
         {
             return Ok(Some(NormalizedSelection::FragmentSpread(Arc::new(
@@ -1119,8 +1119,8 @@ impl NormalizedFragmentSpreadSelection {
         // If we're rebasing on a _different_ schema, then we *must* have fragments, since reusing
         // `self.fragments` would be incorrect. If we're on the same schema though, we're happy to default
         // to `self.fragments`.
-        let rebase_on_same_schema = self.spread.data.schema == *schema;
-        let Some(named_fragment) = named_fragments.get(&self.spread.data.fragment_name) else {
+        let rebase_on_same_schema = self.spread.data().schema == *schema;
+        let Some(named_fragment) = named_fragments.get(&self.spread.data().fragment_name) else {
             // If we're rebasing on another schema (think a subgraph), then named fragments will have been rebased on that, and some
             // of them may not contain anything that is on that subgraph, in which case they will not have been included at all.
             // If so, then as long as we're not asked to error if we cannot rebase, then we're happy to skip that spread (since again,
@@ -1128,7 +1128,7 @@ impl NormalizedFragmentSpreadSelection {
             return if let RebaseErrorHandlingOption::ThrowError = error_handling {
                 Err(FederationError::internal(format!(
                     "Cannot rebase {} fragment if it isn't part of the provided fragments",
-                    self.spread.data.fragment_name
+                    self.spread.data().fragment_name
                 )))
             } else {
                 Ok(None)
@@ -1188,7 +1188,7 @@ impl NormalizedFragmentSpreadSelection {
 
         let spread = NormalizedFragmentSpread::new(NormalizedFragmentSpreadData::from_fragment(
             &named_fragment,
-            &self.spread.data.directives,
+            &self.spread.data().directives,
         ));
         Ok(Some(NormalizedSelection::FragmentSpread(Arc::new(
             NormalizedFragmentSpreadSelection {
@@ -1199,7 +1199,7 @@ impl NormalizedFragmentSpreadSelection {
     }
 
     pub(crate) fn has_defer(&self) -> bool {
-        self.spread.data.directives.has("defer") || self.selection_set.has_defer()
+        self.spread.data().directives.has("defer") || self.selection_set.has_defer()
     }
 
     /// Copies fragment spread selection and assigns it a new unique selection ID.
@@ -1248,7 +1248,7 @@ impl NormalizedFragmentSpreadSelection {
 
         // We must update the spread parent type if necessary since we're not going deeper,
         // or we'll be fundamentally losing context.
-        if self.spread.data.schema != *schema {
+        if self.spread.data().schema != *schema {
             return Err(FederationError::internal(
                 "Should not try to normalize using a type from another schema",
             ));
@@ -3201,8 +3201,11 @@ impl NormalizedInlineFragmentSelection {
             for (_, selection) in normalized_selection_set.selections.iter() {
                 match selection {
                     NormalizedSelection::FragmentSpread(spread_selection) => {
-                        let type_condition =
-                            spread_selection.spread.data.type_condition_position.clone();
+                        let type_condition = spread_selection
+                            .spread
+                            .data()
+                            .type_condition_position
+                            .clone();
                         if type_condition.is_object_type()
                             && runtime_types_intersect(parent_type, &type_condition, schema)
                         {
