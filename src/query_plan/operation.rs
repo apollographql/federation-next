@@ -517,8 +517,30 @@ pub(crate) enum NormalizedSelectionKey {
     },
 }
 
+impl NormalizedSelectionKey {
+    fn is_typename_field(&self) -> bool {
+        matches!(self, NormalizedSelectionKey::Field { response_name, .. } if *response_name == TYPENAME_FIELD)
+    }
+}
+
 pub(crate) trait HasNormalizedSelectionKey {
     fn key(&self) -> NormalizedSelectionKey;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Containment {
+    /// The left-hand selection does not contain right-hand selection.
+    NotContained,
+    /// The left-hand selection fully contains the right-hand selection, and more.
+    StrictlyContained,
+    /// Two selections are equal.
+    Equal,
+}
+impl Containment {
+    /// Returns true if the right-hand selection set is strictly contained or equal.
+    pub fn is_contained(self) -> bool {
+        matches!(self, Containment::StrictlyContained | Containment::Equal)
+    }
 }
 
 /// An analogue of the apollo-compiler type `Selection` that stores our other selection analogues
@@ -756,6 +778,29 @@ impl NormalizedSelection {
                 Err(FederationError::internal("unexpected fragment spread"))
             }
         }
+    }
+
+    // TODO(@goto-bus-stop) ignore_missing_typename
+    pub(crate) fn containment(&self, other: &NormalizedSelection) -> Containment {
+        match (self, other) {
+            (NormalizedSelection::Field(self_field), NormalizedSelection::Field(other_field)) => {
+                self_field.containment(other_field)
+            }
+            (
+                NormalizedSelection::InlineFragment(self_fragment),
+                NormalizedSelection::InlineFragment(_) | NormalizedSelection::FragmentSpread(_),
+            ) => self_fragment.containment(other),
+            (
+                NormalizedSelection::FragmentSpread(self_fragment),
+                NormalizedSelection::InlineFragment(_) | NormalizedSelection::FragmentSpread(_),
+            ) => self_fragment.containment(other),
+            _ => Containment::NotContained,
+        }
+    }
+
+    /// Returns true if this selection is a superset of the other selection.
+    pub(crate) fn contains(&self, other: &NormalizedSelection) -> bool {
+        self.containment(other).is_contained()
     }
 }
 
@@ -1280,6 +1325,46 @@ impl NormalizedFragmentSpreadSelection {
         } else {
             unreachable!("We should always be able to either rebase the fragment spread OR throw an exception");
         }
+    }
+
+    // TODO(@goto-bus-stop) ignore_missing_typename
+    pub(crate) fn containment(&self, other: &NormalizedSelection) -> Containment {
+        match other {
+            NormalizedSelection::Field(_) => Containment::NotContained,
+            NormalizedSelection::InlineFragment(other) => {
+                let self_frag = self.spread.data();
+                let other_frag = other.inline_fragment.data();
+                // TODO(@goto-bus-stop) is this right?
+                if self_frag.type_condition_position
+                    == *other_frag
+                        .type_condition_position
+                        .as_ref()
+                        .unwrap_or(&other_frag.parent_type_position)
+                    && self_frag.directives == other_frag.directives
+                {
+                    self.selection_set.containment(&other.selection_set)
+                } else {
+                    Containment::NotContained
+                }
+            }
+            NormalizedSelection::FragmentSpread(other) => {
+                let self_frag = self.spread.data();
+                let other_frag = other.spread.data();
+                // TODO(@goto-bus-stop) is this right?
+                if self_frag.type_condition_position == other_frag.type_condition_position
+                    && self_frag.directives == other_frag.directives
+                {
+                    self.selection_set.containment(&other.selection_set)
+                } else {
+                    Containment::NotContained
+                }
+            }
+        }
+    }
+
+    /// Returns true if this selection is a superset of the other selection.
+    pub(crate) fn contains(&self, other: &NormalizedSelection) -> bool {
+        self.containment(other).is_contained()
     }
 }
 
@@ -2062,7 +2147,13 @@ impl NormalizedSelectionSet {
     }
 
     fn has_top_level_typename_field(&self) -> bool {
-        todo!()
+        // TODO(@goto-bus-stop) this should be a static or a const
+        let typename_key = NormalizedSelectionKey::Field {
+            response_name: TYPENAME_FIELD,
+            directives: Arc::new(Default::default()),
+        };
+
+        self.selections.contains_key(&typename_key)
     }
 
     pub(crate) fn add_at_path(
@@ -2402,6 +2493,62 @@ impl NormalizedSelectionSet {
 
             Ok(())
         }
+    }
+
+    // TODO(@goto-bus-stop) ignore_missing_typename
+    pub(crate) fn containment(&self, other: &Self) -> Containment {
+        let ignore_missing_typename = false;
+        if other.selections.len() > self.selections.len() {
+            // If `other` has more selections but we're ignoring missing __typename, then in the case where
+            // `other` has a __typename but `self` does not, then we need the length of `other` to be at
+            // least 2 more than other of `self` to be able to conclude there is no contains.
+            if !ignore_missing_typename
+                || other.selections.len() > self.selections.len() + 1
+                || self.has_top_level_typename_field()
+                || other.has_top_level_typename_field()
+            {
+                return Containment::NotContained;
+            }
+        }
+
+        let mut is_equal = true;
+        let mut did_ignore_typename = false;
+
+        for (key, other_selection) in other.selections.iter() {
+            if key.is_typename_field() && ignore_missing_typename {
+                if !self.has_top_level_typename_field() {
+                    did_ignore_typename = true;
+                }
+                continue;
+            }
+
+            let Some(self_selection) = self.selections.get(key) else {
+                return Containment::NotContained;
+            };
+
+            match self_selection.containment(other_selection) {
+                Containment::NotContained => return Containment::NotContained,
+                Containment::StrictlyContained if is_equal => is_equal = false,
+                Containment::StrictlyContained | Containment::Equal => {}
+            }
+        }
+
+        let expected_len = if did_ignore_typename {
+            self.selections.len() + 1
+        } else {
+            self.selections.len()
+        };
+
+        if is_equal && other.selections.len() == expected_len {
+            Containment::Equal
+        } else {
+            Containment::StrictlyContained
+        }
+    }
+
+    /// Returns true if this selection is a superset of the other selection.
+    pub(crate) fn contains(&self, other: &Self) -> bool {
+        self.containment(other).is_contained()
     }
 }
 
@@ -2855,6 +3002,29 @@ impl NormalizedFieldSelection {
 
     pub(crate) fn has_defer(&self) -> bool {
         self.field.has_defer() || self.selection_set.as_ref().is_some_and(|s| s.has_defer())
+    }
+
+    // TODO(@goto-bus-stop) ignore_missing_typename
+    pub(crate) fn containment(&self, other: &NormalizedFieldSelection) -> Containment {
+        if self.field != other.field {
+            return Containment::NotContained;
+        }
+
+        match (&self.selection_set, &other.selection_set) {
+            (None, None) => Containment::Equal,
+            (Some(self_selection), Some(other_selection)) => {
+                self_selection.containment(other_selection)
+            }
+            (None, Some(_)) | (Some(_), None) => {
+                debug_assert!(false, "field selections have the same element, so if one does not have a subselection, neither should the other one");
+                Containment::NotContained
+            }
+        }
+    }
+
+    /// Returns true if this selection is a superset of the other selection.
+    pub(crate) fn contains(&self, other: &NormalizedFieldSelection) -> bool {
+        self.containment(other).is_contained()
     }
 }
 
@@ -3382,6 +3552,46 @@ impl NormalizedInlineFragmentSelection {
                 .selections
                 .values()
                 .any(|s| s.has_defer())
+    }
+
+    // TODO(@goto-bus-stop) ignore_missing_typename
+    pub(crate) fn containment(&self, other: &NormalizedSelection) -> Containment {
+        match other {
+            NormalizedSelection::Field(_) => Containment::NotContained,
+            NormalizedSelection::InlineFragment(other) => {
+                let self_frag = self.inline_fragment.data();
+                let other_frag = other.inline_fragment.data();
+                // TODO(@goto-bus-stop) is this right?
+                if self_frag.type_condition_position == other_frag.type_condition_position
+                    && self_frag.directives == other_frag.directives
+                {
+                    self.selection_set.containment(&other.selection_set)
+                } else {
+                    Containment::NotContained
+                }
+            }
+            NormalizedSelection::FragmentSpread(other) => {
+                let self_frag = self.inline_fragment.data();
+                let other_frag = other.spread.data();
+                // TODO(@goto-bus-stop) is this right?
+                if *self_frag
+                    .type_condition_position
+                    .as_ref()
+                    .unwrap_or(&self_frag.parent_type_position)
+                    == other_frag.type_condition_position
+                    && self_frag.directives == other_frag.directives
+                {
+                    self.selection_set.containment(&other.selection_set)
+                } else {
+                    Containment::NotContained
+                }
+            }
+        }
+    }
+
+    /// Returns true if this selection is a superset of the other selection.
+    pub(crate) fn contains(&self, other: &NormalizedSelection) -> bool {
+        self.containment(other).is_contained()
     }
 }
 
@@ -4148,9 +4358,13 @@ fn print_possible_runtimes(
 
 #[cfg(test)]
 mod tests {
+    use super::normalize_operation;
+    use super::Containment;
+    use super::NormalizedOperation;
+    use crate::error::FederationError;
     use crate::schema::position::InterfaceTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
-    use crate::{query_plan::operation::normalize_operation, subgraph::Subgraph};
+    use crate::subgraph::Subgraph;
     use apollo_compiler::{name, ExecutableDocument};
     use indexmap::IndexSet;
 
@@ -5750,5 +5964,105 @@ type T {
                 assert_eq!(actual, expected);
             }
         }
+    }
+
+    fn parse_and_normalize(
+        schema: &ValidFederationSchema,
+        source_text: &str,
+        name: &str,
+    ) -> Result<NormalizedOperation, FederationError> {
+        let document = ExecutableDocument::parse_and_validate(schema.schema(), source_text, name)?;
+
+        normalize_operation(
+            document.get_operation(None).unwrap(),
+            &document.fragments,
+            &schema,
+            &Default::default(),
+        )
+    }
+
+    fn containment(left: &str, right: &str) -> Containment {
+        let schema = apollo_compiler::Schema::parse_and_validate(
+            r#"
+        interface Intf {
+            intfField: Int
+        }
+        type HasA implements Intf {
+            a: Boolean
+            intfField: Int
+        }
+        type Nested {
+            a: Int
+            b: Int
+            c: Int
+        }
+        type Query {
+            a: Int
+            b: Int
+            c: Int
+            object: Nested
+            intf: Intf
+        }
+        "#,
+            "schema.graphql",
+        )
+        .unwrap();
+        let schema = ValidFederationSchema::new(schema).unwrap();
+        let left = parse_and_normalize(&schema, left, "left.graphql").unwrap();
+        let right = parse_and_normalize(&schema, right, "right.graphql").unwrap();
+
+        left.selection_set.containment(&right.selection_set)
+    }
+
+    #[test]
+    fn selection_set_contains() {
+        assert_eq!(containment("{ a }", "{ a }"), Containment::Equal);
+        assert_eq!(containment("{ a b }", "{ b a }"), Containment::Equal);
+        assert_eq!(
+            containment("{ a b c }", "{ b a }"),
+            Containment::StrictlyContained
+        );
+        assert_eq!(
+            containment("{ a b }", "{ b c a }"),
+            Containment::NotContained
+        );
+        assert_eq!(containment("{ a }", "{ b }"), Containment::NotContained);
+        assert_eq!(
+            containment("{ object { a } }", "{ object { b a } }"),
+            Containment::NotContained
+        );
+
+        assert_eq!(
+            containment("{ ... { a } }", "{ ... { a } }"),
+            Containment::Equal
+        );
+        assert_eq!(
+            containment(
+                "{ intf { ... on HasA { a } } }",
+                "{ intf { ... on HasA { a } } }",
+            ),
+            Containment::Equal
+        );
+        assert_eq!(
+            containment(
+                "{ intf { ... on HasA { a } } }",
+                "{ intf { ...named } } fragment named on HasA { a }",
+            ),
+            Containment::Equal
+        );
+        assert_eq!(
+            containment(
+                "{ intf { ...named } } fragment named on HasA { a intfField }",
+                "{ intf { ...named } } fragment named on HasA { a }",
+            ),
+            Containment::StrictlyContained
+        );
+        assert_eq!(
+            containment(
+                "{ intf { ...named } } fragment named on HasA { a }",
+                "{ intf { ...named } } fragment named on HasA { a intfField }",
+            ),
+            Containment::NotContained
+        );
     }
 }
