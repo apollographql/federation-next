@@ -10,7 +10,7 @@ use crate::schema::position::{
     ObjectOrInterfaceFieldDirectivePosition, ObjectTypeDefinitionPosition,
     ScalarTypeDefinitionPosition,
 };
-use crate::source_aware::federated_query_graph::builder::IntraSourceQueryGraphBuilderApi;
+
 use crate::source_aware::federated_query_graph::graph_path::{
     ConditionResolutionId, OperationPathElement,
 };
@@ -19,7 +19,7 @@ use crate::source_aware::federated_query_graph::{FederatedQueryGraph, SelfCondit
 use crate::source_aware::query_plan::{FetchDataPathElement, QueryPlanCost};
 use crate::sources::connect::selection_parser::{PathSelection, Property, SubSelection};
 use crate::sources::{
-    SourceFederatedQueryGraphBuilderApi, SourceFetchDependencyGraphApi,
+    SourceFetchDependencyGraphApi,
     SourceFetchDependencyGraphNode, SourceFetchNode, SourceId, SourcePath, SourcePathApi,
 };
 use crate::ValidFederationSubgraph;

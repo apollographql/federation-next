@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 
 use crate::{
     error::FederationError,
-    schema::FederationSchema,
+    schema::ValidFederationSchema,
     sources::connect::{
         spec::{extract_connect_directive_arguments, extract_source_directive_arguments},
         ConnectSpecDefinition,
@@ -22,10 +22,10 @@ use super::{
 // --- Connector ---------------------------------------------------------------
 
 #[cfg_attr(test, derive(Debug))]
-struct Connector {
-    id: ConnectId,
+pub(crate) struct Connector {
+    pub(crate) id: ConnectId,
     transport: Transport,
-    selection: Selection,
+    pub(crate) selection: Selection,
 }
 
 #[cfg_attr(test, derive(Debug))]
@@ -34,8 +34,8 @@ enum Transport {
 }
 
 impl Connector {
-    fn from_schema(
-        schema: &FederationSchema,
+    pub(crate) fn from_valid_schema(
+        schema: &ValidFederationSchema,
         subgraph_name: NodeStr,
     ) -> Result<HashMap<ConnectId, Self>, FederationError> {
         let Some(metadata) = schema.metadata() else {
@@ -158,7 +158,7 @@ mod tests {
 
     use crate::{
         query_graph::extract_subgraphs_from_supergraph::extract_subgraphs_from_supergraph,
-        ValidFederationSubgraphs,
+        schema::FederationSchema, ValidFederationSubgraphs,
     };
 
     use super::*;
@@ -175,7 +175,8 @@ mod tests {
     fn test_from_schema() {
         let subgraphs = get_subgraphs(SIMPLE_SUPERGRAPH);
         let subgraph = subgraphs.get("connectors").unwrap();
-        let connectors = Connector::from_schema(&subgraph.schema, "connectors".into()).unwrap();
+        let connectors =
+            Connector::from_valid_schema(&subgraph.schema, "connectors".into()).unwrap();
         dbg!(&connectors);
     }
 }
