@@ -1,3 +1,17 @@
+//! Normalized operation types for apollo-federation.
+//!
+//! ## Selection types
+//! Each "conceptual" type consists of up to three actual types: a data type, an "element"
+//! type, and a selection type.
+//! - The data type records the data about the type. Things like a field name or fragment type
+//! condition are in the data type. These types can be constructed and modified with plain rust.
+//! - The element type contains the data type and maintains a key for the data. These types provide
+//! APIs for modifications that keep the key up-to-date.
+//! - The selection type contains the element type and, for composite fields, a subselection.
+//!
+//! For example, for fields, the data type is [`NormalizedFieldData`], the element type is
+//! [`NormalizedField`], and the selection type is [`NormalizedFieldSelection`].
+
 use crate::error::FederationError;
 use crate::error::SingleFederationError;
 use crate::error::SingleFederationError::Internal;
