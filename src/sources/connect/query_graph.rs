@@ -349,10 +349,42 @@ fn process_subselection(
                     ),
                 )?;
             }
-            TypeDefinitionPosition::Object(_) => todo!(),
-            TypeDefinitionPosition::Interface(_) => todo!(),
-            TypeDefinitionPosition::Union(_) => todo!(),
-            TypeDefinitionPosition::InputObject(_) => todo!(),
+
+            // The other types must be composite
+            other => {
+                // Since the type must be composite, there HAS to be a subselection
+                // TODO: This condition seems to be common, so maybe extract into helper
+                let subselection = match selection {
+                    NamedSelection::Field(_, _, Some(sub))
+                    | NamedSelection::Quoted(_, _, Some(sub))
+                    | NamedSelection::Path(_, PathSelection::Selection(sub))
+                    | NamedSelection::Group(_, sub) => sub,
+                    _ => todo!("handle error"),
+                };
+
+                let subselection_node = process_subselection(
+                    subselection,
+                    other,
+                    subgraph_schema,
+                    builder,
+                    node_cache,
+                    None,
+                )?;
+
+                // Link the field to the object node
+                builder.add_concrete_field_edge(
+                    object_node,
+                    subselection_node,
+                    selection_field.name.clone(),
+                    IndexSet::new(),
+                    SourceFederatedConcreteFieldQueryGraphEdge::Connect(
+                        ConnectFederatedConcreteFieldQueryGraphEdge::Selection {
+                            subgraph_field: subgraph_field_pos,
+                            property_path: properties,
+                        },
+                    ),
+                )?;
+            }
         }
     }
 
@@ -477,6 +509,47 @@ mod tests {
             5 -> 7 [ label = "title: .\"body title\"" ]
             5 -> 7 [ label = "body: .summary" ]
             4 -> 5 [ label = "posts" ]
+        }
+        "###
+        );
+    }
+
+    #[test]
+    fn it_handles_a_cyclical_schema() {
+        let federated_builder = ConnectFederatedQueryGraphBuilder;
+        let mut mock_builder = mock::MockSourceQueryGraphBuilder::new();
+        let subgraphs = get_subgraphs(include_str!("./tests/schemas/cyclical.graphql"));
+        let (_, subgraph) = subgraphs.into_iter().next().unwrap();
+
+        // Make sure that the tail data is correct
+        federated_builder
+            .process_subgraph_schema(subgraph, &mut mock_builder)
+            .unwrap();
+
+        // Make sure that our graph makes sense
+        let as_dot = mock_builder.into_dot();
+        assert_snapshot!(as_dot, @r###"
+        digraph {
+            0 [ label = "Node: Query" ]
+            1 [ label = "Node: User" ]
+            2 [ label = "Scalar: ID" ]
+            3 [ label = "Scalar: String" ]
+            4 [ label = "Node: User" ]
+            5 [ label = "Node: Query" ]
+            6 [ label = "Node: User" ]
+            7 [ label = "Scalar: ID" ]
+            8 [ label = "Scalar: String" ]
+            9 [ label = "Node: User" ]
+            1 -> 2 [ label = "id" ]
+            1 -> 3 [ label = "name" ]
+            4 -> 2 [ label = "id" ]
+            1 -> 4 [ label = "friends" ]
+            0 -> 1 [ label = "me" ]
+            6 -> 7 [ label = "id" ]
+            6 -> 8 [ label = "name" ]
+            9 -> 7 [ label = "id" ]
+            6 -> 9 [ label = "friends" ]
+            5 -> 6 [ label = "user" ]
         }
         "###
         );

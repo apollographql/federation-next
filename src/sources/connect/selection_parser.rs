@@ -148,7 +148,7 @@ impl NamedSelection {
             NamedSelection::Quoted(_, _, Some(_)) => todo!(),
             NamedSelection::Quoted(_, name, None) => vec![Property::Quoted(name.to_string())],
             NamedSelection::Path(_, _) => todo!(),
-            NamedSelection::Group(_, _) => todo!(),
+            NamedSelection::Group(alias, _) => vec![Property::Field(alias.name.to_string())],
         }
     }
 }
