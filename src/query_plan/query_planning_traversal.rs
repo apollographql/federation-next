@@ -14,7 +14,7 @@ use crate::query_plan::fetch_dependency_graph_processor::{
     FetchDependencyGraphProcessor, FetchDependencyGraphToCostProcessor,
     FetchDependencyGraphToQueryPlanProcessor,
 };
-use crate::query_plan::generate::{generate_all_plans_and_find_best, GenerateContext};
+use crate::query_plan::generate::{generate_all_plans_and_find_best, PlanBuilder};
 use crate::query_plan::operation::{
     NormalizedOperation, NormalizedSelection, NormalizedSelectionSet,
 };
@@ -546,70 +546,10 @@ impl<'a> QueryPlanningTraversal<'a> {
             })
             .collect();
 
-        // Implementation of a callback trait to be passed to `generate_all_plans_and_find_best`.
-        struct BestPlanGenerateContext<'a, 'b> {
-            outer_self: &'a mut QueryPlanningTraversal<'b>,
-        }
-
-        impl<'a, 'b> GenerateContext<(FetchDependencyGraph, Arc<OpPathTree>), Arc<OpPathTree>>
-            for BestPlanGenerateContext<'a, 'b>
-        {
-            fn add(
-                &mut self,
-                (plan_graph, plan_tree): &(FetchDependencyGraph, Arc<OpPathTree>),
-                tree: Arc<OpPathTree>,
-            ) -> (FetchDependencyGraph, Arc<OpPathTree>) {
-                let mut updated_graph = plan_graph.clone();
-                let result = self
-                    .outer_self
-                    .updated_dependency_graph(&mut updated_graph, &tree);
-                if result.is_ok() {
-                    let updated_tree = plan_tree.merge(&tree);
-                    (updated_graph, updated_tree)
-                } else {
-                    // Failed to update. Return the original plan.
-                    (updated_graph, plan_tree.clone())
-                }
-            }
-
-            fn cost(
-                &mut self,
-                (plan_graph, _): &mut (FetchDependencyGraph, Arc<OpPathTree>),
-            ) -> Result<QueryPlanCost, FederationError> {
-                self.outer_self.cost(plan_graph)
-            }
-
-            fn on_plan(
-                &mut self,
-                (_, _plan_tree): &(FetchDependencyGraph, Arc<OpPathTree>),
-                _cost: QueryPlanCost,
-                _prev_cost: Option<QueryPlanCost>,
-            ) {
-                // debug log
-                // if prev_cost.is_none() {
-                //     print!("Computed plan with cost {}: {}", cost, plan_tree);
-                // } else if cost > prev_cost.unwrap() {
-                //     print!(
-                //         "Ignoring plan with cost {} (a better plan with cost {} exists): {}",
-                //         cost,
-                //         prev_cost.unwrap(),
-                //         plan_tree
-                //     );
-                // } else {
-                //     print!(
-                //         "Found better with cost {} (previous had cost {}): {}",
-                //         cost,
-                //         prev_cost.unwrap(),
-                //         plan_tree
-                //     );
-                // }
-            }
-        }
-
         let (best, cost) = generate_all_plans_and_find_best(
             (initial_dependency_graph, Arc::new(initial_tree)),
             other_trees,
-            BestPlanGenerateContext { outer_self: self },
+            /*plan_builder*/ self,
         )?;
         self.best_plan = BestQueryPlanInfo {
             fetch_dependency_graph: best.0,
@@ -949,6 +889,59 @@ impl<'a> QueryPlanningTraversal<'a> {
             }),
             None => Ok(ConditionResolution::unsatisfied_conditions()),
         }
+    }
+}
+
+impl PlanBuilder<(FetchDependencyGraph, Arc<OpPathTree>), Arc<OpPathTree>>
+    for QueryPlanningTraversal<'_>
+{
+    fn add_to_plan(
+        &mut self,
+        (plan_graph, plan_tree): &(FetchDependencyGraph, Arc<OpPathTree>),
+        tree: Arc<OpPathTree>,
+    ) -> (FetchDependencyGraph, Arc<OpPathTree>) {
+        let mut updated_graph = plan_graph.clone();
+        let result = self.updated_dependency_graph(&mut updated_graph, &tree);
+        if result.is_ok() {
+            let updated_tree = plan_tree.merge(&tree);
+            (updated_graph, updated_tree)
+        } else {
+            // Failed to update. Return the original plan.
+            (updated_graph, plan_tree.clone())
+        }
+    }
+
+    fn compute_plan_cost(
+        &mut self,
+        (plan_graph, _): &mut (FetchDependencyGraph, Arc<OpPathTree>),
+    ) -> Result<QueryPlanCost, FederationError> {
+        self.cost(plan_graph)
+    }
+
+    fn on_plan_generated(
+        &self,
+        (_, _plan_tree): &(FetchDependencyGraph, Arc<OpPathTree>),
+        _cost: QueryPlanCost,
+        _prev_cost: Option<QueryPlanCost>,
+    ) {
+        // debug log
+        // if prev_cost.is_none() {
+        //     print!("Computed plan with cost {}: {}", cost, plan_tree);
+        // } else if cost > prev_cost.unwrap() {
+        //     print!(
+        //         "Ignoring plan with cost {} (a better plan with cost {} exists): {}",
+        //         cost,
+        //         prev_cost.unwrap(),
+        //         plan_tree
+        //     );
+        // } else {
+        //     print!(
+        //         "Found better with cost {} (previous had cost {}): {}",
+        //         cost,
+        //         prev_cost.unwrap(),
+        //         plan_tree
+        //     );
+        // }
     }
 }
 
