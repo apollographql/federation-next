@@ -517,12 +517,6 @@ pub(crate) trait HasNormalizedSelectionKey {
     fn key(&self) -> NormalizedSelectionKey;
 }
 
-impl HasNormalizedSelectionKey for NormalizedSelectionKey {
-    fn key(&self) -> NormalizedSelectionKey {
-        self.clone()
-    }
-}
-
 /// An analogue of the apollo-compiler type `Selection` that stores our other selection analogues
 /// instead of the apollo-compiler types.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3084,7 +3078,7 @@ impl NormalizedField {
         schema: &ValidFederationSchema,
     ) -> Option<CompositeTypeDefinitionPosition> {
         let data = self.data();
-        if &data.field_position.parent() == parent_type && &data.schema == schema {
+        if data.field_position.parent() == *parent_type && data.schema == *schema {
             let base_ty_name = data
                 .field_position
                 .get(schema.schema())

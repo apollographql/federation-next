@@ -16,7 +16,7 @@ use crate::query_plan::fetch_dependency_graph_processor::{
 };
 use crate::query_plan::generate::{generate_all_plans_and_find_best, PlanBuilder};
 use crate::query_plan::operation::{
-    NormalizedOperation, NormalizedSelection, NormalizedSelectionSet,
+    HasNormalizedSelectionKey, NormalizedOperation, NormalizedSelection, NormalizedSelectionSet,
 };
 use crate::query_plan::query_planner::QueryPlannerConfig;
 use crate::query_plan::query_planner::QueryPlanningStatistics;
@@ -451,7 +451,7 @@ impl<'a> QueryPlanningTraversal<'a> {
         // PORT_NOTE: The JS code performs the last check lazily. Instead of that, this check is
         // skipped if `nodes` is empty.
         if !nodes.is_empty()
-            && selection.selections.keys().any(|k| match k {
+            && selection.selections.values().any(|val| match val.key() {
                 NormalizedSelectionKey::InlineFragment {
                     type_condition: Some(name),
                     ..
@@ -459,7 +459,7 @@ impl<'a> QueryPlanningTraversal<'a> {
                     .parameters
                     .abstract_types_with_inconsistent_runtime_types
                     .iter()
-                    .any(|ty| ty.type_name() == name),
+                    .any(|ty| *ty.type_name() == name),
                 _ => false,
             })
         {
