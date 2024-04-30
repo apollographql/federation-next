@@ -1,4 +1,5 @@
 use crate::error::FederationError;
+use crate::indented_display::{write_indented_lines, State as IndentedFormatter};
 use crate::is_leaf_type;
 use crate::link::federation_spec_definition::get_federation_spec_definition_from_subgraph;
 use crate::link::graphql_definition::{
@@ -9,7 +10,6 @@ use crate::query_graph::condition_resolver::{
 };
 use crate::query_graph::path_tree::OpPathTree;
 use crate::query_graph::{QueryGraph, QueryGraphEdgeTransition, QueryGraphNodeType};
-use crate::query_plan::display::{write_indented_lines, State as IndentedFormatter};
 use crate::query_plan::operation::normalized_field_selection::{
     NormalizedField, NormalizedFieldData, NormalizedFieldSelection,
 };
