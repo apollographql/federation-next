@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
 
@@ -136,6 +137,20 @@ impl NamedSelection {
             Self::Group(alias, _) => alias.name.as_str(),
         }
     }
+
+    /// Extracts the property path for a given named selection
+    ///
+    // TODO: Expand on what this means once I have a better understanding
+    pub(crate) fn property_path(&self) -> Vec<Property> {
+        match self {
+            NamedSelection::Field(_, _, Some(_)) => todo!(),
+            NamedSelection::Field(_, name, None) => vec![Property::Field(name.to_string())],
+            NamedSelection::Quoted(_, _, Some(_)) => todo!(),
+            NamedSelection::Quoted(_, name, None) => vec![Property::Quoted(name.to_string())],
+            NamedSelection::Path(_, _) => todo!(),
+            NamedSelection::Group(_, _) => todo!(),
+        }
+    }
 }
 
 // PathSelection ::= ("." Property)+ SubSelection?
@@ -249,6 +264,16 @@ impl Property {
             map(parse_identifier, Self::Field),
             map(parse_string_literal, Self::Quoted),
         ))(input)
+    }
+}
+
+impl Display for Property {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Property::Field(field) => write!(f, ".{field}"),
+            Property::Quoted(quote) => write!(f, r#"."{quote}""#),
+            Property::Index(index) => write!(f, "[{index}]"),
+        }
     }
 }
 

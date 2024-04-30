@@ -222,6 +222,7 @@ fn process_subselection(
         todo!("handle error");
     };
     let object_type = object_pos.get(subgraph_schema.schema())?;
+    let field_type_pos = object_pos.field(field_ty.name().clone());
 
     // Create the root node for this object
     let object_node = builder.add_concrete_node(
@@ -250,9 +251,56 @@ fn process_subselection(
         let selection_type =
             subgraph_schema.get_type(selection_field.ty.inner_named_type().clone())?;
         let selection_extended_type = selection_type.get(subgraph_schema.schema())?;
+        let subgraph_field_pos = field_type_pos.clone();
+
+        // Extract the property chain for this selection
+        let properties = selection.property_path();
 
         // Now add sub type info to the graph
         match selection_type {
+            TypeDefinitionPosition::Enum(ref r#enum) => {
+                // An enum cannot have sub selections, so enforce that now
+                if matches!(
+                    selection,
+                    NamedSelection::Field(_, _, Some(_))
+                        | NamedSelection::Quoted(_, _, Some(_))
+                        | NamedSelection::Path(_, PathSelection::Selection(_))
+                        | NamedSelection::Group(_, _)
+                ) {
+                    todo!("handle error");
+                }
+
+                // Create the scalar node (or grab it from the cache)
+                let enum_node = match node_cache.entry(r#enum.type_name.clone()) {
+                    Entry::Occupied(e) => e.into_mut(),
+                    Entry::Vacant(e) => {
+                        let node = builder.add_enum_node(
+                            r#enum.type_name.clone(),
+                            SourceFederatedEnumQueryGraphNode::Connect(
+                                ConnectFederatedEnumQueryGraphNode::SelectionChild {
+                                    subgraph_type: r#enum.clone(),
+                                },
+                            ),
+                        )?;
+
+                        e.insert(node)
+                    }
+                };
+
+                // Link the field to the object node
+                builder.add_concrete_field_edge(
+                    object_node,
+                    *enum_node,
+                    selection_field.name.clone(),
+                    IndexSet::new(),
+                    SourceFederatedConcreteFieldQueryGraphEdge::Connect(
+                        ConnectFederatedConcreteFieldQueryGraphEdge::Selection {
+                            subgraph_field: subgraph_field_pos,
+                            property_path: properties,
+                        },
+                    ),
+                )?;
+            }
             TypeDefinitionPosition::Scalar(ref scalar) => {
                 // Custom scalars need to be handled differently
                 if !selection_extended_type.is_built_in() {
@@ -294,9 +342,9 @@ fn process_subselection(
                     selection_field.name.clone(),
                     IndexSet::new(),
                     SourceFederatedConcreteFieldQueryGraphEdge::Connect(
-                        ConnectFederatedConcreteFieldQueryGraphEdge::CustomScalarPathSelection {
-                            subgraph_field: object_pos.field(field_ty.name().clone()),
-                            path_selection: PathSelection::Empty,
+                        ConnectFederatedConcreteFieldQueryGraphEdge::Selection {
+                            subgraph_field: subgraph_field_pos,
+                            property_path: properties,
                         },
                     ),
                 )?;
@@ -304,7 +352,6 @@ fn process_subselection(
             TypeDefinitionPosition::Object(_) => todo!(),
             TypeDefinitionPosition::Interface(_) => todo!(),
             TypeDefinitionPosition::Union(_) => todo!(),
-            TypeDefinitionPosition::Enum(_) => todo!(),
             TypeDefinitionPosition::InputObject(_) => todo!(),
         }
     }
@@ -358,8 +405,6 @@ mod tests {
 
     use super::ConnectFederatedQueryGraphBuilder;
 
-    static SIMPLE_SUPERGRAPH: &str = include_str!("./tests/schemas/simple.graphql");
-
     fn get_subgraphs(supergraph_sdl: &str) -> ValidFederationSubgraphs {
         let schema = Schema::parse(supergraph_sdl, "supergraph.graphql").unwrap();
         let supergraph_schema = FederationSchema::new(schema).unwrap();
@@ -367,10 +412,10 @@ mod tests {
     }
 
     #[test]
-    fn it_creates_a_connect_graph() {
+    fn it_handles_a_simple_schema() {
         let federated_builder = ConnectFederatedQueryGraphBuilder;
         let mut mock_builder = mock::MockSourceQueryGraphBuilder::new();
-        let subgraphs = get_subgraphs(SIMPLE_SUPERGRAPH);
+        let subgraphs = get_subgraphs(include_str!("./tests/schemas/simple.graphql"));
         let (_, subgraph) = subgraphs.into_iter().next().unwrap();
 
         // Make sure that the tail data is correct
@@ -401,6 +446,42 @@ mod tests {
         "###);
     }
 
+    #[test]
+    fn it_handles_an_aliased_schema() {
+        let federated_builder = ConnectFederatedQueryGraphBuilder;
+        let mut mock_builder = mock::MockSourceQueryGraphBuilder::new();
+        let subgraphs = get_subgraphs(include_str!("./tests/schemas/aliasing.graphql"));
+        let (_, subgraph) = subgraphs.into_iter().next().unwrap();
+
+        // Make sure that the tail data is correct
+        federated_builder
+            .process_subgraph_schema(subgraph, &mut mock_builder)
+            .unwrap();
+
+        // Make sure that our graph makes sense
+        let as_dot = mock_builder.into_dot();
+        assert_snapshot!(as_dot, @r###"
+        digraph {
+            0 [ label = "Node: Query" ]
+            1 [ label = "Node: User" ]
+            2 [ label = "Scalar: ID" ]
+            3 [ label = "Scalar: String" ]
+            4 [ label = "Node: Query" ]
+            5 [ label = "Node: Post" ]
+            6 [ label = "Scalar: ID" ]
+            7 [ label = "Scalar: String" ]
+            1 -> 2 [ label = "id" ]
+            1 -> 3 [ label = "name: .username" ]
+            0 -> 1 [ label = "users" ]
+            5 -> 6 [ label = "id" ]
+            5 -> 7 [ label = "title: .\"body title\"" ]
+            5 -> 7 [ label = "body: .summary" ]
+            4 -> 5 [ label = "posts" ]
+        }
+        "###
+        );
+    }
+
     mod mock {
         use std::fmt::Display;
 
@@ -418,6 +499,9 @@ mod tests {
                 builder::IntraSourceQueryGraphBuilderApi, SelfConditionIndex,
             },
             sources::{
+                connect::{
+                    selection_parser::Property, ConnectFederatedConcreteFieldQueryGraphEdge,
+                },
                 SourceFederatedAbstractFieldQueryGraphEdge,
                 SourceFederatedConcreteFieldQueryGraphEdge, SourceFederatedConcreteQueryGraphNode,
                 SourceFederatedEnumQueryGraphNode, SourceFederatedQueryGraph,
@@ -440,10 +524,40 @@ mod tests {
         /// A mock query edge
         struct MockEdge {
             field_name: Name,
+            path: Vec<Property>,
         }
         impl Display for MockEdge {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.field_name)
+                write!(f, "{}", self.field_name)?;
+
+                // Short out if we have no path to display
+                if self.path.is_empty() {
+                    return Ok(());
+                }
+
+                // Helper for checking name equality of a property
+                fn is_name_eq(prop: &Property, other: &str) -> bool {
+                    match prop {
+                        Property::Field(f) => f == other,
+                        Property::Quoted(q) => q == other,
+
+                        // No string name will be equal to a number
+                        Property::Index(_) => false,
+                    }
+                }
+
+                // Short out if we have the same path as the identifier
+                if self.path.len() == 1 && is_name_eq(&self.path[0], self.field_name.as_str()) {
+                    return Ok(());
+                }
+
+                // Show the equivalent JSON path, if different from the field itself
+                write!(f, ": ")?;
+                for path in &self.path {
+                    write!(f, "{path}")?;
+                }
+
+                Ok(())
             }
         }
 
@@ -488,15 +602,23 @@ mod tests {
                 _self_conditions: IndexSet<SelfConditionIndex>,
                 source_data: SourceFederatedConcreteFieldQueryGraphEdge,
             ) -> Result<EdgeIndex, FederationError> {
-                let SourceFederatedConcreteFieldQueryGraphEdge::Connect(_data) = source_data else {
+                let SourceFederatedConcreteFieldQueryGraphEdge::Connect(data) = source_data else {
                     unreachable!()
                 };
 
+                let path = match data {
+                    ConnectFederatedConcreteFieldQueryGraphEdge::Selection {
+                        property_path,
+                        ..
+                    } => property_path,
+                    _ => Vec::new(),
+                };
                 Ok(self.graph.add_edge(
                     head,
                     tail,
                     MockEdge {
                         field_name: supergraph_field_name,
+                        path,
                     },
                 ))
             }
