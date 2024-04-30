@@ -2063,6 +2063,14 @@ impl NormalizedSelectionSet {
             .for_each(|(_, s)| s.collect_used_fragment_names(aggregator));
     }
 
+    pub(crate) fn can_rebase_on(&self, parent_type: &CompositeTypeDefinitionPosition) -> bool {
+        // implemented in https://github.com/apollographql/federation-next/pull/264/
+        // self.selections
+        //     .values()
+        //     .all(|sel| sel.can_add_to(parent_type, &self.schema))
+        todo!()
+    }
+
     pub(crate) fn rebase_on(
         &self,
         parent_type: &CompositeTypeDefinitionPosition,

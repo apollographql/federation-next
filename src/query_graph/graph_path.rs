@@ -23,10 +23,10 @@ use crate::schema::position::{
     TypeDefinitionPosition,
 };
 use crate::schema::ValidFederationSchema;
-use apollo_compiler::ast::Value;
+use apollo_compiler::ast::{Directive, Value};
 use apollo_compiler::executable::DirectiveList;
 use apollo_compiler::schema::{ExtendedType, Name};
-use apollo_compiler::NodeStr;
+use apollo_compiler::{Node, NodeStr};
 use indexmap::{IndexMap, IndexSet};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -3372,6 +3372,22 @@ impl OpPath {
         new.push(element);
         Self(new)
     }
+
+    pub(crate) fn conditional_directives(&self) -> DirectiveList {
+        DirectiveList(
+            self.0
+                .iter()
+                .map(|path_element| {
+                    path_element
+                        .directives()
+                        .iter()
+                        .filter(|d| d.name == "include" || d.name == "skip")
+                })
+                .flatten()
+                .map(|d| d.clone())
+                .collect(),
+        )
+    }
 }
 
 impl TryFrom<&'_ OpPath> for Vec<QueryPathElement> {
@@ -3391,6 +3407,21 @@ impl TryFrom<&'_ OpPath> for Vec<QueryPathElement> {
             })
             .collect()
     }
+}
+
+pub(crate) fn concat_paths_in_parents(
+    first: &Option<Arc<OpPath>>,
+    second: &Option<Arc<OpPath>>,
+) -> Option<Arc<OpPath>> {
+    if let (Some(first), Some(second)) = (first, second) {
+        Some(concat_op_paths(first, second))
+    } else {
+        None
+    }
+}
+
+fn concat_op_paths(first: &Arc<OpPath>, second: &Arc<OpPath>) -> Arc<OpPath> {
+    todo!()
 }
 
 #[cfg(test)]
