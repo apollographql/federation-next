@@ -76,6 +76,9 @@ pub struct FetchNode {
     /// Similar to `input_rewrites`, but for optional "rewrites" to apply to the data that is
     /// received from a fetch (and before it is applied to the current in-memory results).
     pub output_rewrites: Vec<FetchDataRewrite>,
+    
+    /// Rewrites for context
+    pub context_rewrites: Vec<FetchDataRewrite>,
 }
 
 #[derive(Debug)]
