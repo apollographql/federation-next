@@ -1,4 +1,5 @@
 use crate::error::FederationError;
+use crate::indented_display::{write_indented_lines, State as IndentedFormatter};
 use crate::is_leaf_type;
 use crate::link::federation_spec_definition::get_federation_spec_definition_from_subgraph;
 use crate::link::graphql_definition::{
@@ -328,6 +329,49 @@ impl OpPathElement {
             OpPathElement::InlineFragment(inline_fragment) => inline_fragment.as_path_element(),
         }
     }
+
+    pub(crate) fn defer_directive_args(&self) -> Option<DeferDirectiveArguments> {
+        match self {
+            OpPathElement::Field(_) => None, // @defer cannot be on field at the moment
+            OpPathElement::InlineFragment(inline_fragment) => inline_fragment
+                .data()
+                .defer_directive_arguments()
+                .ok()
+                .flatten(),
+        }
+    }
+
+    /// Returns this fragment element but with any @defer directive on it removed.
+    ///
+    /// This method will return `None` if, upon removing @defer, the fragment has no conditions nor
+    /// any remaining applied directives (meaning that it carries no information whatsoever and can be
+    /// ignored).
+    pub(crate) fn without_defer(&self) -> Option<Self> {
+        match self {
+            Self::Field(_) => Some(self.clone()), // unchanged
+            Self::InlineFragment(inline_fragment) => {
+                let updated_directives: DirectiveList = inline_fragment
+                    .data()
+                    .directives
+                    .get_all("defer")
+                    .cloned()
+                    .collect();
+                if inline_fragment.data().type_condition_position.is_none()
+                    && updated_directives.is_empty()
+                {
+                    return None;
+                }
+                if inline_fragment.data().directives.len() == updated_directives.len() {
+                    Some(self.clone())
+                } else {
+                    // PORT_NOTE: We won't need to port `this.copyAttachementsTo(updated);` line here
+                    // since `with_updated_directives` clones the whole `self` and thus sibling
+                    // type names should be copied as well.
+                    Some(self.with_updated_directives(updated_directives))
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn selection_of_element(
@@ -432,11 +476,33 @@ impl Display for OpGraphPathContext {
 #[derive(Clone)]
 pub(crate) struct SimultaneousPaths(pub(crate) Vec<Arc<OpGraphPath>>);
 
+impl SimultaneousPaths {
+    pub(crate) fn fmt_indented(&self, f: &mut IndentedFormatter) -> std::fmt::Result {
+        match self.0.as_slice() {
+            [] => f.write("<no path>"),
+
+            [first] => f.write_fmt(format_args!("{{ {first} }}")),
+
+            _ => {
+                f.write("{")?;
+                write_indented_lines(f, &self.0, |f, elem| f.write(elem))?;
+                f.write("}")
+            }
+        }
+    }
+}
+
 impl std::fmt::Debug for SimultaneousPaths {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_list()
             .entries(self.0.iter().map(ToString::to_string))
             .finish()
+    }
+}
+
+impl std::fmt::Display for SimultaneousPaths {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.fmt_indented(&mut IndentedFormatter::new(f))
     }
 }
 
@@ -648,9 +714,31 @@ enum UnadvanceableReason {
 /// set, and the `SimultaneousPaths` ends at the node at which that query is made instead of a node
 /// for the leaf field. The selection set gets copied "as-is" into the `FetchNode`, and also avoids
 /// extra `GraphPath` creation and work during `PathTree` merging.
+#[derive(Debug)]
 pub(crate) struct ClosedPath {
     pub(crate) paths: SimultaneousPaths,
     pub(crate) selection_set: Option<Arc<NormalizedSelectionSet>>,
+}
+
+impl ClosedPath {
+    pub(crate) fn flatten(
+        &self,
+    ) -> impl Iterator<Item = (&OpGraphPath, Option<&Arc<NormalizedSelectionSet>>)> {
+        self.paths
+            .0
+            .iter()
+            .map(|path| (path.as_ref(), self.selection_set.as_ref()))
+    }
+}
+
+impl std::fmt::Display for ClosedPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref selection_set) = self.selection_set {
+            write!(f, "{} -> {}", self.paths, selection_set)
+        } else {
+            write!(f, "{}", self.paths)
+        }
+    }
 }
 
 /// A list of the options generated during query planning for a specific "closed branch", which is a
