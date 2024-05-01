@@ -123,14 +123,9 @@ impl NormalizedOperation {
             &named_fragments,
             &schema,
         )?;
-        let schema_definition_root_kind = match operation.operation_type {
-            OperationType::Query => SchemaRootDefinitionKind::Query,
-            OperationType::Mutation => SchemaRootDefinitionKind::Mutation,
-            OperationType::Subscription => SchemaRootDefinitionKind::Subscription,
-        };
         Ok(NormalizedOperation {
             schema,
-            root_kind: schema_definition_root_kind,
+            root_kind: operation.operation_type.into(),
             name: operation.name.clone(),
             variables: Arc::new(operation.variables.clone()),
             directives: Arc::new(operation.directives.clone()),
@@ -4367,14 +4362,9 @@ pub(crate) fn normalize_operation(
     normalized_selection_set = normalized_selection_set.expand_all_fragments()?;
     normalized_selection_set.optimize_sibling_typenames(interface_types_with_interface_objects)?;
 
-    let schema_definition_root_kind = match operation.operation_type {
-        OperationType::Query => SchemaRootDefinitionKind::Query,
-        OperationType::Mutation => SchemaRootDefinitionKind::Mutation,
-        OperationType::Subscription => SchemaRootDefinitionKind::Subscription,
-    };
     let normalized_operation = NormalizedOperation {
         schema: schema.clone(),
-        root_kind: schema_definition_root_kind,
+        root_kind: operation.operation_type.into(),
         name: operation.name.clone(),
         variables: Arc::new(operation.variables.clone()),
         directives: Arc::new(operation.directives.clone()),
@@ -4439,7 +4429,6 @@ mod tests {
     use super::Containment;
     use super::ContainmentOptions;
     use super::NormalizedOperation;
-    use crate::error::FederationError;
     use crate::schema::position::InterfaceTypeDefinitionPosition;
     use crate::schema::ValidFederationSchema;
     use crate::subgraph::Subgraph;
