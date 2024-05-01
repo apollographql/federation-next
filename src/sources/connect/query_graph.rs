@@ -572,8 +572,8 @@ mod tests {
                 SourceFederatedAbstractFieldQueryGraphEdge,
                 SourceFederatedConcreteFieldQueryGraphEdge, SourceFederatedConcreteQueryGraphNode,
                 SourceFederatedEnumQueryGraphNode, SourceFederatedQueryGraph,
-                SourceFederatedScalarQueryGraphNode, SourceFederatedTypeConditionQueryGraphEdge,
-                SourceId,
+                SourceFederatedScalarQueryGraphNode, SourceFederatedSourceEnteringQueryGraphEdge,
+                SourceFederatedTypeConditionQueryGraphEdge, SourceId,
             },
         };
 
@@ -770,11 +770,11 @@ mod tests {
                 todo!()
             }
 
-            fn add_source_enter_edge(
+            fn add_source_entering_edge(
                 &mut self,
                 _tail: NodeIndex,
                 _self_conditions: Option<SelfConditionIndex>,
-                _source_data: crate::sources::SourceFederatedSourceEnterQueryGraphEdge,
+                _source_data: SourceFederatedSourceEnteringQueryGraphEdge,
             ) -> Result<EdgeIndex, FederationError> {
                 todo!()
             }
