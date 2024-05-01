@@ -1462,11 +1462,8 @@ pub(crate) mod normalized_inline_fragment_selection {
             &self,
             parent_type: &CompositeTypeDefinitionPosition,
         ) -> (bool, Option<CompositeTypeDefinitionPosition>) {
-            if self.type_condition_position.is_none() {
-                return (true, None);
-            }
             let Some(ty) = self.type_condition_position.as_ref() else {
-                return (false, None);
+                return (true, None);
             };
             match self
                 .schema
