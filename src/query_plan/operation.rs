@@ -3088,10 +3088,26 @@ impl NormalizedField {
                 .ok();
         }
         if data.name() == &TYPENAME_FIELD {
-            return Some(parent_type.introspection_typename_field().parent());
+            let type_name = parent_type
+                .introspection_typename_field()
+                .get(schema.schema())
+                .ok()?
+                .ty
+                .inner_named_type();
+            return schema.try_get_type(type_name.clone())?.try_into().ok();
         }
-        self.can_rebase_on(parent_type, schema)
-            .then(|| data.field_position.parent())
+        if self.can_rebase_on(parent_type, schema) {
+            let type_name = parent_type
+                .field(data.field_position.field_name().clone())
+                .ok()?
+                .get(schema.schema())
+                .ok()?
+                .ty
+                .inner_named_type();
+            schema.try_get_type(type_name.clone())?.try_into().ok()
+        } else {
+            None
+        }
     }
 }
 

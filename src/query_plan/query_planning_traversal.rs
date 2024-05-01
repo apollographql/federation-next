@@ -451,15 +451,17 @@ impl<'a> QueryPlanningTraversal<'a> {
         // PORT_NOTE: The JS code performs the last check lazily. Instead of that, this check is
         // skipped if `nodes` is empty.
         if !nodes.is_empty()
-            && selection.selections.values().any(|val| match val.key() {
-                NormalizedSelectionKey::InlineFragment {
-                    type_condition: Some(name),
-                    ..
-                } => self
-                    .parameters
-                    .abstract_types_with_inconsistent_runtime_types
-                    .iter()
-                    .any(|ty| *ty.type_name() == name),
+            && selection.selections.values().any(|val| match val {
+                NormalizedSelection::InlineFragment(fragment) => {
+                    match &fragment.inline_fragment.data().type_condition_position {
+                        Some(type_condition) => self
+                            .parameters
+                            .abstract_types_with_inconsistent_runtime_types
+                            .iter()
+                            .any(|ty| ty.type_name() == type_condition.type_name()),
+                        None => false,
+                    }
+                }
                 _ => false,
             })
         {
