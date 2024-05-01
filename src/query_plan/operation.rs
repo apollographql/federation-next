@@ -47,6 +47,7 @@ use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::Deref;
+use std::sync::OnceLock;
 use std::sync::{atomic, Arc};
 
 pub(crate) const TYPENAME_FIELD: Name = name!("__typename");
@@ -2195,13 +2196,16 @@ impl NormalizedSelectionSet {
     }
 
     fn has_top_level_typename_field(&self) -> bool {
-        // TODO(@goto-bus-stop) this should be a static or a const
-        let typename_key = NormalizedSelectionKey::Field {
+        // Needs to be behind a OnceLock because `Arc::new` is non-const.
+        // XXX(@goto-bus-stop): Note this does *not* count `__typename @include(if: true)`.
+        // This seems wrong? But it's what JS does, too.
+        static TYPENAME_KEY: OnceLock<NormalizedSelectionKey> = OnceLock::new();
+        let key = TYPENAME_KEY.get_or_init(|| NormalizedSelectionKey::Field {
             response_name: TYPENAME_FIELD,
             directives: Arc::new(Default::default()),
-        };
+        });
 
-        self.selections.contains_key(&typename_key)
+        self.selections.contains_key(key)
     }
 
     pub(crate) fn add_at_path(
