@@ -93,6 +93,22 @@ pub(crate) struct NormalizedDefer {
 }
 
 impl NormalizedOperation {
+    /// Parse an operation from a source string. **This is for tests and code examples, not
+    /// for production usage.**
+    pub fn parse(
+        schema: ValidFederationSchema,
+        source_text: &str,
+        source_name: &str,
+        operation_name: Option<&str>,
+    ) -> Result<Self, FederationError> {
+        let document = apollo_compiler::ExecutableDocument::parse_and_validate(
+            schema.schema(),
+            source_text,
+            source_name,
+        )?;
+        NormalizedOperation::from_operation_document(schema, &document, operation_name)
+    }
+
     pub fn from_operation_document(
         schema: ValidFederationSchema,
         document: &Valid<apollo_compiler::ExecutableDocument>,
@@ -113,7 +129,7 @@ impl NormalizedOperation {
             OperationType::Subscription => SchemaRootDefinitionKind::Subscription,
         };
         Ok(NormalizedOperation {
-            schema: schema.clone(),
+            schema,
             root_kind: schema_definition_root_kind,
             name: operation.name.clone(),
             variables: Arc::new(operation.variables.clone()),
@@ -6028,16 +6044,6 @@ type T {
         }
     }
 
-    fn parse_operation(
-        schema: &ValidFederationSchema,
-        source_text: &str,
-        name: &str,
-    ) -> Result<NormalizedOperation, FederationError> {
-        let document = ExecutableDocument::parse_and_validate(schema.schema(), source_text, name)?;
-
-        NormalizedOperation::from_operation_document(schema.clone(), &document, None)
-    }
-
     fn containment_custom(left: &str, right: &str, ignore_missing_typename: bool) -> Containment {
         let schema = apollo_compiler::Schema::parse_and_validate(
             r#"
@@ -6065,8 +6071,9 @@ type T {
         )
         .unwrap();
         let schema = ValidFederationSchema::new(schema).unwrap();
-        let left = parse_operation(&schema, left, "left.graphql").unwrap();
-        let right = parse_operation(&schema, right, "right.graphql").unwrap();
+        let left = NormalizedOperation::parse(schema.clone(), left, "left.graphql", None).unwrap();
+        let right =
+            NormalizedOperation::parse(schema.clone(), right, "right.graphql", None).unwrap();
 
         left.selection_set.containment(
             &right.selection_set,
