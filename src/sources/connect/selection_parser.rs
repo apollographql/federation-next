@@ -143,12 +143,27 @@ impl NamedSelection {
     // TODO: Expand on what this means once I have a better understanding
     pub(crate) fn property_path(&self) -> Vec<Property> {
         match self {
-            NamedSelection::Field(_, _, Some(_)) => todo!(),
-            NamedSelection::Field(_, name, None) => vec![Property::Field(name.to_string())],
+            NamedSelection::Field(_, name, _) => vec![Property::Field(name.to_string())],
             NamedSelection::Quoted(_, _, Some(_)) => todo!(),
             NamedSelection::Quoted(_, name, None) => vec![Property::Quoted(name.to_string())],
-            NamedSelection::Path(_, _) => todo!(),
+            NamedSelection::Path(_, path) => path.collect_paths(),
             NamedSelection::Group(alias, _) => vec![Property::Field(alias.name.to_string())],
+        }
+    }
+
+    /// Find the next subselection, if present
+    pub(crate) fn next_subselection(&self) -> Option<&SubSelection> {
+        match self {
+            // Paths are complicated because they can have a subselection deeply nested
+            NamedSelection::Path(_, path) => path.next_subselection(),
+
+            // The other options have it at the root
+            NamedSelection::Field(_, _, Some(sub))
+            | NamedSelection::Quoted(_, _, Some(sub))
+            | NamedSelection::Group(_, sub) => Some(sub),
+
+            // Every other option does not have a subselection
+            _ => None,
         }
     }
 }
@@ -181,6 +196,33 @@ impl PathSelection {
             [head, tail @ ..] => {
                 Self::Path(head.clone(), Box::new(Self::from_slice(tail, selection)))
             }
+        }
+    }
+
+    /// Collect all nested paths
+    ///
+    /// This method attempts to collect as many paths as possible, shorting out once
+    /// a non path selection is encountered.
+    pub(crate) fn collect_paths(&self) -> Vec<Property> {
+        let mut results = Vec::new();
+
+        // Collect as many as possible
+        let mut current = self;
+        while let Self::Path(prop, rest) = current {
+            results.push(prop.clone());
+
+            current = rest;
+        }
+
+        results
+    }
+
+    /// Find the next subselection, traversing nested chains if needed
+    pub(crate) fn next_subselection(&self) -> Option<&SubSelection> {
+        match self {
+            PathSelection::Path(_, path) => path.next_subselection(),
+            PathSelection::Selection(sub) => Some(sub),
+            PathSelection::Empty => None,
         }
     }
 }

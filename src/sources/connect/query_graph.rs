@@ -123,31 +123,25 @@ fn process_selection(
     match selection {
         Selection::Path(path) => match field_output_type_pos {
             TypeDefinitionPosition::Enum(enum_type) => {
-                // An enum cannot have subselections, but the structure is a linked list, so we need to collect here...
-                let props = extract_props(&path)?;
-
                 // Create the node for this enum
                 builder.add_enum_node(
                     field_ty.name().clone(),
                     SourceFederatedEnumQueryGraphNode::Connect(
                         ConnectFederatedEnumQueryGraphNode::SelectionRoot {
                             subgraph_type: enum_type,
-                            property_path: props,
+                            property_path: path.collect_paths(),
                         },
                     ),
                 )
             }
             TypeDefinitionPosition::Scalar(scalar_type) => {
-                // An enum cannot have subselections, but the structure is a linked list, so we need to collect here...
-                let props = extract_props(&path)?;
-
                 // Create the node for this enum
                 builder.add_scalar_node(
                     field_ty.name().clone(),
                     SourceFederatedScalarQueryGraphNode::Connect(
                         ConnectFederatedScalarQueryGraphNode::SelectionRoot {
                             subgraph_type: scalar_type,
-                            property_path: props,
+                            property_path: path.collect_paths(),
                         },
                     ),
                 )
@@ -155,18 +149,17 @@ fn process_selection(
 
             _ => {
                 // If we don't have either of the above, then we must have a subselection
-                let PathSelection::Selection(sub) = path else {
-                    todo!("handle error")
+                let Some(sub) = path.next_subselection() else {
+                    todo!("handle error");
                 };
 
-                // TODO: Where do the properties come from?
                 process_subselection(
                     sub,
                     field_output_type_pos,
                     subgraph_schema,
                     builder,
                     &mut node_cache,
-                    Some(Vec::new()),
+                    Some(path.collect_paths()),
                 )
             }
         },
@@ -178,7 +171,7 @@ fn process_selection(
 
             // Grab what we need and return the root node
             process_subselection(
-                sub,
+                &sub,
                 field_output_type_pos,
                 subgraph_schema,
                 builder,
@@ -190,7 +183,7 @@ fn process_selection(
 }
 
 fn process_subselection(
-    sub: SubSelection,
+    sub: &SubSelection,
     field_output_type_pos: TypeDefinitionPosition,
     subgraph_schema: &ValidFederationSchema,
     builder: &mut impl IntraSourceQueryGraphBuilderApi,
@@ -242,7 +235,7 @@ fn process_subselection(
     )?;
 
     // Handle all named selections
-    for selection in sub.selections {
+    for selection in sub.selections.iter() {
         // Make sure that we have a field on the object type that matches the alias (or the name itself)
         let alias = selection.name();
         let Some(selection_field) = object_type.fields.get(alias) else {
@@ -250,23 +243,17 @@ fn process_subselection(
         };
         let selection_type =
             subgraph_schema.get_type(selection_field.ty.inner_named_type().clone())?;
-        let selection_extended_type = selection_type.get(subgraph_schema.schema())?;
         let subgraph_field_pos = field_type_pos.clone();
 
         // Extract the property chain for this selection
         let properties = selection.property_path();
+        let next_subselection = selection.next_subselection();
 
         // Now add sub type info to the graph
         match selection_type {
             TypeDefinitionPosition::Enum(ref r#enum) => {
                 // An enum cannot have sub selections, so enforce that now
-                if matches!(
-                    selection,
-                    NamedSelection::Field(_, _, Some(_))
-                        | NamedSelection::Quoted(_, _, Some(_))
-                        | NamedSelection::Path(_, PathSelection::Selection(_))
-                        | NamedSelection::Group(_, _)
-                ) {
+                if next_subselection.is_some() {
                     todo!("handle error");
                 }
 
@@ -303,7 +290,7 @@ fn process_subselection(
             }
             TypeDefinitionPosition::Scalar(ref scalar) => {
                 // Custom scalars need to be handled differently
-                if !selection_extended_type.is_built_in() {
+                if next_subselection.is_some() {
                     todo!("handle error");
                 }
 
@@ -353,13 +340,8 @@ fn process_subselection(
             // The other types must be composite
             other => {
                 // Since the type must be composite, there HAS to be a subselection
-                // TODO: This condition seems to be common, so maybe extract into helper
-                let subselection = match selection {
-                    NamedSelection::Field(_, _, Some(sub))
-                    | NamedSelection::Quoted(_, _, Some(sub))
-                    | NamedSelection::Path(_, PathSelection::Selection(sub))
-                    | NamedSelection::Group(_, sub) => sub,
-                    _ => todo!("handle error"),
+                let Some(subselection) = next_subselection else {
+                    todo!("handle error");
                 };
 
                 let subselection_node = process_subselection(
@@ -389,39 +371,11 @@ fn process_subselection(
     }
 
     // Handle the optional star selection
-    if let Some(_star) = sub.star {
+    if let Some(_star) = sub.star.as_ref() {
         //
     }
 
     Ok(object_node)
-}
-
-/// Attempt to extract all properties from a path selection
-///
-/// Note: This will fail if any of the subsequent paths are not also [PathSelection]
-/// which should be impossible since it is constructed manually this way.
-// TODO: Update subselection to not be a linked list of parent types...
-fn extract_props(path: &PathSelection) -> Result<Vec<Property>, FederationError> {
-    // TODO: Can this be cyclical?
-    let mut current_path = path;
-    let mut results = Vec::new();
-    loop {
-        match current_path {
-            PathSelection::Path(prop, next) => {
-                results.push(prop.clone());
-                current_path = &next;
-            }
-            PathSelection::Empty => break,
-
-            // TODO: We need to error out if we find a SubSelection since we only expect properties.
-            // This might happen if the user tries to write a subselection for a type that does not support it
-            PathSelection::Selection(_) => {
-                todo!("handle error")
-            }
-        }
-    }
-
-    Ok(results)
 }
 
 #[cfg(test)]
@@ -550,6 +504,46 @@ mod tests {
             9 -> 7 [ label = "id" ]
             6 -> 9 [ label = "friends" ]
             5 -> 6 [ label = "user" ]
+        }
+        "###
+        );
+    }
+
+    #[test]
+    fn it_handles_a_nested_schema() {
+        let federated_builder = ConnectFederatedQueryGraphBuilder;
+        let mut mock_builder = mock::MockSourceQueryGraphBuilder::new();
+        let subgraphs = get_subgraphs(include_str!("./tests/schemas/nested.graphql"));
+        let (_, subgraph) = subgraphs.into_iter().next().unwrap();
+
+        // Make sure that the tail data is correct
+        federated_builder
+            .process_subgraph_schema(subgraph, &mut mock_builder)
+            .unwrap();
+
+        // Make sure that our graph makes sense
+        let as_dot = mock_builder.into_dot();
+        assert_snapshot!(as_dot, @r###"
+        digraph {
+            0 [ label = "Node: Query" ]
+            1 [ label = "Node: User" ]
+            2 [ label = "Scalar: ID" ]
+            3 [ label = "Node: UserInfo" ]
+            4 [ label = "Scalar: String" ]
+            5 [ label = "Node: UserAddress" ]
+            6 [ label = "Scalar: Int" ]
+            7 [ label = "Node: UserAvatar" ]
+            1 -> 2 [ label = "id" ]
+            3 -> 4 [ label = "name: .\"user full name\"" ]
+            5 -> 4 [ label = "street: .street_line" ]
+            5 -> 4 [ label = "state" ]
+            5 -> 6 [ label = "zip" ]
+            3 -> 5 [ label = "address: .addresses.main.address" ]
+            7 -> 4 [ label = "large" ]
+            7 -> 4 [ label = "thumbnail" ]
+            3 -> 7 [ label = "avatar" ]
+            1 -> 3 [ label = "info: .user_info" ]
+            0 -> 1 [ label = "user" ]
         }
         "###
         );
