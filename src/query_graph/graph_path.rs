@@ -665,7 +665,7 @@ impl OpIndirectPaths {
 }
 
 #[derive(Debug, Clone)]
-struct Unadvanceables(Vec<Unadvanceable>);
+pub(crate) struct Unadvanceables(Vec<Unadvanceable>);
 
 impl Display for Unadvanceables {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -683,7 +683,7 @@ impl Display for Unadvanceables {
 }
 
 #[derive(Debug, Clone)]
-struct Unadvanceable {
+pub(crate) struct Unadvanceable {
     reason: UnadvanceableReason,
     from_subgraph: NodeStr,
     to_subgraph: NodeStr,
