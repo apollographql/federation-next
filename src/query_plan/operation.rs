@@ -2,6 +2,7 @@ use crate::error::FederationError;
 use crate::error::SingleFederationError;
 use crate::error::SingleFederationError::Internal;
 use crate::link::federation_spec_definition::get_federation_spec_definition_from_subgraph;
+use crate::query_graph::graph_path::selection_of_element;
 use crate::query_graph::graph_path::OpPath;
 use crate::query_graph::graph_path::OpPathElement;
 use crate::query_plan::conditions::Conditions;
@@ -2646,16 +2647,17 @@ impl NormalizedSelectionMap {
         // TODO: port a `SelectionSetUpdates` data structure or mutate directly?
         if !path.is_empty() {
             if let Some(selections) = &selection_set {
-                self.add_to_keyed_updates()
+                self.add_to_keyed_updates(selections)
             }
         } else {
             if path.len() == 1 && selection_set.is_none() {
-                let ele = path.0[0];
+                let ele = &path.0[0];
                 if ele.is_terminal()? {
                     // This is a somewhat common case (when we deal with @key "conditions", those are often trivial and end up here),
                     // so we unpack it directly instead of creating unecessary temporary objects (not that we only do it for leaf
                     // field; for non-leaf ones, we'd have to create an empty sub-selectionSet, and that may have to get merged
                     // with other entries of this `SleectionSetUpdates`, so we wouldn't really save work).
+                    let sel = selection_of_element(element, selection_set.cloned())?;
                     todo!()
                     /*
                     const selection = selectionOfElement(element);
@@ -2674,7 +2676,7 @@ impl NormalizedSelectionMap {
         todo!()
     }
 
-    fn add_to_keyed_updates(&mut self) {
+    fn add_to_keyed_updates(&mut self, selections: &NormalizedSelectionSet) {
         if selections.type_position.is_abstract_type() {
             todo!()
             // addOneToKeyedUpdates(keyedUpdates, selections);
