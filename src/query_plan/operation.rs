@@ -1388,16 +1388,10 @@ impl NormalizedFragmentSpreadSelection {
         match other {
             NormalizedSelection::Field(_) => Containment::NotContained,
             NormalizedSelection::InlineFragment(other) => {
-                let self_frag = self.spread.data();
-                let other_frag = other.inline_fragment.data();
-                // TODO(@goto-bus-stop) is this right?
-                if self_frag.type_condition_position
-                    == *other_frag
-                        .type_condition_position
-                        .as_ref()
-                        .unwrap_or(&other_frag.parent_type_position)
-                    && self_frag.directives == other_frag.directives
-                {
+                // Using keys here means that @defer fragments never compare equal.
+                // This is a bit odd but it is consistent: the selection set data structure would not
+                // even try to compare two @defer fragments, because their keys are different.
+                if self.spread.key() == other.inline_fragment.key() {
                     self.selection_set
                         .containment(&other.selection_set, options)
                 } else {
@@ -1405,12 +1399,7 @@ impl NormalizedFragmentSpreadSelection {
                 }
             }
             NormalizedSelection::FragmentSpread(other) => {
-                let self_frag = self.spread.data();
-                let other_frag = other.spread.data();
-                // TODO(@goto-bus-stop) is this right?
-                if self_frag.type_condition_position == other_frag.type_condition_position
-                    && self_frag.directives == other_frag.directives
-                {
+                if self.spread.key() == other.spread.key() {
                     self.selection_set
                         .containment(&other.selection_set, options)
                 } else {
@@ -3629,12 +3618,10 @@ impl NormalizedInlineFragmentSelection {
         match other {
             NormalizedSelection::Field(_) => Containment::NotContained,
             NormalizedSelection::InlineFragment(other) => {
-                let self_frag = self.inline_fragment.data();
-                let other_frag = other.inline_fragment.data();
-                // TODO(@goto-bus-stop) is this right?
-                if self_frag.type_condition_position == other_frag.type_condition_position
-                    && self_frag.directives == other_frag.directives
-                {
+                // Using keys here means that @defer fragments never compare equal.
+                // This is a bit odd but it is consistent: the selection set data structure would not
+                // even try to compare two @defer fragments, because their keys are different.
+                if self.inline_fragment.key() == other.inline_fragment.key() {
                     self.selection_set
                         .containment(&other.selection_set, options)
                 } else {
@@ -3642,16 +3629,10 @@ impl NormalizedInlineFragmentSelection {
                 }
             }
             NormalizedSelection::FragmentSpread(other) => {
-                let self_frag = self.inline_fragment.data();
-                let other_frag = other.spread.data();
-                // TODO(@goto-bus-stop) is this right?
-                if *self_frag
-                    .type_condition_position
-                    .as_ref()
-                    .unwrap_or(&self_frag.parent_type_position)
-                    == other_frag.type_condition_position
-                    && self_frag.directives == other_frag.directives
-                {
+                // Using keys here means that @defer fragments never compare equal.
+                // This is a bit odd but it is consistent: the selection set data structure would not
+                // even try to compare two @defer fragments, because their keys are different.
+                if self.inline_fragment.key() == other.spread.key() {
                     self.selection_set
                         .containment(&other.selection_set, options)
                 } else {
