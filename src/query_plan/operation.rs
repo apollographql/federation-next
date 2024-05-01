@@ -495,24 +495,14 @@ pub(crate) enum NormalizedSelectionKey {
         /// directives applied on the field
         directives: Arc<DirectiveList>,
     },
-    FragmentSpread {
-        /// The fragment name referenced in the spread.
-        name: Name,
+    Fragment {
+        /// The optional type condition of the fragment.
+        type_condition: Option<Name>,
         /// Directives applied on the fragment spread (does not contain @defer).
         directives: Arc<DirectiveList>,
     },
-    DeferredFragmentSpread {
+    Defer {
         /// Unique selection ID used to distinguish deferred fragment spreads that cannot be merged.
-        deferred_id: SelectionId,
-    },
-    InlineFragment {
-        /// The optional type condition of the inline fragment.
-        type_condition: Option<Name>,
-        /// Directives applied on the inline fragment (does not contain @defer).
-        directives: Arc<DirectiveList>,
-    },
-    DeferredInlineFragment {
-        /// Unique selection ID used to distinguish deferred inline fragments that cannot be merged.
         deferred_id: SelectionId,
     },
 }
@@ -1152,12 +1142,12 @@ mod normalized_fragment_spread_selection {
     impl HasNormalizedSelectionKey for NormalizedFragmentSpreadData {
         fn key(&self) -> NormalizedSelectionKey {
             if is_deferred_selection(&self.directives) {
-                NormalizedSelectionKey::DeferredFragmentSpread {
+                NormalizedSelectionKey::Defer {
                     deferred_id: self.selection_id.clone(),
                 }
             } else {
-                NormalizedSelectionKey::FragmentSpread {
-                    name: self.fragment_name.clone(),
+                NormalizedSelectionKey::Fragment {
+                    type_condition: Some(self.type_condition_position.type_name().clone()),
                     directives: Arc::new(directives_with_sorted_arguments(&self.directives)),
                 }
             }
@@ -1551,11 +1541,11 @@ mod normalized_inline_fragment_selection {
     impl HasNormalizedSelectionKey for NormalizedInlineFragmentData {
         fn key(&self) -> NormalizedSelectionKey {
             if is_deferred_selection(&self.directives) {
-                NormalizedSelectionKey::DeferredInlineFragment {
+                NormalizedSelectionKey::Defer {
                     deferred_id: self.selection_id.clone(),
                 }
             } else {
-                NormalizedSelectionKey::InlineFragment {
+                NormalizedSelectionKey::Fragment {
                     type_condition: self
                         .type_condition_position
                         .as_ref()
