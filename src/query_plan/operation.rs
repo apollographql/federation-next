@@ -93,6 +93,36 @@ pub(crate) struct NormalizedDefer {
 }
 
 impl NormalizedOperation {
+    pub fn from_operation_document(
+        schema: ValidFederationSchema,
+        document: &Valid<apollo_compiler::ExecutableDocument>,
+        operation_name: Option<&str>,
+    ) -> Result<Self, FederationError> {
+        let operation = document.get_operation(operation_name).map_err(|_| {
+            FederationError::internal(format!("No operation named {operation_name:?}"))
+        })?;
+        let named_fragments = NamedFragments::new(&document.fragments, &schema);
+        let selection_set = NormalizedSelectionSet::from_selection_set(
+            &operation.selection_set,
+            &named_fragments,
+            &schema,
+        )?;
+        let schema_definition_root_kind = match operation.operation_type {
+            OperationType::Query => SchemaRootDefinitionKind::Query,
+            OperationType::Mutation => SchemaRootDefinitionKind::Mutation,
+            OperationType::Subscription => SchemaRootDefinitionKind::Subscription,
+        };
+        Ok(NormalizedOperation {
+            schema: schema.clone(),
+            root_kind: schema_definition_root_kind,
+            name: operation.name.clone(),
+            variables: Arc::new(operation.variables.clone()),
+            directives: Arc::new(operation.directives.clone()),
+            selection_set,
+            named_fragments,
+        })
+    }
+
     // PORT_NOTE(@goto-bus-stop): It might make sense for the returned data structure to *be* the
     // `DeferNormalizer` from the JS side
     pub(crate) fn with_normalized_defer(self) -> NormalizedDefer {
@@ -1561,6 +1591,7 @@ pub(crate) use normalized_inline_fragment_selection::NormalizedInlineFragment;
 pub(crate) use normalized_inline_fragment_selection::NormalizedInlineFragmentData;
 pub(crate) use normalized_inline_fragment_selection::NormalizedInlineFragmentSelection;
 
+// TODO(@goto-bus-stop): merge this with the other NormalizedOperation impl block.
 impl NormalizedOperation {
     pub(crate) fn optimize(
         &mut self,
@@ -5994,19 +6025,14 @@ type T {
         }
     }
 
-    fn parse_and_normalize(
+    fn parse_operation(
         schema: &ValidFederationSchema,
         source_text: &str,
         name: &str,
     ) -> Result<NormalizedOperation, FederationError> {
         let document = ExecutableDocument::parse_and_validate(schema.schema(), source_text, name)?;
 
-        normalize_operation(
-            document.get_operation(None).unwrap(),
-            &document.fragments,
-            &schema,
-            &Default::default(),
-        )
+        NormalizedOperation::from_operation_document(schema.clone(), &document, None)
     }
 
     fn containment_custom(left: &str, right: &str, ignore_missing_typename: bool) -> Containment {
@@ -6036,8 +6062,8 @@ type T {
         )
         .unwrap();
         let schema = ValidFederationSchema::new(schema).unwrap();
-        let left = parse_and_normalize(&schema, left, "left.graphql").unwrap();
-        let right = parse_and_normalize(&schema, right, "right.graphql").unwrap();
+        let left = parse_operation(&schema, left, "left.graphql").unwrap();
+        let right = parse_operation(&schema, right, "right.graphql").unwrap();
 
         left.selection_set.containment(
             &right.selection_set,
@@ -6127,8 +6153,15 @@ type T {
                 "{ intf { intfField } }",
                 true
             ),
-            Containment::NotContained,
-            "__typename still cannot be missing from the right-hand side"
+            Containment::StrictlyContained,
+        );
+        assert_eq!(
+            containment_custom(
+                "{ intf { intfField __typename } }",
+                "{ intf { intfField __typename } }",
+                true
+            ),
+            Containment::Equal,
         );
     }
 }
