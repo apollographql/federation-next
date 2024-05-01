@@ -1,11 +1,16 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::query_graph::{
-    graph_path::{GraphPath, GraphPathTrigger},
+    graph_path::{
+        ExcludedConditions, ExcludedDestinations, GraphPath, GraphPathTrigger, IndirectPaths,
+    },
     QueryGraph,
 };
 
-use apollo_compiler::{ast::Document, NodeStr};
+use apollo_compiler::{
+    ast::{Document, NamedType},
+    NodeStr,
+};
 use itertools::Itertools;
 use petgraph::graph::EdgeIndex;
 
@@ -61,5 +66,156 @@ pub(super) fn print_human_readable_list(
 /// JS PORT NOTE: for printing "witness" operations, we actually need a printer
 /// that accepts invalid selection sets.
 pub(super) fn operation_to_document(_operation: TODO) -> Document {
+    todo!()
+}
+
+/// Wraps a 'composition validation' path (one built from `Transition`) along
+/// with the information necessary to compute the indirect paths following that
+/// path, and cache the result of that computation when triggered.
+///
+/// In other words, this is a `GraphPath<Transition, V>` plus lazy memoization
+/// of the computation of its following indirect options.
+///
+/// The rational is that after we've reached a given path, we might never need
+/// to compute the indirect paths following it (maybe all the fields we'll care
+/// about are available "directive" (from the same subgraph)), or we might need
+/// to compute it once, or we might need them multiple times, but the way the
+/// algorithm work, we don't know this in advance. So this abstraction ensure
+/// that we only compute such indirect paths lazily, if we ever need them, but
+/// while ensuring we don't recompute them multiple times if we do need them
+/// multiple times.
+pub(super) struct TransitionPathWithLazyIndirectPaths<TTrigger, TEdge>
+where
+    TTrigger: Eq + std::hash::Hash,
+    TEdge: Copy + Into<Option<EdgeIndex>>,
+    EdgeIndex: Into<TEdge>,
+    GraphPathTrigger: From<Arc<TTrigger>>,
+{
+    path: TODO,               // GraphPath<Transition, V>
+    condition_resolver: TODO, // ConditionResolver
+    override_conditions: HashMap<NodeStr, bool>,
+    lazy_computed_indirect_paths: Option<IndirectPaths<TTrigger, TEdge>>, // Option<IndirectPaths<Transition, V, TEdge>>
+}
+
+impl<TTrigger, TEdge> TransitionPathWithLazyIndirectPaths<TTrigger, TEdge>
+where
+    TTrigger: Eq + std::hash::Hash,
+    TEdge: Copy + Into<Option<EdgeIndex>>,
+    EdgeIndex: Into<TEdge>,
+    GraphPathTrigger: From<Arc<TTrigger>>,
+{
+    pub(super) fn initial(
+        initial_path: TODO,       // GraphPath<Transition, V>
+        condition_resolver: TODO, // ConditionResolver
+        override_conditions: HashMap<NodeStr, bool>,
+    ) -> Self {
+        Self {
+            path: initial_path,
+            condition_resolver,
+            override_conditions,
+            lazy_computed_indirect_paths: None,
+        }
+    }
+
+    pub(super) fn indirect_options(&mut self) -> IndirectPaths<TTrigger, TEdge> {
+        // if let Some(indirect_paths) = self.lazy_computed_indirect_paths {
+        //     return indirect_paths;
+        // }
+        // self.lazy_computed_indirect_paths = Some(self.compute_indirect_paths());
+        // self.lazy_computed_indirect_paths.unwrap()
+        self.compute_indirect_paths()
+    }
+
+    fn compute_indirect_paths(&self) -> IndirectPaths<TTrigger, TEdge> {
+        // advance_path_with_non_collecting_and_type_preserving_transitions
+        todo!()
+    }
+}
+
+fn advance_path_with_non_collecting_and_type_preserving_transitions<
+    TTrigger: Eq + std::hash::Hash,
+    TEdge: Copy + Into<Option<EdgeIndex>> + From<EdgeIndex>,
+    GraphPathTrigger: From<Arc<TTrigger>>,
+>(
+    _path: TODO,               // GraphPath<TTrigger, V, TNullEdge>,
+    _context: TODO,            // PathContext,
+    _condition_resolver: TODO, // ConditionResolver,
+    _excluded_destinations: ExcludedDestinations,
+    _excluded_conditions: ExcludedConditions,
+    _convert_transition_with_condition: TODO, // (transition: Transition, context: PathContext) => TTrigger,
+    _trigger_to_edge: TODO, // (graph: QueryGraph, vertex: Vertex, t: TTrigger, overrideConditions: Map<string, boolean>) => Edge | null | undefined,
+    _override_conditions: HashMap<NodeStr, bool>,
+) -> TODO /* IndirectPaths<TTrigger, TEdge> *//* IndirectPaths<Transition, V, TEdge> */
+{
+    /* !!! THIS IS A LOT !!! */
+
+    // is_condition_excluded
+    // can_satisfy_conditions
+    // root_vertex_for_subgraph
+    // condition_has_overridden_fields_in_source
+
+    todo!()
+}
+
+fn is_destination_excluded(destination: &NodeStr, excluded: &ExcludedDestinations) -> bool {
+    excluded.is_excluded(destination)
+}
+
+fn is_condition_excluded(
+    _condition: TODO, // SelectionSet | undefined
+    _excluded_conditions: ExcludedConditions,
+) -> bool {
+    todo!()
+}
+
+fn can_satisfy_conditions(
+    _path: TODO,               // GraphPath<TTrigger, V, TNullEdge>,
+    _edge: TODO,               // Edge,
+    _condition_resolver: TODO, // ConditionResolver,
+    _context: TODO,            // PathContext,
+    _excluded_edges: ExcludedDestinations,
+    _excluded_conditions: ExcludedConditions,
+) -> TODO /* ConditionResolution */ {
+    // get_locally_satisfiable_key
+    todo!()
+}
+
+fn get_locally_satisfiable_key(
+    _graph: TODO,      // QueryGraph,
+    _type_ertex: TODO, // Vertex
+) -> TODO /* SelectionSet | undefined */ {
+    todo!()
+}
+
+fn root_vertex_for_subgraph(
+    _graph: TODO,           // QueryGraph,
+    _subgraph_name: String, // NodeStr?
+    _root_kind: TODO,       // SchemaRootKind
+) -> TODO /*  Vertex | undefined */ {
+    todo!()
+}
+
+fn condition_has_overridden_fields_in_source(
+    _schema: TODO,     // Schema
+    _conditions: TODO, // SelectionSet
+) -> bool {
+    todo!()
+}
+
+// Note: conditions resolver should return `null` if the condition cannot be satisfied. If it is satisfied, it has the choice of computing
+// the actual tree, which we need for query planning, or simply returning "undefined" which means "The condition can be satisfied but I didn't
+// bother computing a tree for it", which we use for simple validation.
+
+// Returns some a `Unadvanceables` object if there is no way to advance the path with this transition. Otherwise, it returns a list of options (paths) we can be in after advancing the transition.
+// The lists of options can be empty, which has the special meaning that the transition is guaranteed to have no results (it corresponds to unsatisfiable conditions),
+// meaning that as far as composition validation goes, we can ignore that transition (and anything that follows) and otherwise continue.
+pub(super) fn advance_path_with_transition(
+    /* <V: Vertex> */
+    _subgraph_path: TODO, // TransitionPathWithLazyIndirectPaths<V>,
+    _transition: TODO,    // Transition,
+    _target_type: NamedType,
+    _override_conditions: HashMap<NodeStr, bool>,
+) -> TODO /* TransitionPathWithLazyIndirectPaths<V>[] | Unadvanceables */ {
+    /* !!! THIS IS A LOT !!! */
     todo!()
 }

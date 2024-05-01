@@ -17,7 +17,7 @@ use crate::{
     query_graph::graph_path::Unadvanceables,
 };
 
-use super::{dependencies::print_subgraph_names, ValidationState};
+use super::{dependencies::print_subgraph_names, state::ValidationState};
 
 // JS PORT NOTE: this is assigned to the `originalError` field of the GraphQLError
 // which is not a concept in apollo-compiler. Can we just ignore it?
@@ -106,7 +106,8 @@ pub(super) fn shareable_field_mismatched_runtime_types_hint(
     let field_type = field.ty.inner_named_type();
 
     let all_subgraph_names = state.current_subgraph_names();
-    let subgraph_names = print_subgraph_names(&all_subgraph_names);
+    let subgraph_names =
+        print_subgraph_names(&all_subgraph_names.iter().map(|n| n.clone()).collect_vec());
     let common_runtime_types = print_human_readable_list(
         common_runtime_types.iter().map(|n| n.to_string()).collect(),
         None,

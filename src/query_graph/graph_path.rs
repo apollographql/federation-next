@@ -532,7 +532,7 @@ pub(crate) struct SimultaneousPathsWithLazyIndirectPaths {
 pub(crate) struct ExcludedDestinations(Arc<Vec<NodeStr>>);
 
 impl ExcludedDestinations {
-    fn is_excluded(&self, destination: &NodeStr) -> bool {
+    pub(crate) fn is_excluded(&self, destination: &NodeStr) -> bool {
         self.0.contains(destination)
     }
 
