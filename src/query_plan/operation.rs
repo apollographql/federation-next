@@ -555,6 +555,9 @@ pub struct ContainmentOptions {
     pub ignore_missing_typename: bool,
 }
 
+// Currently Default *can* be derived, but if we add a new option
+// here, that might no longer be true.
+#[allow(clippy::derivable_impls)]
 impl Default for ContainmentOptions {
     fn default() -> Self {
         Self {
