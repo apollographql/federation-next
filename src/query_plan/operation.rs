@@ -3478,7 +3478,9 @@ impl NormalizedInlineFragmentSelection {
         parent_type: &CompositeTypeDefinitionPosition,
         schema: &ValidFederationSchema,
     ) -> bool {
-        if &self.inline_fragment.data().parent_type_position == parent_type {
+        if &self.inline_fragment.data().parent_type_position == parent_type
+            && self.inline_fragment.data().schema == *schema
+        {
             return true;
         }
         let Some(ty) = self
@@ -3488,7 +3490,7 @@ impl NormalizedInlineFragmentSelection {
         else {
             return false;
         };
-        if self.inline_fragment.data().parent_type_position != ty {
+        if self.selection_set.type_position != ty {
             for sel in self.selection_set.selections.values() {
                 if !sel.can_add_to(&ty, schema) {
                     return false;
