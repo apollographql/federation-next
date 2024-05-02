@@ -1624,11 +1624,11 @@ impl NormalizedSelectionSet {
         type_position: CompositeTypeDefinitionPosition,
         selection: NormalizedSelection,
     ) -> Self {
-        let schema = selection.schema();
+        let schema = selection.schema().clone();
         let mut selection_map = NormalizedSelectionMap::new();
-        selection_map.insert(selection.clone());
+        selection_map.insert(selection);
         Self {
-            schema: schema.clone(),
+            schema,
             type_position,
             selections: Arc::new(selection_map),
         }
@@ -2222,14 +2222,14 @@ impl NormalizedSelectionSet {
         error_handling: RebaseErrorHandlingOption,
     ) -> Result<NormalizedSelectionSet, FederationError> {
         let mut rebased_selections = NormalizedSelectionMap::new();
-        let rebased_results: Result<Vec<Option<NormalizedSelection>>, FederationError> = self
+        let rebased_results = self
             .selections
             .iter()
             .map(|(_, selection)| {
                 selection.rebase_on(parent_type, named_fragments, schema, error_handling)
             })
-            .collect();
-        for rebased in rebased_results?.iter().flatten() {
+            .collect::<Result<Vec<_>, _>>()?;
+        for rebased in rebased_results.iter().flatten() {
             rebased_selections.insert(rebased.clone());
         }
         Ok(NormalizedSelectionSet {
