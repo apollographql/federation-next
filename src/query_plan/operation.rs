@@ -1392,18 +1392,16 @@ impl NormalizedFragmentSpreadSelection {
         other: &NormalizedSelection,
         options: ContainmentOptions,
     ) -> Containment {
-        let key = self.spread.key();
         match other {
             // Using keys here means that @defer fragments never compare equal.
             // This is a bit odd but it is consistent: the selection set data structure would not
             // even try to compare two @defer fragments, because their keys are different.
-            NormalizedSelection::InlineFragment(other) if key == other.inline_fragment.key() => {
+            NormalizedSelection::FragmentSpread(other)
+                if self.spread.key() == other.spread.key() =>
+            {
                 self.selection_set
                     .containment(&other.selection_set, options)
             }
-            NormalizedSelection::FragmentSpread(other) if key == other.spread.key() => self
-                .selection_set
-                .containment(&other.selection_set, options),
             _ => Containment::NotContained,
         }
     }
@@ -3617,18 +3615,16 @@ impl NormalizedInlineFragmentSelection {
         other: &NormalizedSelection,
         options: ContainmentOptions,
     ) -> Containment {
-        let key = self.inline_fragment.key();
         match other {
             // Using keys here means that @defer fragments never compare equal.
             // This is a bit odd but it is consistent: the selection set data structure would not
             // even try to compare two @defer fragments, because their keys are different.
-            NormalizedSelection::InlineFragment(other) if key == other.inline_fragment.key() => {
+            NormalizedSelection::InlineFragment(other)
+                if self.inline_fragment.key() == other.inline_fragment.key() =>
+            {
                 self.selection_set
                     .containment(&other.selection_set, options)
             }
-            NormalizedSelection::FragmentSpread(other) if key == other.spread.key() => self
-                .selection_set
-                .containment(&other.selection_set, options),
             _ => Containment::NotContained,
         }
     }
@@ -6077,12 +6073,13 @@ type T {
             ),
             Containment::Equal
         );
+        // These select the same things, but containment also counts fragment namedness
         assert_eq!(
             containment(
                 "{ intf { ... on HasA { a } } }",
                 "{ intf { ...named } } fragment named on HasA { a }",
             ),
-            Containment::Equal
+            Containment::NotContained
         );
         assert_eq!(
             containment(
