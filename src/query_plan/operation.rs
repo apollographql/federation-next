@@ -3611,30 +3611,19 @@ impl NormalizedInlineFragmentSelection {
         other: &NormalizedSelection,
         options: ContainmentOptions,
     ) -> Containment {
+        let key = self.inline_fragment.key();
         match other {
-            NormalizedSelection::Field(_) => Containment::NotContained,
-            NormalizedSelection::InlineFragment(other) => {
-                // Using keys here means that @defer fragments never compare equal.
-                // This is a bit odd but it is consistent: the selection set data structure would not
-                // even try to compare two @defer fragments, because their keys are different.
-                if self.inline_fragment.key() == other.inline_fragment.key() {
-                    self.selection_set
-                        .containment(&other.selection_set, options)
-                } else {
-                    Containment::NotContained
-                }
+            // Using keys here means that @defer fragments never compare equal.
+            // This is a bit odd but it is consistent: the selection set data structure would not
+            // even try to compare two @defer fragments, because their keys are different.
+            NormalizedSelection::InlineFragment(other) if key == other.inline_fragment.key() => {
+                self.selection_set
+                    .containment(&other.selection_set, options)
             }
-            NormalizedSelection::FragmentSpread(other) => {
-                // Using keys here means that @defer fragments never compare equal.
-                // This is a bit odd but it is consistent: the selection set data structure would not
-                // even try to compare two @defer fragments, because their keys are different.
-                if self.inline_fragment.key() == other.spread.key() {
-                    self.selection_set
-                        .containment(&other.selection_set, options)
-                } else {
-                    Containment::NotContained
-                }
-            }
+            NormalizedSelection::FragmentSpread(other) if key == other.spread.key() => self
+                .selection_set
+                .containment(&other.selection_set, options),
+            _ => Containment::NotContained,
         }
     }
 
