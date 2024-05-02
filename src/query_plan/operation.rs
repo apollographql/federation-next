@@ -537,7 +537,13 @@ pub(crate) enum NormalizedSelectionKey {
         /// directives applied on the field
         directives: Arc<DirectiveList>,
     },
-    Fragment {
+    FragmentSpread {
+        /// The name of the fragment.
+        fragment_name: Name,
+        /// Directives applied on the fragment spread (does not contain @defer).
+        directives: Arc<DirectiveList>,
+    },
+    InlineFragment {
         /// The optional type condition of the fragment.
         type_condition: Option<Name>,
         /// Directives applied on the fragment spread (does not contain @defer).
@@ -1191,8 +1197,8 @@ mod normalized_fragment_spread_selection {
                     deferred_id: self.selection_id.clone(),
                 }
             } else {
-                NormalizedSelectionKey::Fragment {
-                    type_condition: Some(self.type_condition_position.type_name().clone()),
+                NormalizedSelectionKey::FragmentSpread {
+                    fragment_name: self.fragment_name.clone(),
                     directives: Arc::new(directives_with_sorted_arguments(&self.directives)),
                 }
             }
@@ -1571,7 +1577,7 @@ mod normalized_inline_fragment_selection {
                     deferred_id: self.selection_id.clone(),
                 }
             } else {
-                NormalizedSelectionKey::Fragment {
+                NormalizedSelectionKey::InlineFragment {
                     type_condition: self
                         .type_condition_position
                         .as_ref()
@@ -6128,5 +6134,61 @@ type T {
             ),
             Containment::Equal,
         );
+    }
+
+    /// This regression-tests an assumption from
+    /// https://github.com/apollographql/federation-next/pull/290#discussion_r1587200664
+    #[test]
+    fn converting_operation_types() {
+        let schema = apollo_compiler::Schema::parse_and_validate(
+            r#"
+        interface Intf {
+            intfField: Int
+        }
+        type HasA implements Intf {
+            a: Boolean
+            intfField: Int
+        }
+        type Nested {
+            a: Int
+            b: Int
+            c: Int
+        }
+        type Query {
+            a: Int
+            b: Int
+            c: Int
+            object: Nested
+            intf: Intf
+        }
+        "#,
+            "schema.graphql",
+        )
+        .unwrap();
+        let schema = ValidFederationSchema::new(schema).unwrap();
+        insta::assert_snapshot!(NormalizedOperation::parse(
+            schema.clone(),
+            r#"
+        {
+            intf {
+                ... on HasA { a }
+                ... frag
+            }
+        }
+        fragment frag on HasA { intfField }
+        "#,
+            "operation.graphql",
+            None,
+        )
+        .unwrap(), @r###"
+        {
+          intf {
+            ... on HasA {
+              a
+            }
+            ...frag
+          }
+        }
+        "###);
     }
 }
