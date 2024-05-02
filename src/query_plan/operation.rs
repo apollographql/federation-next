@@ -580,7 +580,7 @@ impl Default for ContainmentOptions {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Containment {
-    /// The left-hand selection does not contain right-hand selection.
+    /// The left-hand selection does not fully contain right-hand selection.
     NotContained,
     /// The left-hand selection fully contains the right-hand selection, and more.
     StrictlyContained,
