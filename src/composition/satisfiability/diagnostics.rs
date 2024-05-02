@@ -156,6 +156,7 @@ fn subgraph_nodes(
 
 // --- Errors and hints --------------------------------------------------------
 
+#[cfg_attr(test, derive(Debug))]
 struct CodeDefinition {
     code: &'static str,
     description: &'static str,
@@ -184,18 +185,21 @@ impl CodeDefinition {
     }
 }
 
+#[cfg_attr(test, derive(Debug))]
 enum HintLevel {
     Warn,
     Info,
     Debug,
 }
 
+#[cfg_attr(test, derive(Debug))]
 struct HintCodeDefinition {
     code: &'static str,
     level: HintLevel,
     description: &'static str,
 }
 
+#[cfg_attr(test, derive(Debug))]
 pub(crate) struct CompositionHint {
     definition: &'static HintCodeDefinition,
     message: String,

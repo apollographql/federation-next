@@ -1326,7 +1326,7 @@ where
     // composition, but we'll need to port that code when we port composition.
     // PORT_NOTE: In the JS codebase, this was named
     // `advancePathWithNonCollectingAndTypePreservingTransitions`.
-    fn advance_with_non_collecting_and_type_preserving_transitions(
+    pub(crate) fn advance_with_non_collecting_and_type_preserving_transitions(
         self: &Arc<Self>,
         context: &OpGraphPathContext,
         condition_resolver: &mut impl ConditionResolver,

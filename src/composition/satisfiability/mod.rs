@@ -57,15 +57,15 @@
         - dependencies:
             - [ ] simpleValidationConditionResolver
 
-- [ ] QueryGraph
+- [x] QueryGraph
 - [ ] RootPath<Transition> (replaced with GraphPath?)
 - [ ] GraphPath
     - [ ] .fromGraphRoot
     - [ ] .tailPossibleRuntimeTypes
 - [ ] TransitionPathWithLazyIndirectPaths
     - dependencies:
-        - [ ] IndirectPaths
-        - [ ] advancePathWithNonCollectingAndTypePreservingTransitions
+        - [x] IndirectPaths
+        - [x] advancePathWithNonCollectingAndTypePreservingTransitions
 - [ ] ConditionResolver
 - [ ] Subgraph
 - [ ] Schema (is this FederatedSchema?)
@@ -88,7 +88,7 @@ use crate::{
         spec::Identity,
     },
     query_graph::QueryGraph,
-    schema::FederationSchema,
+    schema::ValidFederationSchema,
 };
 
 use self::diagnostics::CompositionHint;
@@ -103,7 +103,7 @@ type TODO = usize;
 static _TODO: TODO = 0;
 
 pub(crate) fn validate_graph_composition(
-    supergraph_schema: Arc<FederationSchema>, // Schema
+    supergraph_schema: Arc<ValidFederationSchema>, // Schema
     supergraph_api: Arc<QueryGraph>,
     federated_query_graph: Arc<QueryGraph>,
 ) -> Result<Vec<CompositionHint>, (Vec<GraphQLError>, Vec<CompositionHint>)> {
@@ -111,13 +111,13 @@ pub(crate) fn validate_graph_composition(
 }
 
 struct ValidationContext {
-    supergraph_schema: Arc<FederationSchema>, // Schema
+    supergraph_schema: Arc<ValidFederationSchema>,
     join_type_directive: Node<DirectiveDefinition>,
     join_field_directive: Node<DirectiveDefinition>,
 }
 
 impl ValidationContext {
-    fn new(supergraph_schema: Arc<FederationSchema>) -> Self {
+    fn new(supergraph_schema: Arc<ValidFederationSchema>) -> Self {
         let Some(metadata) = supergraph_schema.metadata() else {
             panic!("Metadata not found in supergraph schema");
         };
@@ -161,3 +161,6 @@ impl ValidationContext {
         todo!()
     }
 }
+
+#[cfg(test)]
+mod tests;

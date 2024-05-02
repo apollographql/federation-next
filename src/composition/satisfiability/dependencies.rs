@@ -3,9 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use crate::{
     error::SchemaRootKind,
     query_graph::{
-        graph_path::{
-            ExcludedConditions, ExcludedDestinations, GraphPath, GraphPathTrigger, IndirectPaths,
-        },
+        graph_path::{GraphPath, GraphPathTrigger, IndirectPaths},
         QueryGraph,
     },
 };
@@ -48,11 +46,14 @@ pub(super) fn print_subgraph_names(names: &[NodeStr]) -> String {
 }
 
 /// Like `joinStrings`, joins an array of string, but with a few twists, namely:
-///  - If the resulting list to print is "too long", it only display a subset of the elements and use some elipsis (...). In other
-///    words, this method is for case where, where the list ot print is too long, it is more useful to avoid flooding the output than
-///    printing everything.
-///  - it allows to prefix the whole list, and to use a different prefix for a single element than for > 1 elements.
-///  - it forces the use of ',' as separator, but allow a different lastSeparator.
+///  - If the resulting list to print is "too long", it only display a subset
+///    of the elements and use some elipsis (...). In other words, this method
+///    is for case where, where the list ot print is too long, it is more useful
+///    to avoid flooding the output than printing everything.
+///  - it allows to prefix the whole list, and to use a different prefix for a
+///    single element than for > 1 elements.
+///  - it forces the use of ',' as separator, but allow a different
+///    lastSeparator.
 pub(super) fn print_human_readable_list(
     names: Vec<String>,
     _empty_value: Option<String>,
@@ -128,88 +129,25 @@ where
     }
 
     fn compute_indirect_paths(&self) -> IndirectPaths<TTrigger, TEdge> {
-        // advance_path_with_non_collecting_and_type_preserving_transitions
+        // GraphPath.advance_with_non_collecting_and_type_preserving_transitions
         todo!()
     }
 }
 
-fn advance_path_with_non_collecting_and_type_preserving_transitions<
-    TTrigger: Eq + std::hash::Hash,
-    TEdge: Copy + Into<Option<EdgeIndex>> + From<EdgeIndex>,
-    GraphPathTrigger: From<Arc<TTrigger>>,
->(
-    _path: TODO,               // GraphPath<TTrigger, V, TNullEdge>,
-    _context: TODO,            // PathContext,
-    _condition_resolver: TODO, // ConditionResolver,
-    _excluded_destinations: ExcludedDestinations,
-    _excluded_conditions: ExcludedConditions,
-    _convert_transition_with_condition: TODO, // (transition: Transition, context: PathContext) => TTrigger,
-    _trigger_to_edge: TODO, // (graph: QueryGraph, vertex: Vertex, t: TTrigger, overrideConditions: Map<string, boolean>) => Edge | null | undefined,
-    _override_conditions: HashMap<NodeStr, bool>,
-) -> TODO /* IndirectPaths<TTrigger, TEdge> *//* IndirectPaths<Transition, V, TEdge> */
-{
-    /* !!! THIS IS A LOT !!! */
-
-    // is_condition_excluded
-    // can_satisfy_conditions
-    // root_vertex_for_subgraph
-    // condition_has_overridden_fields_in_source
-
-    todo!()
-}
-
-fn is_destination_excluded(destination: &NodeStr, excluded: &ExcludedDestinations) -> bool {
-    excluded.is_excluded(destination)
-}
-
-fn is_condition_excluded(
-    _condition: TODO, // SelectionSet | undefined
-    _excluded_conditions: ExcludedConditions,
-) -> bool {
-    todo!()
-}
-
-fn can_satisfy_conditions(
-    _path: TODO,               // GraphPath<TTrigger, V, TNullEdge>,
-    _edge: TODO,               // Edge,
-    _condition_resolver: TODO, // ConditionResolver,
-    _context: TODO,            // PathContext,
-    _excluded_edges: ExcludedDestinations,
-    _excluded_conditions: ExcludedConditions,
-) -> TODO /* ConditionResolution */ {
-    // get_locally_satisfiable_key
-    todo!()
-}
-
-fn get_locally_satisfiable_key(
-    _graph: TODO,      // QueryGraph,
-    _type_ertex: TODO, // Vertex
-) -> TODO /* SelectionSet | undefined */ {
-    todo!()
-}
-
-fn root_vertex_for_subgraph(
-    _graph: TODO,           // QueryGraph,
-    _subgraph_name: String, // NodeStr?
-    _root_kind: SchemaRootKind,
-) -> TODO /*  Vertex | undefined */ {
-    todo!()
-}
-
-fn condition_has_overridden_fields_in_source(
-    _schema: TODO,     // Schema
-    _conditions: TODO, // SelectionSet
-) -> bool {
-    todo!()
-}
-
-// Note: conditions resolver should return `null` if the condition cannot be satisfied. If it is satisfied, it has the choice of computing
-// the actual tree, which we need for query planning, or simply returning "undefined" which means "The condition can be satisfied but I didn't
-// bother computing a tree for it", which we use for simple validation.
-
-// Returns some a `Unadvanceables` object if there is no way to advance the path with this transition. Otherwise, it returns a list of options (paths) we can be in after advancing the transition.
-// The lists of options can be empty, which has the special meaning that the transition is guaranteed to have no results (it corresponds to unsatisfiable conditions),
-// meaning that as far as composition validation goes, we can ignore that transition (and anything that follows) and otherwise continue.
+/// Note: conditions resolver should return `null` if the condition cannot be
+/// satisfied. If it is satisfied, it has the choice of computing
+/// the actual tree, which we need for query planning, or simply returning
+/// "undefined" which means "The condition can be satisfied but I didn't
+/// bother computing a tree for it", which we use for simple validation.
+///
+/// Returns some a `Unadvanceables` object if there is no way to advance the
+/// path with this transition. Otherwise, it returns a list of options (paths)
+/// we can be in after advancing the transition.
+///
+/// The lists of options can be empty, which has the special meaning that the
+/// transition is guaranteed to have no results (it corresponds to unsatisfiable
+/// conditions), meaning that as far as composition validation goes, we can
+/// ignore that transition (and anything that follows) and otherwise continue.
 pub(super) fn advance_path_with_transition(
     /* <V: Vertex> */
     _subgraph_path: TODO, // TransitionPathWithLazyIndirectPaths<V>,

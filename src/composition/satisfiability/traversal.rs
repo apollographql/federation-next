@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use apollo_compiler::{execution::GraphQLError, NodeStr};
 
-use crate::{query_graph::QueryGraph, schema::FederationSchema};
+use crate::{query_graph::QueryGraph, schema::ValidFederationSchema};
 
 use super::{diagnostics::CompositionHint, state::ValidationState, ValidationContext};
 
@@ -28,7 +28,7 @@ pub(super) struct ValidationTraversal {
 
 impl ValidationTraversal {
     pub(super) fn new(
-        supergraph_schema: Arc<FederationSchema>, // Schema
+        supergraph_schema: Arc<ValidFederationSchema>, // Schema
         _supergraph_api: Arc<QueryGraph>,
         _federated_query_graph: Arc<QueryGraph>,
     ) -> Self {
