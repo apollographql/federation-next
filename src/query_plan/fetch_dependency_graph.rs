@@ -1128,6 +1128,52 @@ impl FetchDependencyGraph {
     }
 }
 
+impl std::fmt::Display for FetchDependencyGraph {
+    /// Displays the relationship between subgraph fetches.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt_node(
+            g: &FetchDependencyGraph,
+            node_id: NodeIndex,
+            f: &mut std::fmt::Formatter<'_>,
+            indent: usize,
+        ) -> std::fmt::Result {
+            let Ok(node) = g.node_weight(node_id) else {
+                return Ok(());
+            };
+            for _ in 0..indent {
+                write!(f, "  ")?;
+            }
+            write!(f, "{} <- ", node.display(node_id))?;
+            for (i, child_id) in g.children_of(node_id).enumerate() {
+                if i > 0 {
+                    f.write_str(", ")?;
+                }
+
+                let Ok(child) = g.node_weight(child_id) else {
+                    continue;
+                };
+                write!(f, "{}", child.display(child_id))?;
+            }
+
+            for child_id in g.children_of(node_id) {
+                if g.children_of(child_id).next().is_some() {
+                    write!(f, "\n")?;
+                    fmt_node(g, child_id, f, indent + 1)?;
+                }
+            }
+            Ok(())
+        }
+
+        for (i, &node_id) in self.root_nodes_by_subgraph.values().enumerate() {
+            if i > 0 {
+                write!(f, "\n")?;
+            }
+            fmt_node(self, node_id, f, 0)?;
+        }
+        Ok(())
+    }
+}
+
 impl FetchDependencyGraphNode {
     pub(crate) fn selection_set_mut(&mut self) -> &mut FetchSelectionSet {
         self.cached_cost = None;
