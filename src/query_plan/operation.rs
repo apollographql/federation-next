@@ -94,8 +94,8 @@ pub(crate) struct NormalizedDefer {
 }
 
 impl NormalizedOperation {
-    /// Parse an operation from a source string. **This is for tests and code examples, not
-    /// for production usage.**
+    /// Parse an operation from a source string.
+    #[cfg(any(test, doc))]
     pub fn parse(
         schema: ValidFederationSchema,
         source_text: &str,
