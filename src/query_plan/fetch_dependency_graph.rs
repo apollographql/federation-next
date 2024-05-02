@@ -34,6 +34,7 @@ use indexmap::{IndexMap, IndexSet};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex, StableDiGraph};
 use petgraph::visit::EdgeRef;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::sync::{atomic::AtomicU64, Arc, OnceLock};
 
 /// Represents the value of a `@defer(label:)` argument.
@@ -1157,7 +1158,7 @@ impl std::fmt::Display for FetchDependencyGraph {
 
             for child_id in g.children_of(node_id) {
                 if g.children_of(child_id).next().is_some() {
-                    write!(f, "\n")?;
+                    f.write_char('\n')?;
                     fmt_node(g, child_id, f, indent + 1)?;
                 }
             }
@@ -1166,7 +1167,7 @@ impl std::fmt::Display for FetchDependencyGraph {
 
         for (i, &node_id) in self.root_nodes_by_subgraph.values().enumerate() {
             if i > 0 {
-                write!(f, "\n")?;
+                f.write_char('\n')?;
             }
             fmt_node(self, node_id, f, 0)?;
         }
