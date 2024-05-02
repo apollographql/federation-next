@@ -2741,6 +2741,10 @@ pub(crate) struct InterfaceTypeDefinitionPosition {
 }
 
 impl InterfaceTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn field(&self, field_name: Name) -> InterfaceFieldDefinitionPosition {
         InterfaceFieldDefinitionPosition {
             type_name: self.type_name.clone(),
@@ -3974,6 +3978,10 @@ pub(crate) struct UnionTypeDefinitionPosition {
 }
 
 impl UnionTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn introspection_typename_field(&self) -> UnionTypenameFieldDefinitionPosition {
         UnionTypenameFieldDefinitionPosition {
             type_name: self.type_name.clone(),
