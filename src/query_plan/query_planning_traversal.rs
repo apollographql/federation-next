@@ -16,7 +16,7 @@ use crate::query_plan::fetch_dependency_graph_processor::{
 };
 use crate::query_plan::generate::{generate_all_plans_and_find_best, PlanBuilder};
 use crate::query_plan::operation::{
-    HasNormalizedSelectionKey, NormalizedOperation, NormalizedSelection, NormalizedSelectionSet,
+    NormalizedOperation, NormalizedSelection, NormalizedSelectionSet,
 };
 use crate::query_plan::query_planner::QueryPlannerConfig;
 use crate::query_plan::query_planner::QueryPlanningStatistics;
@@ -28,8 +28,6 @@ use crate::schema::ValidFederationSchema;
 use indexmap::IndexSet;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use std::sync::Arc;
-
-use super::operation::NormalizedSelectionKey;
 
 // PORT_NOTE: Named `PlanningParameters` in the JS codebase, but there was no particular reason to
 // leave out to the `Query` prefix, so it's been added for consistency. Similar to `GraphPath`, we
