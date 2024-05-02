@@ -99,8 +99,8 @@ mod state;
 mod traversal;
 mod witness;
 
-type TODO = usize;
-static _TODO: TODO = 0;
+type Todo = usize;
+static _TODO: Todo = 0;
 
 pub(crate) fn validate_graph_composition(
     supergraph_schema: Arc<ValidFederationSchema>, // Schema
@@ -138,11 +138,11 @@ impl ValidationContext {
             .expect("Join field directive not found in supergraph schema");
 
         let join_type_directive = join_type_pos
-            .get(&supergraph_schema.schema())
+            .get(supergraph_schema.schema())
             .unwrap()
             .clone();
         let join_field_directive = join_field_pos
-            .get(&supergraph_schema.schema())
+            .get(supergraph_schema.schema())
             .unwrap()
             .clone();
 

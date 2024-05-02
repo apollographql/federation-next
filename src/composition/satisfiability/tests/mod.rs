@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use apollo_compiler::{execution::GraphQLError, Schema};
-use insta::assert_debug_snapshot;
 
 use crate::{
     api_schema::to_api_schema,
@@ -40,24 +39,29 @@ static LIST_DETAIL_RESOLVABLE_FALSE: &str =
 fn list_detail_resolvable_false() {
     let result = run_validation(LIST_DETAIL_RESOLVABLE_FALSE);
 
-    assert_debug_snapshot!(result, @"");
+    assert!(result.is_err());
+    let messages = result
+        .unwrap_err()
+        .0
+        .iter()
+        .map(|e| e.message.clone())
+        .collect::<Vec<_>>();
 
-    /*
-    expect(errorMessages(result)).toMatchInlineSnapshot(`
-      Array [
-        "The following supergraph API query:
-      {
-        a {
-          y
-        }
-      }
-      cannot be satisfied by the subgraphs because:
-      - from subgraph \\"B\\":
-        - cannot find field \\"A.y\\".
-        - cannot move to subgraph \\"A\\", which has field \\"A.y\\", because none of the @key defined on type \\"A\\" in subgraph \\"A\\" are resolvable (they are all declared with their \\"resolvable\\" argument set to false).",
-      ]
-    `);
-    */
+    assert_eq!(
+        messages,
+        vec![
+            r#"The following supergraph API query:
+{
+  a {
+    y
+  }
+}
+cannot be satisfied by the subgraphs because:
+- from subgraph "B":
+  - cannot find field "A.y".
+  - cannot move to subgraph "A", which has field "A.y", because none of the @key defined on type "A" in subgraph "A" are resolvable (they are all declared with their "resolvable" argument set to false)."#,
+        ]
+    );
 }
 
 static REQUIRES_FAILS_IF_IT_CANNOT_SATISFY_A_AT_REQUIRES: &str =

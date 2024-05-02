@@ -6,11 +6,11 @@ use crate::{query_graph::QueryGraph, schema::ValidFederationSchema};
 
 use super::{diagnostics::CompositionHint, state::ValidationState, ValidationContext};
 
-type TODO = usize;
-static _TODO: TODO = 0;
+type Todo = usize;
+static _TODO: Todo = 0;
 
 pub(super) struct ValidationTraversal {
-    condition_resolver: TODO,
+    condition_resolver: Todo,
 
     /// The stack contains all states that aren't terminal.
     stack: Vec<ValidationState>,
@@ -18,7 +18,7 @@ pub(super) struct ValidationTraversal {
     /// For each vertex in the supergraph, records if we've already visited that
     /// vertex and in which subgraphs we were. For a vertex, we may have
     /// multiple "sets of subgraphs", hence the double-array.
-    previous_visits: TODO, // QueryGraphState<VertexVisit[]>
+    previous_visits: Todo, // QueryGraphState<VertexVisit[]>
 
     validation_errors: Vec<GraphQLError>,
     validation_hints: Vec<CompositionHint>,

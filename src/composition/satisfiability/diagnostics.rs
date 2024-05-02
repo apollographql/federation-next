@@ -25,16 +25,16 @@ use super::{
 // which is not a concept in apollo-compiler. Can we just ignore it?
 pub(super) struct ValidationError {
     message: String,
-    supergraph_unsatisfiable_path: TODO, // RootPath<Transition>
-    subgraph_paths: TODO,                // RootPath<Transition>[]
-    witness: TODO,                       // Operation
+    supergraph_unsatisfiable_path: Todo, // RootPath<Transition>
+    subgraph_paths: Todo,                // RootPath<Transition>[]
+    witness: Todo,                       // Operation
 }
 
-type TODO = usize;
+type Todo = usize;
 
 pub(super) fn satisfiability_error(
-    unsatisfiable_path: TODO,                      // RootPath<Transition>
-    _subgraph_paths: TODO,                         // RootPath<Transition>[]
+    unsatisfiable_path: Todo,                      // RootPath<Transition>
+    _subgraph_paths: Todo,                         // RootPath<Transition>[]
     subgraph_paths_unadvanceables: Unadvanceables, // Unadvanceables[]
 ) -> GraphQLError {
     fn display_reasons(_reasons: Unadvanceables) -> String {
@@ -52,7 +52,7 @@ cannot be satisfied by the subgraphs because:
 {reasons}"#
     );
 
-    // JS PORT NOTE: apollo-compiler doesn't have a notion of `originalError`
+    // PORT_NOTE: apollo-compiler doesn't have a notion of `originalError`
     // let original_error = ValidationError {};
 
     SATISFIABILITY_ERROR.to_error(&message)
@@ -60,12 +60,12 @@ cannot be satisfied by the subgraphs because:
 
 pub(super) fn shareable_field_non_intersecting_runtime_types_error(
     invalid_state: &ValidationState,
-    // JS PORT NOTE: we need the parent type of the field, so this should be a different type
+    // PORT_NOTE: we need the parent type of the field, so this should be a different type
     field: FieldDefinition,
     runtime_types_to_subgraphs: IndexMap<Name, Vec<NodeStr>>,
 ) -> GraphQLError {
     let _witness = build_witness_operation(invalid_state.supergraph_path);
-    let operation = "TODO"; // print(operationToDocument(witness))
+    let operation = "{\n  TODO\n}"; // print(operationToDocument(witness))
     let type_strings = runtime_types_to_subgraphs
         .iter()
         .map(|(ts, subgraphs)| {
@@ -74,7 +74,7 @@ pub(super) fn shareable_field_non_intersecting_runtime_types_error(
         })
         .join(";\n");
 
-    let field_coordinate = "{\n  TODO\n}"; // field.coordinate
+    let field_coordinate = "TODO"; // field.coordinate
     let field_type = field.ty.inner_named_type();
 
     let message = format!(
@@ -85,10 +85,10 @@ Shared field "{field_coordinate}" return type "{field_type}" has a non-intersect
 This is not allowed as shared fields must resolve the same way in all subgraphs, and that imply at least some common runtime types between the subgraphs."###
     );
 
-    // JS PORT NOTE: apollo-compiler's GraphQLError doesn't have a notion of `nodes`
+    // PORT_NOTE: apollo-compiler's GraphQLError doesn't have a notion of `nodes`
     let _nodes = subgraph_nodes(invalid_state, |_schema| todo!());
 
-    // JS PORT NOTE: apollo-compiler doesn't have a notion of `originalError`
+    // PORT_NOTE: apollo-compiler doesn't have a notion of `originalError`
     // let original_error = ValidationError {};
 
     SHAREABLE_HAS_MISMATCHED_RUNTIME_TYPES.to_error(&message)
@@ -96,7 +96,7 @@ This is not allowed as shared fields must resolve the same way in all subgraphs,
 
 pub(super) fn shareable_field_mismatched_runtime_types_hint(
     state: &ValidationState,
-    // JS PORT NOTE: we need the parent type of the field, so this should be a different type
+    // PORT_NOTE: we need the parent type of the field, so this should be a different type
     field: FieldDefinition,
     common_runtime_types: Vec<Name>,
     _runtime_types_per_subgraphs: IndexMap<Name, Vec<NodeStr>>,
@@ -108,8 +108,7 @@ pub(super) fn shareable_field_mismatched_runtime_types_hint(
     let field_type = field.ty.inner_named_type();
 
     let all_subgraph_names = state.current_subgraph_names();
-    let subgraph_names =
-        print_subgraph_names(&all_subgraph_names.iter().map(|n| n.clone()).collect_vec());
+    let subgraph_names = print_subgraph_names(&all_subgraph_names.iter().cloned().collect_vec());
     let common_runtime_types = print_human_readable_list(
         common_runtime_types.iter().map(|n| n.to_string()).collect(),
         None,
@@ -135,7 +134,7 @@ Since a shared field must be resolved the same way in all subgraphs, make sure t
 Otherwise the @shareable contract will be broken."#
     );
 
-    // JS PORT NOTE: apollo-compiler's GraphQLError doesn't have a notion of `nodes`,
+    // PORT_NOTE: apollo-compiler's GraphQLError doesn't have a notion of `nodes`,
     // do we need it for hints?
     let _nodes = subgraph_nodes(state, |_schema| todo!());
 
@@ -149,8 +148,8 @@ Otherwise the @shareable contract will be broken."#
 
 fn subgraph_nodes(
     _state: &ValidationState,
-    _extract_node: fn(_schema: TODO /* Schema */) -> Option<TODO>, /* ASTNode | undefined */
-) -> TODO /* SubgraphASTNode[] */ {
+    _extract_node: fn(_schema: Todo /* Schema */) -> Option<Todo>, /* ASTNode | undefined */
+) -> Todo /* SubgraphASTNode[] */ {
     todo!()
 }
 
@@ -203,8 +202,8 @@ struct HintCodeDefinition {
 pub(crate) struct CompositionHint {
     definition: &'static HintCodeDefinition,
     message: String,
-    element: Option<TODO>,    // NamedSchemaElement<any, any, any> | undefined
-    nodes: Option<Vec<TODO>>, // SubgraphASTNode[] | SubgraphASTNode
+    element: Option<Todo>,    // NamedSchemaElement<any, any, any> | undefined
+    nodes: Option<Vec<Todo>>, // SubgraphASTNode[] | SubgraphASTNode
 }
 
 impl Display for CompositionHint {

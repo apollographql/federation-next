@@ -11,15 +11,15 @@ use crate::{error::SchemaRootKind, query_graph::QueryGraph};
 
 use super::{diagnostics::CompositionHint, ValidationContext};
 
-type TODO = usize;
-static _TODO: TODO = 0;
+type Todo = usize;
+static _TODO: Todo = 0;
 
 pub(super) struct ValidationState {
     /// Path in the supergraph corresponding to the current state.
-    pub(super) supergraph_path: TODO, // RootPath<Transition>
+    pub(super) supergraph_path: Todo, // RootPath<Transition>
 
     /// All the possible paths we could be in the subgraph.
-    pub(super) subgraph_paths: Vec<TODO>, // TransitionPathWithLazyIndirectPaths<RootVertex>[]
+    pub(super) subgraph_paths: Vec<Todo>, // TransitionPathWithLazyIndirectPaths<RootVertex>[]
 
     /// When we encounter an `@override`n field with a label condition, we record
     /// its value (T/F) as we traverse the graph. This allows us to ignore paths
@@ -33,9 +33,9 @@ impl ValidationState {
         _supergraph_api: Arc<QueryGraph>,
         kind: SchemaRootKind,
         federated_query_graph: Arc<QueryGraph>,
-        _condition_resolver: TODO, // ConditionResolver
+        _condition_resolver: Todo, // ConditionResolver
         _override_conditions: HashMap<NodeStr, bool>,
-    ) -> Result<Self, TODO> {
+    ) -> Result<Self, Todo> {
         Ok(Self {
             supergraph_path: _TODO, // GraphPath::from_graph_root(_supergraph_api, _kind),
             subgraph_paths: initial_subgraph_paths(kind, federated_query_graph)?, // .map(p => TransitionPathWithLazyIndirectPaths.initial(p, _condition_resolver, _override_conditions)),
@@ -64,7 +64,7 @@ impl ValidationState {
     pub(super) fn validate_transition(
         &self,
         _context: &ValidationContext,
-        _supergraph_edge: TODO, // Edge
+        _supergraph_edge: Todo, // Edge
     ) -> Result<(Self, Option<CompositionHint>), GraphQLError> {
         // advance_path_with_transition
         // satisfiability_error
@@ -89,7 +89,7 @@ impl ValidationState {
         todo!()
     }
 
-    pub(super) fn current_subgraphs(&self) -> Vec<TODO> /* (name: NodeStr, subgraph: Subgraph)[] */
+    pub(super) fn current_subgraphs(&self) -> Vec<Todo> /* (name: NodeStr, subgraph: Subgraph)[] */
     {
         todo!()
     }
@@ -106,10 +106,10 @@ impl Display for ValidationState {
 fn initial_subgraph_paths(
     _kind: SchemaRootKind,
     _subgraphs: Arc<QueryGraph>,
-) -> Result<Vec<TODO>, TODO> /* RootPath<Transition>[], can error */ {
+) -> Result<Vec<Todo>, Todo> /* RootPath<Transition>[], can error */ {
     todo!()
 }
 
-fn possible_runtime_type_names_sorted(_path: TODO /* RootPath<Transition> */) -> Vec<String> {
+fn possible_runtime_type_names_sorted(_path: Todo /* RootPath<Transition> */) -> Vec<String> {
     todo!()
 }

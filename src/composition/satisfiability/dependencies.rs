@@ -15,7 +15,7 @@ use apollo_compiler::{
 use itertools::Itertools;
 use petgraph::graph::EdgeIndex;
 
-type TODO = usize;
+type Todo = usize;
 
 impl<TTrigger, TEdge> GraphPath<TTrigger, TEdge>
 where
@@ -24,7 +24,7 @@ where
     TEdge: Copy + Into<Option<EdgeIndex>>,
     EdgeIndex: Into<TEdge>,
 {
-    pub fn from_graph_root(_graph: Arc<QueryGraph>, _root_kind: SchemaRootKind) -> TODO /* Option<Self> */
+    pub fn from_graph_root(_graph: Arc<QueryGraph>, _root_kind: SchemaRootKind) -> Todo /* Option<Self> */
     {
         // graph
         //     .root_node_for_kind(root_kind)
@@ -67,7 +67,7 @@ pub(super) fn print_human_readable_list(
 
 /// PORT_NOTE: for printing "witness" operations, we actually need a printer
 /// that accepts invalid selection sets.
-pub(super) fn operation_to_document(_operation: TODO) -> Document {
+pub(super) fn operation_to_document(_operation: Todo) -> Document {
     todo!()
 }
 
@@ -93,8 +93,8 @@ where
     EdgeIndex: Into<TEdge>,
     GraphPathTrigger: From<Arc<TTrigger>>,
 {
-    path: TODO,               // GraphPath<Transition, V>
-    condition_resolver: TODO, // ConditionResolver
+    path: Todo,               // GraphPath<Transition, V>
+    condition_resolver: Todo, // ConditionResolver
     override_conditions: HashMap<NodeStr, bool>,
     lazy_computed_indirect_paths: Option<IndirectPaths<TTrigger, TEdge>>, // Option<IndirectPaths<Transition, V, TEdge>>
 }
@@ -107,8 +107,8 @@ where
     GraphPathTrigger: From<Arc<TTrigger>>,
 {
     pub(super) fn initial(
-        initial_path: TODO,       // GraphPath<Transition, V>
-        condition_resolver: TODO, // ConditionResolver
+        initial_path: Todo,       // GraphPath<Transition, V>
+        condition_resolver: Todo, // ConditionResolver
         override_conditions: HashMap<NodeStr, bool>,
     ) -> Self {
         Self {
@@ -150,11 +150,11 @@ where
 /// ignore that transition (and anything that follows) and otherwise continue.
 pub(super) fn advance_path_with_transition(
     /* <V: Vertex> */
-    _subgraph_path: TODO, // TransitionPathWithLazyIndirectPaths<V>,
-    _transition: TODO,    // Transition,
+    _subgraph_path: Todo, // TransitionPathWithLazyIndirectPaths<V>,
+    _transition: Todo,    // Transition,
     _target_type: NamedType,
     _override_conditions: HashMap<NodeStr, bool>,
-) -> TODO /* TransitionPathWithLazyIndirectPaths<V>[] | Unadvanceables */ {
+) -> Todo /* TransitionPathWithLazyIndirectPaths<V>[] | Unadvanceables */ {
     /* !!! THIS IS A LOT !!! */
     todo!()
 }

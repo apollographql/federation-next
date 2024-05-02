@@ -1,21 +1,21 @@
 use apollo_compiler::ast::Value;
 
-use super::TODO;
+use super::Todo;
 
-pub(crate) fn build_witness_operation(_witness: TODO /* RootPath<Transition> */) -> TODO /* Operation */
+pub(crate) fn build_witness_operation(_witness: Todo /* RootPath<Transition> */) -> Todo /* Operation */
 {
     todo!()
 }
 
-fn build_witness_next_step(_edges: TODO /* Edge[] */, _index: usize) -> Option<TODO> /* SelectionSet | undefined */
+fn build_witness_next_step(_edges: Todo /* Edge[] */, _index: usize) -> Option<Todo> /* SelectionSet | undefined */
 {
     todo!()
 }
 
-fn build_witness_field(_definition: TODO /* FieldDefinition<any> */) -> TODO /* Field */ {
+fn build_witness_field(_definition: Todo /* FieldDefinition<any> */) -> Todo /* Field */ {
     todo!()
 }
 
-fn generate_witness_value(_type: TODO /* InputType */) -> Value /* any */ {
+fn generate_witness_value(_type: Todo /* InputType */) -> Value /* any */ {
     todo!()
 }
