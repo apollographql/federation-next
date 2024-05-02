@@ -1,10 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::query_graph::{
-    graph_path::{
-        ExcludedConditions, ExcludedDestinations, GraphPath, GraphPathTrigger, IndirectPaths,
+use crate::{
+    error::SchemaRootKind,
+    query_graph::{
+        graph_path::{
+            ExcludedConditions, ExcludedDestinations, GraphPath, GraphPathTrigger, IndirectPaths,
+        },
+        QueryGraph,
     },
-    QueryGraph,
 };
 
 use apollo_compiler::{
@@ -23,10 +26,8 @@ where
     TEdge: Copy + Into<Option<EdgeIndex>>,
     EdgeIndex: Into<TEdge>,
 {
-    pub fn from_graph_root(
-        _graph: Arc<QueryGraph>,
-        _root_kind: TODO, /* SchemaRootKind */
-    ) -> TODO /* Option<Self> */ {
+    pub fn from_graph_root(_graph: Arc<QueryGraph>, _root_kind: SchemaRootKind) -> TODO /* Option<Self> */
+    {
         // graph
         //     .root_node_for_kind(root_kind)
         //     .map(|root| Self::new(graph, root))
@@ -63,7 +64,7 @@ pub(super) fn print_human_readable_list(
     names.iter().join(", ")
 }
 
-/// JS PORT NOTE: for printing "witness" operations, we actually need a printer
+/// PORT_NOTE: for printing "witness" operations, we actually need a printer
 /// that accepts invalid selection sets.
 pub(super) fn operation_to_document(_operation: TODO) -> Document {
     todo!()
@@ -190,7 +191,7 @@ fn get_locally_satisfiable_key(
 fn root_vertex_for_subgraph(
     _graph: TODO,           // QueryGraph,
     _subgraph_name: String, // NodeStr?
-    _root_kind: TODO,       // SchemaRootKind
+    _root_kind: SchemaRootKind,
 ) -> TODO /*  Vertex | undefined */ {
     todo!()
 }

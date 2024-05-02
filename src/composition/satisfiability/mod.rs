@@ -2,33 +2,40 @@
 - [ ] ValidationError (maybe unnecessary?)
 - [ ] satisfiabilityError
     - [ ] displayReasons
+    - dependencies:
+        - [ ] operationToDocument
+        - [ ] Operation
 - [ ] subgraphNodes (maybe unnecessary?)
     - dependencies:
         - [ ] addSubgraphToASTNode
+        - [ ] operationToDocument
+        - [ ] Operation
 - [ ] shareableFieldNonIntersectingRuntimeTypesError
 - [ ] shareableFieldMismatchedRuntimeTypesHint
-        - dependencies:
-            - [ ] printHumanReadableList
-            - [ ] printSubgraphNames
+    - dependencies:
+        - [ ] printHumanReadableList
+        - [ ] printSubgraphNames
+        - [ ] operationToDocument
+        - [ ] Operation
 - [ ] buildWitnessOperation
 - [ ] buildWitnessNextStep
 - [ ] buildWitnessField
 - [ ] generateWitnessValue
-- [ ] validateGraphComposition
+- [x] validateGraphComposition
 - [x] computeSubgraphPaths (unused)
 - [ ] initialSubgraphPaths
     - dependencies:
-        - [ ] SchemaRootKind
+        - [x] SchemaRootKind
         - [ ] federatedGraphRootTypeName
         - [ ] GraphPath.fromGraphRoot
 - [ ] possibleRuntimeTypeNamesSorted
 - [x] extractValidationError (unused)
 - [ ] ValidationContext
-    - [ ] constructor
+    - [x] constructor
         - dependencies:
-            - [ ] validateSupergraph
-            - [ ] joinSpec.typeDirective
-            - [ ] joinSpec.fieldDirective
+            - [x] validateSupergraph (metadata)
+            - [x] joinSpec.typeDirective
+            - [x] joinSpec.fieldDirective
     - [ ] isShareable
 - [ ] ValidationState
     - [ ] initial
@@ -59,11 +66,8 @@
     - dependencies:
         - [ ] IndirectPaths
         - [ ] advancePathWithNonCollectingAndTypePreservingTransitions
-- [ ] SchemaRootKind
 - [ ] ConditionResolver
 - [ ] Subgraph
-- [ ] operationToDocument
-- [ ] Operation
 - [ ] Schema (is this FederatedSchema?)
 */
 
@@ -72,9 +76,20 @@ use std::sync::Arc;
 use apollo_compiler::{
     ast::{DirectiveDefinition, FieldDefinition},
     execution::GraphQLError,
+    Node,
 };
 
-use crate::{composition::satisfiability::traversal::ValidationTraversal, query_graph::QueryGraph};
+use crate::{
+    composition::satisfiability::traversal::ValidationTraversal,
+    link::{
+        join_spec_definition::{
+            JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC, JOIN_TYPE_DIRECTIVE_NAME_IN_SPEC,
+        },
+        spec::Identity,
+    },
+    query_graph::QueryGraph,
+    schema::FederationSchema,
+};
 
 use self::diagnostics::CompositionHint;
 
@@ -82,12 +97,13 @@ mod dependencies;
 mod diagnostics;
 mod state;
 mod traversal;
+mod witness;
 
 type TODO = usize;
 static _TODO: TODO = 0;
 
 pub(crate) fn validate_graph_composition(
-    supergraph_schema: TODO, // Schema
+    supergraph_schema: Arc<FederationSchema>, // Schema
     supergraph_api: Arc<QueryGraph>,
     federated_query_graph: Arc<QueryGraph>,
 ) -> Result<Vec<CompositionHint>, (Vec<GraphQLError>, Vec<CompositionHint>)> {
@@ -95,23 +111,52 @@ pub(crate) fn validate_graph_composition(
 }
 
 struct ValidationContext {
-    supergraph_schema: TODO, // Schema
-    join_type_directive: DirectiveDefinition,
-    join_field_directive: DirectiveDefinition,
+    supergraph_schema: Arc<FederationSchema>, // Schema
+    join_type_directive: Node<DirectiveDefinition>,
+    join_field_directive: Node<DirectiveDefinition>,
 }
 
 impl ValidationContext {
-    fn new(_supergraph_schema: TODO /* Schema */) -> Self {
-        // const [_, joinSpec] = validateSupergraph(supergraphSchema);
-        // this.joinTypeDirective = joinSpec.typeDirective(supergraphSchema);
-        // this.joinFieldDirective = joinSpec.fieldDirective(supergraphSchema);
-        todo!()
+    fn new(supergraph_schema: Arc<FederationSchema>) -> Self {
+        let Some(metadata) = supergraph_schema.metadata() else {
+            panic!("Metadata not found in supergraph schema");
+        };
+
+        let Some(join_spec) = metadata.for_identity(&Identity::join_identity()) else {
+            panic!("Join spec not found in supergraph schema");
+        };
+
+        let join_type_name = join_spec.directive_name_in_schema(&JOIN_TYPE_DIRECTIVE_NAME_IN_SPEC);
+        let join_field_name =
+            join_spec.directive_name_in_schema(&JOIN_FIELD_DIRECTIVE_NAME_IN_SPEC);
+
+        let join_type_pos = supergraph_schema
+            .get_directive_definition(&join_type_name)
+            .expect("Join type directive not found in supergraph schema");
+        let join_field_pos = supergraph_schema
+            .get_directive_definition(&join_field_name)
+            .expect("Join field directive not found in supergraph schema");
+
+        let join_type_directive = join_type_pos
+            .get(&supergraph_schema.schema())
+            .unwrap()
+            .clone();
+        let join_field_directive = join_field_pos
+            .get(&supergraph_schema.schema())
+            .unwrap()
+            .clone();
+
+        Self {
+            supergraph_schema,
+            join_type_directive,
+            join_field_directive,
+        }
     }
 
     /// A field is shareable if either:
     ///     1) there is not join__field, but multiple join__type
     ///     2) there is more than one join__field where the field is neither external nor overriden.
-    // JS PORT NOTE: we need the field parent type, so this should be a different type
+    // PORT_NOTE: we need the field parent type, so this should be a different type
     fn is_shareable(&self, _field: FieldDefinition) -> bool {
         todo!()
     }

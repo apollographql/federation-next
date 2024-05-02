@@ -4,7 +4,7 @@ use std::{
 };
 
 use apollo_compiler::{
-    ast::{FieldDefinition, Name, Value},
+    ast::{FieldDefinition, Name},
     execution::GraphQLError,
     NodeStr,
 };
@@ -17,9 +17,11 @@ use crate::{
     query_graph::graph_path::Unadvanceables,
 };
 
-use super::{dependencies::print_subgraph_names, state::ValidationState};
+use super::{
+    dependencies::print_subgraph_names, state::ValidationState, witness::build_witness_operation,
+};
 
-// JS PORT NOTE: this is assigned to the `originalError` field of the GraphQLError
+// PORT_NOTE: this is assigned to the `originalError` field of the GraphQLError
 // which is not a concept in apollo-compiler. Can we just ignore it?
 pub(super) struct ValidationError {
     message: String,
@@ -149,25 +151,6 @@ fn subgraph_nodes(
     _state: &ValidationState,
     _extract_node: fn(_schema: TODO /* Schema */) -> Option<TODO>, /* ASTNode | undefined */
 ) -> TODO /* SubgraphASTNode[] */ {
-    todo!()
-}
-
-// --- Witness -----------------------------------------------------------------
-
-fn build_witness_operation(_witness: TODO /* RootPath<Transition> */) -> TODO /* Operation */ {
-    todo!()
-}
-
-fn build_witness_next_step(_edges: TODO /* Edge[] */, _index: usize) -> Option<TODO> /* SelectionSet | undefined */
-{
-    todo!()
-}
-
-fn build_witness_field(_definition: TODO /* FieldDefinition<any> */) -> TODO /* Field */ {
-    todo!()
-}
-
-fn generate_witness_value(_type: TODO /* InputType */) -> Value /* any */ {
     todo!()
 }
 

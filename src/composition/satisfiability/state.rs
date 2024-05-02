@@ -7,7 +7,7 @@ use std::{
 use apollo_compiler::{execution::GraphQLError, NodeStr};
 use itertools::Itertools;
 
-use crate::query_graph::QueryGraph;
+use crate::{error::SchemaRootKind, query_graph::QueryGraph};
 
 use super::{diagnostics::CompositionHint, ValidationContext};
 
@@ -31,7 +31,7 @@ pub(super) struct ValidationState {
 impl ValidationState {
     pub(super) fn initial(
         _supergraph_api: Arc<QueryGraph>,
-        kind: TODO, // SchemaRootKind
+        kind: SchemaRootKind,
         federated_query_graph: Arc<QueryGraph>,
         _condition_resolver: TODO, // ConditionResolver
         _override_conditions: HashMap<NodeStr, bool>,
@@ -104,7 +104,7 @@ impl Display for ValidationState {
 }
 
 fn initial_subgraph_paths(
-    _kind: TODO, // SchemaRootKind
+    _kind: SchemaRootKind,
     _subgraphs: Arc<QueryGraph>,
 ) -> Result<Vec<TODO>, TODO> /* RootPath<Transition>[], can error */ {
     todo!()
