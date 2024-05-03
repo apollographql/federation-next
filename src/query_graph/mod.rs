@@ -1,7 +1,8 @@
 use crate::error::{FederationError, SingleFederationError};
-use crate::query_plan::operation::normalized_field_selection::NormalizedField;
-use crate::query_plan::operation::normalized_inline_fragment_selection::NormalizedInlineFragment;
-use crate::query_plan::operation::NormalizedSelectionSet;
+use crate::query_plan::operation::{
+    NormalizedField, NormalizedInlineFragment, NormalizedSelectionSet,
+};
+use crate::schema::field_set::parse_field_set;
 use crate::schema::position::{
     CompositeTypeDefinitionPosition, FieldDefinitionPosition, InterfaceFieldDefinitionPosition,
     ObjectTypeDefinitionPosition, OutputTypeDefinitionPosition, SchemaRootDefinitionKind,
@@ -20,11 +21,15 @@ use std::sync::Arc;
 pub mod build_query_graph;
 pub(crate) mod condition_resolver;
 pub(crate) mod extract_subgraphs_from_supergraph;
-mod field_set;
 pub(crate) mod graph_path;
 pub mod output;
 pub(crate) mod path_tree;
 
+use crate::query_graph::condition_resolver::{ConditionResolution, ConditionResolver};
+use crate::query_graph::graph_path::{
+    ExcludedConditions, ExcludedDestinations, OpGraphPathContext, OpGraphPathTrigger, OpPathElement,
+};
+use crate::query_plan::QueryPlanCost;
 pub use build_query_graph::build_federated_query_graph;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -48,6 +53,12 @@ pub(crate) struct QueryGraphNode {
     pub(crate) root_kind: Option<SchemaRootDefinitionKind>,
 }
 
+impl QueryGraphNode {
+    pub fn is_root_node(&self) -> bool {
+        matches!(self.type_, QueryGraphNodeType::FederatedRootType(_))
+    }
+}
+
 impl Display for QueryGraphNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}({})", self.type_, self.source)?;
@@ -61,7 +72,7 @@ impl Display for QueryGraphNode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::IsVariant)]
 pub(crate) enum QueryGraphNodeType {
     SchemaType(OutputTypeDefinitionPosition),
     FederatedRootType(SchemaRootDefinitionKind),
@@ -72,7 +83,7 @@ impl Display for QueryGraphNodeType {
         match self {
             QueryGraphNodeType::SchemaType(pos) => pos.fmt(f),
             QueryGraphNodeType::FederatedRootType(root_kind) => {
-                write!(f, "[{}]", root_kind)
+                write!(f, "[{root_kind}]")
             }
         }
     }
@@ -336,8 +347,19 @@ impl QueryGraph {
         })
     }
 
-    pub(crate) fn sources(&self) -> impl Iterator<Item = &ValidFederationSchema> {
-        self.sources.values()
+    pub(crate) fn sources(&self) -> impl Iterator<Item = (&NodeStr, &ValidFederationSchema)> {
+        self.sources.iter()
+    }
+
+    /// Returns an iterator over of node indices whose name matches the given type name.
+    pub(crate) fn nodes_for_type<'c, 'b: 'c, 'a: 'c>(
+        &'a self,
+        name: &'b Name,
+    ) -> impl 'c + Iterator<Item = NodeIndex> {
+        self.types_to_nodes_by_source
+            .values()
+            .filter_map(|tys| tys.get(name))
+            .flat_map(|vs| vs.iter().cloned())
     }
 
     pub(crate) fn types_to_nodes(
@@ -376,6 +398,20 @@ impl QueryGraph {
     ) -> Result<&IndexMap<SchemaRootDefinitionKind, NodeIndex>, FederationError> {
         self.root_kinds_to_nodes_by_source
             .get(&self.current_source)
+            .ok_or_else(|| {
+                SingleFederationError::Internal {
+                    message: "Root-kinds-to-nodes map unexpectedly missing".to_owned(),
+                }
+                .into()
+            })
+    }
+
+    pub(crate) fn root_kinds_to_nodes_by_source(
+        &self,
+        source: &str,
+    ) -> Result<&IndexMap<SchemaRootDefinitionKind, NodeIndex>, FederationError> {
+        self.root_kinds_to_nodes_by_source
+            .get(source)
             .ok_or_else(|| {
                 SingleFederationError::Internal {
                     message: "Root-kinds-to-nodes map unexpectedly missing".to_owned(),
@@ -427,6 +463,63 @@ impl QueryGraph {
                             | QueryGraphEdgeTransition::RootTypeResolution { .. }
                     ))
             })
+    }
+
+    pub(crate) fn is_self_key_or_root_edge(
+        &self,
+        edge: EdgeIndex,
+    ) -> Result<bool, FederationError> {
+        let edge_weight = self.edge_weight(edge)?;
+        let (head, tail) = self.edge_endpoints(edge)?;
+        let head_weight = self.node_weight(head)?;
+        let tail_weight = self.node_weight(tail)?;
+        Ok(head_weight.source == tail_weight.source
+            && matches!(
+                edge_weight.transition,
+                QueryGraphEdgeTransition::KeyResolution
+                    | QueryGraphEdgeTransition::RootTypeResolution { .. }
+            ))
+    }
+
+    // PORT_NOTE: In the JS codebase, this was named `hasValidDirectKeyEdge`.
+    pub(crate) fn has_satisfiable_direct_key_edge(
+        &self,
+        from_node: NodeIndex,
+        to_subgraph: &str,
+        condition_resolver: &mut impl ConditionResolver,
+        max_cost: QueryPlanCost,
+    ) -> Result<bool, FederationError> {
+        for edge_ref in self.out_edges(from_node) {
+            let edge_weight = edge_ref.weight();
+            if !matches!(
+                edge_weight.transition,
+                QueryGraphEdgeTransition::KeyResolution
+            ) {
+                continue;
+            }
+
+            let tail = edge_ref.target();
+            let tail_weight = self.node_weight(tail)?;
+            if tail_weight.source != to_subgraph {
+                continue;
+            }
+
+            let condition_resolution = condition_resolver.resolve(
+                edge_ref.id(),
+                &OpGraphPathContext::default(),
+                &ExcludedDestinations::default(),
+                &ExcludedConditions::default(),
+            )?;
+            let ConditionResolution::Satisfied { cost, .. } = condition_resolution else {
+                continue;
+            };
+
+            // During composition validation, we consider all conditions to have cost 1.
+            if cost <= max_cost {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub(crate) fn edge_for_field(
@@ -502,6 +595,27 @@ impl QueryGraph {
             Some(candidate)
         } else {
             None
+        }
+    }
+
+    pub(crate) fn edge_for_op_graph_path_trigger(
+        &self,
+        node: NodeIndex,
+        op_graph_path_trigger: &OpGraphPathTrigger,
+    ) -> Option<Option<EdgeIndex>> {
+        let OpGraphPathTrigger::OpPathElement(op_path_element) = op_graph_path_trigger else {
+            return None;
+        };
+        match op_path_element {
+            OpPathElement::Field(field) => self.edge_for_field(node, field).map(Some),
+            OpPathElement::InlineFragment(inline_fragment) => {
+                if inline_fragment.data().type_condition_position.is_some() {
+                    self.edge_for_inline_fragment(node, inline_fragment)
+                        .map(Some)
+                } else {
+                    Some(None)
+                }
+            }
         }
     }
 
@@ -593,11 +707,56 @@ impl QueryGraph {
         };
     }
 
+    /// Returns a selection set that can be used as a key for the given type, and that can be
+    /// entirely resolved in the same subgraph. Returns None if such a key does not exist for the
+    /// given type.
     pub(crate) fn get_locally_satisfiable_key(
         &self,
-        _node: NodeIndex,
+        node_index: NodeIndex,
     ) -> Result<Option<NormalizedSelectionSet>, FederationError> {
-        todo!()
+        let node = self.node_weight(node_index)?;
+        let type_name = match &node.type_ {
+            QueryGraphNodeType::SchemaType(ty) => {
+                CompositeTypeDefinitionPosition::try_from(ty.clone())?
+            }
+            QueryGraphNodeType::FederatedRootType(_) => {
+                return Err(FederationError::internal(format!(
+                    "get_locally_satisfiable_key must be called on a composite type, got {}",
+                    node.type_
+                )));
+            }
+        };
+        let schema = self.schema_by_source(&node.source)?;
+        let Some(metadata) = schema.subgraph_metadata() else {
+            return Err(FederationError::internal(format!(
+                "Could not find subgraph metadata for source {}",
+                node.source
+            )));
+        };
+        let key_directive_definition = metadata
+            .federation_spec_definition()
+            .key_directive_definition(schema)?;
+
+        let ty = type_name.get(schema.schema())?;
+
+        for key in ty.directives().get_all(&key_directive_definition.name) {
+            let Some(value) = key
+                .argument_by_name("fields")
+                .and_then(|arg| arg.as_node_str())
+                .cloned()
+            else {
+                continue;
+            };
+            let selection = parse_field_set(schema, ty.name().clone(), value)?;
+            let has_external = metadata
+                .external_metadata()
+                .selects_any_external_field(&selection)?;
+            if !has_external {
+                return Ok(Some(selection));
+            }
+        }
+
+        Ok(None)
     }
 
     pub(crate) fn is_cross_subgraph_edge(&self, edge: EdgeIndex) -> Result<bool, FederationError> {
@@ -621,9 +780,32 @@ impl QueryGraph {
 
     pub(crate) fn has_an_implementation_with_provides(
         &self,
-        _source: &NodeStr,
-        _interface_field_definition_position: InterfaceFieldDefinitionPosition,
+        source: &NodeStr,
+        interface_field_definition_position: InterfaceFieldDefinitionPosition,
     ) -> Result<bool, FederationError> {
-        todo!()
+        let schema = self.schema_by_source(source)?;
+        let Some(metadata) = schema.subgraph_metadata() else {
+            return Err(FederationError::internal(format!(
+                "Interface should have come from a federation subgraph {}",
+                source
+            )));
+        };
+
+        let provides_directive_definition = metadata
+            .federation_spec_definition()
+            .provides_directive_definition(schema)?;
+
+        for object_type_definition_position in
+            schema.possible_runtime_types(interface_field_definition_position.parent().into())?
+        {
+            let field_pos = object_type_definition_position
+                .field(interface_field_definition_position.field_name.clone());
+            let field = field_pos.get(schema.schema())?;
+            if field.directives.has(&provides_directive_definition.name) {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 }

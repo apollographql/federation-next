@@ -1,5 +1,6 @@
 use crate::error::{FederationError, SingleFederationError};
 use crate::link::database::links_metadata;
+use crate::link::federation_spec_definition::FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC;
 use crate::link::spec_definition::SpecDefinition;
 use crate::query_graph::QueryGraphNodeType;
 use crate::schema::referencer::{
@@ -123,6 +124,37 @@ impl OutputTypeDefinitionPosition {
             OutputTypeDefinitionPosition::Enum(type_) => &type_.type_name,
         }
     }
+
+    pub(crate) fn get<'schema>(
+        &self,
+        schema: &'schema Schema,
+    ) -> Result<&'schema ExtendedType, FederationError> {
+        let ty =
+            schema
+                .types
+                .get(self.type_name())
+                .ok_or_else(|| SingleFederationError::Internal {
+                    message: format!("Schema has no type \"{}\"", self),
+                })?;
+        match (ty, self) {
+            (ExtendedType::Object(_), OutputTypeDefinitionPosition::Object(_))
+            | (ExtendedType::Interface(_), OutputTypeDefinitionPosition::Interface(_))
+            | (ExtendedType::Union(_), OutputTypeDefinitionPosition::Union(_))
+            | (ExtendedType::Scalar(_), OutputTypeDefinitionPosition::Scalar(_))
+            | (ExtendedType::Enum(_), OutputTypeDefinitionPosition::Enum(_)) => Ok(ty),
+            _ => Err(SingleFederationError::Internal {
+                message: format!("Schema type \"{}\" is the wrong kind", self),
+            }
+            .into()),
+        }
+    }
+
+    pub(crate) fn try_get<'schema>(
+        &self,
+        schema: &'schema Schema,
+    ) -> Option<&'schema ExtendedType> {
+        self.get(schema).ok()
+    }
 }
 
 impl TryFrom<TypeDefinitionPosition> for OutputTypeDefinitionPosition {
@@ -180,6 +212,22 @@ impl Debug for CompositeTypeDefinitionPosition {
 }
 
 impl CompositeTypeDefinitionPosition {
+    pub(crate) fn is_object_type(&self) -> bool {
+        matches!(self, CompositeTypeDefinitionPosition::Object(_))
+    }
+
+    pub(crate) fn is_interface_type(&self) -> bool {
+        matches!(self, CompositeTypeDefinitionPosition::Interface(_))
+    }
+
+    pub(crate) fn is_union_type(&self) -> bool {
+        matches!(self, CompositeTypeDefinitionPosition::Union(_))
+    }
+
+    pub(crate) fn is_abstract_type(&self) -> bool {
+        self.is_interface_type() || self.is_union_type()
+    }
+
     pub(crate) fn type_name(&self) -> &Name {
         match self {
             CompositeTypeDefinitionPosition::Object(type_) => &type_.type_name,
@@ -225,6 +273,51 @@ impl CompositeTypeDefinitionPosition {
                 type_.introspection_typename_field().into()
             }
         }
+    }
+
+    pub(crate) fn get<'schema>(
+        &self,
+        schema: &'schema Schema,
+    ) -> Result<&'schema ExtendedType, FederationError> {
+        let type_name = self.type_name();
+        let type_ = schema
+            .types
+            .get(type_name)
+            .ok_or_else(|| SingleFederationError::Internal {
+                message: format!("Schema has no type \"{}\"", self),
+            })?;
+        let type_matches = match type_ {
+            ExtendedType::Object(_) => matches!(self, CompositeTypeDefinitionPosition::Object(_)),
+            ExtendedType::Interface(_) => {
+                matches!(self, CompositeTypeDefinitionPosition::Interface(_))
+            }
+            ExtendedType::Union(_) => matches!(self, CompositeTypeDefinitionPosition::Union(_)),
+            _ => false,
+        };
+        if type_matches {
+            Ok(type_)
+        } else {
+            Err(SingleFederationError::Internal {
+                message: format!("Schema type \"{}\" is the wrong kind", self),
+            }
+            .into())
+        }
+    }
+
+    pub(crate) fn try_get<'schema>(
+        &self,
+        schema: &'schema Schema,
+    ) -> Option<&'schema ExtendedType> {
+        self.get(schema).ok()
+    }
+
+    pub(crate) fn is_interface_object_type(&self, schema: &Schema) -> bool {
+        let Ok(ExtendedType::Object(obj_type_def)) = self.get(schema) else {
+            return false;
+        };
+        obj_type_def
+            .directives
+            .has(FEDERATION_INTERFACEOBJECT_DIRECTIVE_NAME_IN_SPEC.as_str())
     }
 }
 
@@ -323,6 +416,19 @@ impl TryFrom<QueryGraphNodeType> for ObjectTypeDefinitionPosition {
             QueryGraphNodeType::SchemaType(ty) => ty.try_into(),
             QueryGraphNodeType::FederatedRootType(_) => Err(FederationError::internal(format!(
                 "Type `{value}` was unexpectedly not a composite type"
+            ))),
+        }
+    }
+}
+
+impl TryFrom<CompositeTypeDefinitionPosition> for ObjectTypeDefinitionPosition {
+    type Error = FederationError;
+
+    fn try_from(value: CompositeTypeDefinitionPosition) -> Result<Self, Self::Error> {
+        match value {
+            CompositeTypeDefinitionPosition::Object(value) => Ok(value),
+            _ => Err(FederationError::internal(format!(
+                "Type `{value}` was unexpectedly not an object type"
             ))),
         }
     }
@@ -655,7 +761,7 @@ impl SchemaDefinitionPosition {
         let name = directive.name.clone();
         schema_definition.make_mut().directives.push(directive);
         self.insert_directive_name_references(&mut schema.referencers, &name)?;
-        schema.metadata = links_metadata(&schema.schema)?;
+        schema.links_metadata = links_metadata(&schema.schema)?.map(Box::new);
         Ok(())
     }
 
@@ -671,7 +777,7 @@ impl SchemaDefinitionPosition {
             .directives
             .retain(|other_directive| other_directive.name != name);
         if is_link {
-            schema.metadata = links_metadata(&schema.schema)?;
+            schema.links_metadata = links_metadata(&schema.schema)?.map(Box::new);
         }
         Ok(())
     }
@@ -693,7 +799,7 @@ impl SchemaDefinitionPosition {
             .directives
             .retain(|other_directive| !other_directive.ptr_eq(directive));
         if is_link {
-            schema.metadata = links_metadata(&schema.schema)?;
+            schema.links_metadata = links_metadata(&schema.schema)?.map(Box::new);
         }
         Ok(())
     }
@@ -756,7 +862,7 @@ impl SchemaDefinitionPosition {
     }
 
     fn is_link(schema: &FederationSchema, name: &str) -> Result<bool, FederationError> {
-        Ok(match &schema.metadata {
+        Ok(match schema.metadata() {
             Some(metadata) => {
                 let link_spec_definition = metadata.link_spec_definition()?;
                 let link_name_in_schema = link_spec_definition
@@ -789,6 +895,16 @@ impl From<SchemaRootDefinitionKind> for ast::OperationType {
             SchemaRootDefinitionKind::Query => ast::OperationType::Query,
             SchemaRootDefinitionKind::Mutation => ast::OperationType::Mutation,
             SchemaRootDefinitionKind::Subscription => ast::OperationType::Subscription,
+        }
+    }
+}
+
+impl From<ast::OperationType> for SchemaRootDefinitionKind {
+    fn from(value: ast::OperationType) -> Self {
+        match value {
+            ast::OperationType::Query => SchemaRootDefinitionKind::Query,
+            ast::OperationType::Mutation => SchemaRootDefinitionKind::Mutation,
+            ast::OperationType::Subscription => SchemaRootDefinitionKind::Subscription,
         }
     }
 }
@@ -2625,6 +2741,10 @@ pub(crate) struct InterfaceTypeDefinitionPosition {
 }
 
 impl InterfaceTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn field(&self, field_name: Name) -> InterfaceFieldDefinitionPosition {
         InterfaceFieldDefinitionPosition {
             type_name: self.type_name.clone(),
@@ -3858,6 +3978,10 @@ pub(crate) struct UnionTypeDefinitionPosition {
 }
 
 impl UnionTypeDefinitionPosition {
+    pub(crate) fn new(type_name: Name) -> Self {
+        Self { type_name }
+    }
+
     pub(crate) fn introspection_typename_field(&self) -> UnionTypenameFieldDefinitionPosition {
         UnionTypenameFieldDefinitionPosition {
             type_name: self.type_name.clone(),
@@ -6370,8 +6494,9 @@ impl FederationSchema {
 
         Ok(FederationSchema {
             schema,
-            metadata,
             referencers,
+            links_metadata: metadata.map(Box::new),
+            subgraph_metadata: None,
         })
     }
 }
