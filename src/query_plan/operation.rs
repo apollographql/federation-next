@@ -69,6 +69,70 @@ impl SelectionId {
     }
 }
 
+/// Compare two input values, with two special cases for objects: assuming no duplicate keys,
+/// and order-independence.
+///
+/// This comes from apollo-rs: https://github.com/apollographql/apollo-rs/blob/6825be88fe13cd0d67b83b0e4eb6e03c8ab2555e/crates/apollo-compiler/src/validation/selection.rs#L160-L188
+/// Hopefully we can do this more easily in the future!
+fn same_value(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Null, Value::Null) => true,
+        (Value::Enum(left), Value::Enum(right)) => left == right,
+        (Value::Variable(left), Value::Variable(right)) => left == right,
+        (Value::String(left), Value::String(right)) => left == right,
+        (Value::Float(left), Value::Float(right)) => left == right,
+        (Value::Int(left), Value::Int(right)) => left == right,
+        (Value::Boolean(left), Value::Boolean(right)) => left == right,
+        (Value::List(left), Value::List(right)) => left
+            .iter()
+            .zip(right.iter())
+            .all(|(left, right)| same_value(left, right)),
+        (Value::Object(left), Value::Object(right)) if left.len() == right.len() => {
+            left.iter().all(|(key, value)| {
+                right
+                    .iter()
+                    .find(|(other_key, _)| key == other_key)
+                    .is_some_and(|(_, other_value)| same_value(value, other_value))
+            })
+        }
+        _ => false,
+    }
+}
+
+/// Returns true if two argument lists are equivalent.
+///
+/// The arguments and values must be the same, independent of order.
+fn same_arguments(left: &[Node<Argument>], right: &[Node<Argument>]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    let right = right
+        .iter()
+        .map(|arg| (&arg.name, arg))
+        .collect::<HashMap<_, _>>();
+
+    left.iter().all(|arg| {
+        right
+            .get(&arg.name)
+            .is_some_and(|right_arg| same_value(&arg.value, &right_arg.value))
+    })
+}
+
+/// Returns true if two directive lists are equivalent.
+fn same_directives(left: &DirectiveList, right: &DirectiveList) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    left.iter().all(|left_directive| {
+        right.iter().any(|right_directive| {
+            left_directive.name == right_directive.name
+                && same_arguments(&left_directive.arguments, &right_directive.arguments)
+        })
+    })
+}
+
 /// An analogue of the apollo-compiler type `Operation` with these changes:
 /// - Stores the schema that the operation is queried against.
 /// - Swaps `operation_type` with `root_kind` (using the analogous federation-next type).
@@ -3132,7 +3196,7 @@ impl NormalizedFieldSelection {
     pub(crate) fn has_defer(&self) -> bool {
         self.field.has_defer() || self.selection_set.as_ref().is_some_and(|s| s.has_defer())
     }
-  
+
     pub(crate) fn containment(
         &self,
         other: &NormalizedFieldSelection,
@@ -3140,11 +3204,10 @@ impl NormalizedFieldSelection {
     ) -> Containment {
         let self_field = self.field.data();
         let other_field = other.field.data();
-        // TODO(@goto-bus-stop) is this right?
         if self_field.name() != other_field.name()
             || self_field.alias != other_field.alias
-            || self_field.arguments != other_field.arguments
-            || self_field.directives != other_field.directives
+            || !same_arguments(&self_field.arguments, &other_field.arguments)
+            || !same_directives(&self_field.directives, &other_field.directives)
         {
             return Containment::NotContained;
         }
@@ -6167,6 +6230,8 @@ type T {
     fn containment_custom(left: &str, right: &str, ignore_missing_typename: bool) -> Containment {
         let schema = apollo_compiler::Schema::parse_and_validate(
             r#"
+        directive @defer(label: String, if: Boolean! = true) on FRAGMENT_SPREAD | INLINE_FRAGMENT
+
         interface Intf {
             intfField: Int
         }
@@ -6179,12 +6244,19 @@ type T {
             b: Int
             c: Int
         }
+        input Input {
+            recur: Input
+            f: Boolean
+            g: Boolean
+            h: Boolean
+        }
         type Query {
             a: Int
             b: Int
             c: Int
             object: Nested
             intf: Intf
+            arg(a: Int, b: Int, c: Int, d: Input): Int
         }
         "#,
             "schema.graphql",
@@ -6211,6 +6283,53 @@ type T {
     fn selection_set_contains() {
         assert_eq!(containment("{ a }", "{ a }"), Containment::Equal);
         assert_eq!(containment("{ a b }", "{ b a }"), Containment::Equal);
+        assert_eq!(
+            containment("{ arg(a: 1) }", "{ arg(a: 2) }"),
+            Containment::NotContained
+        );
+        assert_eq!(
+            containment("{ arg(a: 1) }", "{ arg(b: 1) }"),
+            Containment::NotContained
+        );
+        assert_eq!(
+            containment("{ arg(a: 1) }", "{ arg(a: 1) }"),
+            Containment::Equal
+        );
+        assert_eq!(
+            containment("{ arg(a: 1, b: 1) }", "{ arg(b: 1 a: 1) }"),
+            Containment::Equal
+        );
+        assert_eq!(
+            containment("{ arg(a: 1) }", "{ arg(a: 1) }"),
+            Containment::Equal
+        );
+        assert_eq!(
+            containment(
+                "{ arg(d: { f: true, g: true }) }",
+                "{ arg(d: { f: true }) }"
+            ),
+            Containment::NotContained
+        );
+        assert_eq!(
+            containment(
+                "{ arg(d: { recur: { f: true } g: true h: false }) }",
+                "{ arg(d: { h: false recur: {f: true} g: true }) }"
+            ),
+            Containment::Equal
+        );
+        assert_eq!(
+            containment("{ arg @skip(if: true) }", "{ arg @skip(if: true) }"),
+            Containment::Equal
+        );
+        assert_eq!(
+            containment("{ arg @skip(if: true) }", "{ arg @skip(if: false) }"),
+            Containment::NotContained
+        );
+        assert_eq!(
+            containment("{ ... @defer { arg } }", "{ ... @defer { arg } }"),
+            Containment::NotContained,
+            "@defer selections never contain each other"
+        );
         assert_eq!(
             containment("{ a b c }", "{ b a }"),
             Containment::StrictlyContained
